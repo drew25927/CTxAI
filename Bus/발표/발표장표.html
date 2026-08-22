@@ -20,8 +20,8 @@
 
     --ink:         #e6eaec;
     --ink-2:       #aab6bd;
-    --ink-3:       #75838c;
-    --ink-4:       #4c5a63;
+    --ink-3:       #8a969e;
+    --ink-4:       #7a8892;
 
     --sage:        #8fae95;   /* 🖤 공포 · 주 액센트 */
     --rose:        #f2a7c0;   /* 💗 로맨스 */
@@ -33,7 +33,11 @@
 
     --display: "Gowun Batang", "Nanum Myeongjo", Georgia, serif;
     --body: "IBM Plex Sans KR", "Noto Sans KR", system-ui, sans-serif;
-    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    /* IBM Plex Mono 에는 한글 글리프가 없다. 스택에 한글 대체를 적어 두지
+     않으면 브라우저가 시스템 기본 고정폭(윈도우: GulimChe)을 집는데,
+     비트맵 느낌이라 뭉개지고 자간도 제멋대로 벌어진다. 라틴·숫자는
+     Plex Mono 로 두고 한글만 본문 서체로 떨어뜨린다. */
+  --mono: "IBM Plex Mono", "IBM Plex Sans KR", "Malgun Gothic", "Noto Sans KR", ui-monospace, monospace;
   }
 
   /* 밝은 환경 — 흐린 오후의 젖은 종이 */
@@ -47,8 +51,8 @@
       --line-soft: #dbd8d2;
       --ink:       #171b1e;
       --ink-2:     #4a5257;
-      --ink-3:     #6e777d;
-      --ink-4:     #98a0a5;
+      --ink-3:     #5f686e;
+      --ink-4:     #848d93;
       --sage:      #4f7359;
       --rose:      #b95d81;
       --amber:     #9c6a24;
@@ -66,8 +70,8 @@
     --line-soft: #dbd8d2;
     --ink:       #171b1e;
     --ink-2:     #4a5257;
-    --ink-3:     #6e777d;
-    --ink-4:     #98a0a5;
+    --ink-3:     #5f686e;
+    --ink-4:     #848d93;
     --sage:      #4f7359;
     --rose:      #b95d81;
     --amber:     #9c6a24;
@@ -132,9 +136,9 @@
   .eyebrow {
     font-family: var(--mono);
     font-size: .68rem;
-    letter-spacing: .18em;
+    letter-spacing: .07em;
     text-transform: uppercase;
-    color: var(--ink-4);
+    color: var(--ink-3);
     margin: 0 0 1.4rem;
     display: flex;
     align-items: center;
@@ -165,9 +169,9 @@
 
   h3 {
     font-family: var(--mono);
-    font-size: .7rem;
+    font-size: .74rem;
     font-weight: 500;
-    letter-spacing: .14em;
+    letter-spacing: .05em;
     text-transform: uppercase;
     color: var(--sage);
     margin: 0 0 .85rem;
@@ -247,10 +251,11 @@
 
   .dial-key {
     display: grid;
-    gap: .3rem;
+    gap: .34rem;
     font-family: var(--mono);
-    font-size: .66rem;
-    color: var(--ink-3);
+    font-size: .72rem;
+    letter-spacing: .02em;
+    color: var(--ink-2);
   }
   .dial-key div { display: flex; align-items: baseline; gap: .55rem; }
   .dial-key i {
@@ -291,10 +296,10 @@
   }
   .lane b {
     font-family: var(--mono);
-    font-size: .64rem;
-    letter-spacing: .1em;
+    font-size: .7rem;
+    letter-spacing: .04em;
     text-transform: uppercase;
-    color: var(--ink-3);
+    color: var(--ink-2);
     font-weight: 400;
   }
   .lane u {
@@ -316,8 +321,8 @@
   .route b {
     display: block;
     font-family: var(--mono);
-    font-size: .64rem;
-    letter-spacing: .1em;
+    font-size: .7rem;
+    letter-spacing: .04em;
     text-transform: uppercase;
     color: var(--rt, var(--sage));
     margin-bottom: .3rem;
@@ -373,10 +378,10 @@
   .vs-col { display: grid; gap: .55rem; align-content: start; }
   .vs-col > b {
     font-family: var(--mono);
-    font-size: .66rem;
-    letter-spacing: .12em;
+    font-size: .72rem;
+    letter-spacing: .05em;
     text-transform: uppercase;
-    color: var(--ink-4);
+    color: var(--ink-3);
     font-weight: 400;
   }
   .vs-col.ours > b { color: var(--sage); }
@@ -470,8 +475,8 @@
   }
   .track > header b {
     font-family: var(--mono);
-    font-size: .68rem;
-    letter-spacing: .1em;
+    font-size: .74rem;
+    letter-spacing: .04em;
     text-transform: uppercase;
     color: var(--tc, var(--sage));
     font-weight: 500;
@@ -677,13 +682,13 @@
           </g>
           <path d="M0 -160 V160 M-160 0 H160" stroke="currentColor" stroke-opacity=".13"/>
 
-          <g font-family="IBM Plex Mono, monospace" font-size="8" fill="var(--ink-4)" letter-spacing=".6">
+          <g font-family="IBM Plex Sans KR, sans-serif" font-size="10" fill="var(--ink-3)" letter-spacing=".2">
             <text x="0" y="-166" text-anchor="middle">정면 0°</text>
             <text x="167" y="3" text-anchor="middle">90°</text>
             <text x="-167" y="3" text-anchor="middle">−90°</text>
             <!-- 뒤쪽 눈금과 사각지대 설명을 한 줄에 나란히 — 뒤가 곧 사각지대다 -->
             <text x="-7" y="170" text-anchor="end">180°</text>
-            <text x="7" y="170" text-anchor="start" fill="var(--ink-4)" letter-spacing="1.1">정면 카메라 사각지대</text>
+            <text x="7" y="170" text-anchor="start" fill="var(--ink-3)" letter-spacing=".2">정면 카메라 사각지대</text>
           </g>
 
           <!-- 이동 프로브의 경로 -->
@@ -694,7 +699,7 @@
           </g>
 
           <!-- 프로브 -->
-          <g font-family="IBM Plex Mono, monospace" font-size="9.5" letter-spacing=".4">
+          <g font-family="IBM Plex Sans KR, sans-serif" font-size="11" letter-spacing="0">
             <g fill="var(--sage)">
               <circle cx="50.4" cy="-16.4" r="4.6"/>
               <circle cx="-91.8" cy="-117.4" r="4.6"/>
