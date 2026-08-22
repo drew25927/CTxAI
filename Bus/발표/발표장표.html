@@ -1,4 +1,4 @@
-<title>디제틱 프로브</title>
+<title>서사를 계측기로</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@200;300;400;500;600&display=swap" rel="stylesheet">
@@ -186,7 +186,7 @@
   /* ── 1. 표제 ─────────────────────────────────────────── */
 
   .title-slide { align-content: center; }
-  .title-wrap { display: grid; gap: clamp(2rem, 5vw, 3.5rem); }
+  .title-wrap { display: grid; gap: clamp(1.4rem, 3.4vw, 2.4rem); }
 
   .title-dial {
     justify-self: center;
@@ -211,6 +211,17 @@
     background: var(--sage);
     justify-self: center;
     opacity: .8;
+  }
+  /* 한국어 부제 — 영문 제목보다 이쪽이 먼저 읽힌다 */
+  .title-sub {
+    font-family: var(--body);
+    font-weight: 300;
+    font-size: clamp(.88rem, 1.5vw, 1.12rem);
+    line-height: 1.7;
+    text-align: center;
+    color: var(--ink-2);
+    max-width: 52ch;
+    margin: 0 auto;
   }
   .title-en {
     font-family: var(--body);
@@ -643,20 +654,24 @@
 
       <h1 class="title-main rise">
         서사를 <span class="k">계측기</span>로<br>
-        디제틱 프로브를 이용한 무요구 관객 상태 추정과<br>
-        연속 파라미터 서사 블렌딩
+        이야기에 심은 자극으로 관객을 읽고,<br>
+        LLM이 3D 장면을 그 자리에서 짓는다
       </h1>
 
       <div class="title-rule rise"></div>
 
+      <p class="title-sub rise">
+        서사 내재 자극 기반 비유도 관객 반응 추정과 LLM 실시간 3D 장면 생성
+      </p>
+
       <p class="title-en rise">
-        Narrative as Instrument: Diegetic Probes for Non-Elicited
-        Audience State Estimation and Continuous-Parameter Story Blending
+        Narrative as Instrument: Non-Elicited Audience-Response Estimation
+        via Story-Embedded Probes and Real-Time LLM Scene Generation
       </p>
 
       <div class="title-foot rise">
         <span><b>작품</b> 기다림: 버스정류장 XR</span>
-        <span><b>구현</b> 프로브 배터리 6 · 3채널 연속 판정</span>
+        <span><b>구현</b> 자극 6 · 3채널 연속 추정 · 3D 실시간</span>
         <span><b>2026</b> 08</span>
       </div>
     </div>
@@ -664,15 +679,15 @@
 
   <!-- ═══ 2 · 구조 ═══════════════════════════════════════ -->
   <section class="slide" id="s2" aria-label="파이프라인과 구조">
-    <p class="eyebrow rise">02 &nbsp;파이프라인 · 구현할 기술</p>
+    <p class="eyebrow rise">02 &nbsp;구조와 파이프라인 · 앞으로 구현할 기술</p>
 
     <div class="arch rise">
 
-      <!-- 프로브 배터리 방위도 -->
+      <!-- 이야기에 심은 여섯 자극의 방위도 -->
       <div class="dial-panel">
-        <h3>프로브 배터리 · 방위</h3>
+        <h3>이야기에 심은 여섯 자극 · 방위</h3>
         <svg class="dial" viewBox="-185 -185 370 370" role="img"
-             aria-label="관객을 중심으로 여섯 개의 프로브가 놓인 방위도. 개구리와 두 번째 울음은 정면 카메라 사각지대에 있다.">
+             aria-label="관객을 중심으로 여섯 개의 자극이 놓인 방위도. 개구리와 두 번째 울음은 정면 카메라 사각지대에 있다.">
           <!-- 정면 카메라 사각지대 (±70°) -->
           <path d="M0 0 L155 -56.4 A165 165 0 1 1 -155 -56.4 Z" fill="var(--blind)"/>
 
@@ -691,14 +706,14 @@
             <text x="7" y="170" text-anchor="start" fill="var(--ink-3)" letter-spacing=".2">정면 카메라 사각지대</text>
           </g>
 
-          <!-- 이동 프로브의 경로 -->
+          <!-- 움직이는 자극의 경로 -->
           <g fill="none" stroke="var(--sage)" stroke-opacity=".42" stroke-dasharray="3 3">
             <path d="M128 -27.2 Q0 -60 -128 -27.2"/>
             <path d="M74.9 3.9 Q0 -18 -78.2 -38.1"/>
             <path d="M-91.8 -117.4 L-63 -80"/>
           </g>
 
-          <!-- 프로브 -->
+          <!-- 자극 -->
           <g font-family="IBM Plex Sans KR, sans-serif" font-size="11" letter-spacing="0">
             <g fill="var(--sage)">
               <circle cx="50.4" cy="-16.4" r="4.6"/>
@@ -724,9 +739,9 @@
         </svg>
 
         <div class="dial-key">
-          <div><i>●</i>시청각 프로브<u>4</u></div>
-          <div><i style="color:var(--glow)">○</i>청각 전용 — 보이는 것이 없다<u>2</u></div>
-          <div><i>—</i>기저선 8초 · 관찰 76초<u>6 프로브</u></div>
+          <div><i>●</i>보이고 들리는 자극<u>4</u></div>
+          <div><i style="color:var(--glow)">○</i>소리만 — 보이는 것이 없다<u>2</u></div>
+          <div><i>—</i>기저선 8초 · 관찰 76초<u>자극 6</u></div>
         </div>
       </div>
 
@@ -734,52 +749,53 @@
       <div class="chain">
 
         <div class="formal">
-          <b>프로브 배터리</b> &nbsp;P = {p₁ … p₆}, &nbsp; pᵢ = (tᵢ, θᵢ, φᵢ, mᵢ, τᵢ)<br>
+          <b>자극 집합</b> &nbsp;&nbsp;&nbsp;&nbsp;P = {p₁ … p₆}, &nbsp; pᵢ = (tᵢ, θᵢ, φᵢ, mᵢ, τᵢ)<br>
           <span>&nbsp;&nbsp;시점 · 방위 · 고도 · 양식 · 반응창</span><br>
-          <b>반응 커널</b> &nbsp;&nbsp;&nbsp;&nbsp;rᵢ = Φ( S[tᵢ, tᵢ+τᵢ] ) &nbsp;&nbsp;<span>S = 요각·고각·표정 시계열</span><br>
+          <b>반응 커널</b> &nbsp;&nbsp;&nbsp;&nbsp;rᵢ = Φ( S[tᵢ, tᵢ+τᵢ] ) &nbsp;&nbsp;<span>S = 시선·표정·음성 시계열</span><br>
           <b>반응 프로파일</b> &nbsp;R = [r₁ … r₆] ∈ ℝ<sup>6×k</sup><br>
-          <b>장르 친화도</b> &nbsp;&nbsp;g = f(R) ∈ Δ² &nbsp;&nbsp;<span>3-심플렉스 · argmax 하지 않는다</span>
+          <b>관객 상태</b> &nbsp;&nbsp;&nbsp;&nbsp;g = f(R) ∈ Δ² &nbsp;&nbsp;<span>3-심플렉스 · 하나로 뽑지 않는다</span>
         </div>
 
         <div>
-          <h3>채널 융합</h3>
+          <h3>무엇을 읽는가 — 세 채널</h3>
           <div class="lanes">
-            <div class="lane"><b>행동 50%</b><span>헤드 포즈 요각 · ARKit 블렌드셰이프 8항목</span><u>43 랜드마크</u></div>
-            <div class="lane"><b>텍스트 30%</b><span>Whisper 전사 → LLM 의미 채점 + 근거 1줄</span><u>Q1 응답</u></div>
-            <div class="lane"><b>음성 20%</b><span>멀티모달 오디오 이해 — 내용 무시, 톤만</span><u>무음이면 null</u></div>
+            <div class="lane"><b>시선·자세 50%</b><span>머리 회전각 · 학습된 표정 모델 8항목</span><u>43 랜드마크</u></div>
+            <div class="lane"><b>말한 내용 30%</b><span>음성 전사 → LLM 의미 채점 + 근거 1줄</span><u>답 없으면 제외</u></div>
+            <div class="lane"><b>목소리 톤 20%</b><span>내용은 무시하고 에너지·떨림·속도만</span><u>무음이면 제외</u></div>
             <div class="lane" style="border-color:var(--line)">
               <b>누적</b>
-              <span>프로브가 닫힐 때마다 재판정 · 지수평활 · 엔트로피 확신도</span>
-              <u>&lt; 0.35 → 재질문</u>
+              <span>자극이 하나 끝날 때마다 다시 계산 · 완만하게 따라감 · 엔트로피 확신도</span>
+              <u>낮으면 되물음</u>
             </div>
           </div>
         </div>
 
         <div>
-          <h3>타입별 라우팅 — 두 번째 기여</h3>
+          <h3>어떻게 장면을 짓는가 — 세 갈래</h3>
           <div class="routing">
             <div class="route" style="--rt: var(--sage)">
-              <b>연속</b>
-              <span>파라미터 보간</span>
-              <i>하늘 · 빛 · 안개 · 노출 · BGM 게인</i>
+              <b>연속값</b>
+              <span>비율대로 섞는다</span>
+              <i>하늘 · 빛 · 안개 · 소리 — 물감 섞듯이</i>
             </div>
             <div class="route" style="--rt: var(--rose)">
-              <b>이산</b>
-              <span>최근접 매칭</span>
-              <i>인물 · 소품 — 60% 여성은 만들 수 없다</i>
+              <b>사전 제작 자산</b>
+              <span>고르고 3D 공간에 놓는다</span>
+              <i>인물 · 소품 · 버스 — 60% 여성은 만들 수 없다</i>
             </div>
             <div class="route" style="--rt: var(--amber)">
-              <b>생성</b>
-              <span>제약 조건부 생성</span>
-              <i>대사 — 문장은 섞이지 않는다</i>
+              <b>실시간 생성</b>
+              <span>LLM이 그 자리에서</span>
+              <i>대사와 전개 — 문장은 섞이지 않는다</i>
             </div>
           </div>
         </div>
 
         <div class="todo">
-          <div class="todo-row"><span><b>LLM 실시간 대사 생성</b> — 배합 벡터를 프롬프트로. 공개 단계·동결 구간을 프롬프트가 아니라 <b>코드로 강제</b>하고, 위반 시 사전 녹음으로 무손실 폴백</span></div>
-          <div class="todo-row"><span><b>지연 은폐 스케줄러</b> — 발화 종료 → 발성 1.2초 예산. 들숨·필러로 흡수하고 첫 문장만 조기 확정해 TTS 스트리밍</span></div>
-          <div class="todo-row"><span><b>f(R) 학습</b> — 지금 가중치는 문서에서 옮긴 규칙. 파일럿 데이터로 교체하고 <b>절제 실험</b>으로 프로브별 기여도 측정</span></div>
+          <div class="todo-row"><span><b>LLM이 이야기를 쓴다</b> — 관객 상태를 프롬프트로 대사와 전개를 그 자리에서. 작가가 고정한 것은 <b>코드로 강제</b>하고, 어기면 사전 녹음으로 무손실 폴백</span></div>
+          <div class="todo-row"><span><b>LLM이 자산을 배치한다</b> — 어떤 인물이 어떤 소품을 들고 어디에 앉을지까지 넘긴다</span></div>
+          <div class="todo-row"><span><b>지연을 감춘다</b> — 말이 끝나고 1.2초 안에 소리가 나와야 한다. 들숨·추임새로 흡수하고 첫 문장만 먼저 흘려보낸다</span></div>
+          <div class="todo-row"><span><b>f(R)을 데이터로</b> — 지금 가중치는 문서에서 옮긴 규칙이다. 파일럿으로 교체하고 자극별 기여도를 잰다</span></div>
         </div>
 
       </div>
@@ -788,18 +804,18 @@
 
   <!-- ═══ 3 · 쉬운 말 ════════════════════════════════════ -->
   <section class="slide" id="s3" aria-label="쉬운 말로">
-    <p class="eyebrow rise">03 &nbsp;쉬운 말로</p>
+    <p class="eyebrow rise">03 &nbsp;쉬운 말로 — 관객이 겪는 것</p>
 
     <div class="plain">
 
       <h2 class="claim rise">
-        관객에게 아무것도 묻지 않습니다.<br>
+        고를 것도, 누를 것도 없습니다.<br>
         <b>이야기가 관객을 읽습니다.</b>
       </h2>
 
       <div class="versus rise">
         <div class="vs-col">
-          <b>지금까지의 인터랙티브</b>
+          <b>흔한 인터랙티브</b>
           <svg class="vs-art" viewBox="0 0 200 46" aria-hidden="true">
             <g fill="none" stroke="currentColor" stroke-opacity=".3">
               <path d="M6 23 H74 M74 23 L120 9 M74 23 L120 23 M74 23 L120 37"/>
@@ -808,8 +824,7 @@
               <circle cx="110" cy="8" r="3.5"/><circle cx="110" cy="23" r="3.5"/><circle cx="110" cy="38" r="3.5"/>
             </g>
           </svg>
-          <p>화면에 선택지가 뜨고, 관객이 고릅니다. 결말은 미리 만들어 둔 세 개 중 하나입니다.</p>
-          <p>관객은 매 순간 시험대에 오릅니다.</p>
+          <p>선택지를 띄우고 고르게 합니다. 결말은 미리 만들어 둔 몇 개 중 하나이고, 관객은 매 순간 시험대에 오릅니다.</p>
         </div>
         <div class="vs-col ours">
           <b>우리가 만드는 것</b>
@@ -825,15 +840,15 @@
             <g stroke="var(--ink)" stroke-opacity=".55">
               <path d="M78 12 V34"/>
             </g>
-            <text x="82" y="11" font-family="IBM Plex Mono, monospace" font-size="7.5" fill="currentColor" fill-opacity=".6">당신의 배합</text>
+            <text x="82" y="11" font-family="IBM Plex Sans KR, sans-serif" font-size="8" fill="currentColor" fill-opacity=".65">이 관객의 배합</text>
           </svg>
-          <p>고르는 것이 없습니다. 벤치에 앉아 버스를 기다리기만 하면 됩니다.</p>
-          <p>그 사이 <em>물감 섞듯이</em> 관객마다 다른 배합의 이야기가 만들어집니다.</p>
+          <p>벤치에 앉아 버스를 기다리기만 하면 됩니다. 시선·목소리·표정이 어떻게 움직였는지를 읽습니다.</p>
+          <p>그 값을 받아 <em>LLM이 그 자리에서 이야기를 쓰고</em>, 3D 정류장 안에 사람과 사물을 놓습니다.</p>
         </div>
       </div>
 
       <div class="rise">
-        <h3 style="margin-bottom:.6rem">정류장에서 벌어지는 다섯 가지 일 — 사실은 자(尺)입니다</h3>
+        <h3 style="margin-bottom:.6rem">정류장에서 벌어지는 일들 — 사실은 관객을 재는 자입니다</h3>
         <div class="rulers">
           <div class="ruler"><span class="deg mono">72°</span><span class="what">찢어진 포스터<small>오른쪽 유리</small></span><span class="why">글자를 읽으려 몸을 기울이는가 — 빈칸을 확인하려 드는 사람</span></div>
           <div class="ruler"><span class="deg mono">−38°</span><span class="what">카페에서 나온 사람<small>왼쪽 50m</small></span><span class="why">사람에게 관심이 가는가 — 로맨스를 <em>재는</em> 유일한 자</span></div>
@@ -845,8 +860,8 @@
       </div>
 
       <p class="closer rise">
-        관객은 자기가 측정당하는 줄 모릅니다. <b>재는 자가 곧 이야기이기 때문입니다.</b><br>
-        그리고 그 결과로 하늘이 바뀌고, 옆에 앉는 사람이 달라집니다 —
+        관객은 자기가 읽히는 줄 모릅니다. <b>재는 자가 곧 이야기이기 때문입니다.</b><br>
+        메뉴도 선택지도 평면 그림도 없습니다 — 처음부터 끝까지 <b>3D 정류장 안에서</b> 벌어집니다.
         같은 정류장, 같은 버스, 다른 밤.
       </p>
 
@@ -857,9 +872,9 @@
   <section class="slide" id="s4" aria-label="앞으로 구현할 계획">
     <p class="eyebrow rise">04 &nbsp;앞으로 구현할 계획</p>
 
-    <h2 class="rise">판정 벡터가 맞아야 그 위가 성립합니다</h2>
+    <h2 class="rise">관객을 제대로 읽어야 그 위가 성립합니다</h2>
     <p class="lede rise">
-      조명·대사·연출은 전부 “관객을 제대로 읽었다”를 전제로 합니다.
+      LLM이 쓰는 이야기도, 3D에 놓이는 자산도, 하늘과 빛도 전부 “이 관객을 제대로 읽었다”를 전제로 합니다.
       그래서 다음 단계의 순서는 기능이 아니라 <strong>검증</strong>이 정합니다.
     </p>
 
@@ -868,19 +883,19 @@
       <div class="gate">
         <span class="mark">선행 조건</span>
         <span><b>실측 파일럿 20~30명.</b> 지금 임계값과 가중치는 문서에서 옮긴 규칙이지 측정된 값이 아닙니다.
-          자극을 제시하고 원시 반응을 기록하는 장치는 완성됐으므로, <b>이제 테스터 섭외를 요청할 수 있습니다.</b></span>
+          자극을 제시하고 반응을 기록하는 장치는 완성됐으므로, <b>이제 테스터 섭외를 요청할 수 있습니다.</b></span>
       </div>
 
       <div class="tracks">
 
         <div class="track" style="--tc: var(--sage)">
           <header><b>개발 단독</b><u>바로 착수</u></header>
-          <div class="item done"><span class="st">✓</span><span><b>프로브 배터리 · 공간음향</b><small>6 프로브 · 76초 · HRTF · 리스너 방향 추적</small></span></div>
-          <div class="item done"><span class="st">✓</span><span><b>3채널 연속 판정 · 누적 갱신</b><small>argmax 제거 · 엔트로피 확신도 · 재질문 루프</small></span></div>
-          <div class="item done"><span class="st">✓</span><span><b>파라미터 → 연출 매핑</b><small>하늘·빛·안개·노출·BGM. 값의 근거는 “네 개의 날씨”</small></span></div>
-          <div class="item done"><span class="st">✓</span><span><b>리플레이 회귀 하네스</b><small>순수/IO 분리 · 픽스처 7 · 사양 예시 3인이 재현됨</small></span></div>
-          <div class="item"><span class="st">→</span><span><b>LLM 실시간 대사</b><small>상태머신·검증기는 완성. 벡터를 프롬프트에 연결</small></span></div>
-          <div class="item"><span class="st">→</span><span><b>지연 은폐 스케줄러</b><small>들숨·필러는 이미 녹음됨. 스케줄러만 없음</small></span></div>
+          <div class="item done"><span class="st">✓</span><span><b>여섯 자극 · 공간음향</b><small>76초 · 방향이 들리는 소리 · 고개를 돌리면 소리도 돈다</small></span></div>
+          <div class="item done"><span class="st">✓</span><span><b>3채널 연속 추정 · 누적 갱신</b><small>하나로 뽑지 않음 · 자극마다 다시 계산 · 되물음</small></span></div>
+          <div class="item done"><span class="st">✓</span><span><b>관객 상태 → 연출 매핑</b><small>하늘·빛·안개·소리. 값의 근거는 “네 개의 날씨”</small></span></div>
+          <div class="item done"><span class="st">✓</span><span><b>3D 안에서 이어지는 캐릭터 장면</b><small>평면 그림에서 같은 씬으로. 인물 3인 + 272번</small></span></div>
+          <div class="item"><span class="st">→</span><span><b>LLM이 이야기를 쓴다</b><small>상태머신·검증기는 완성. 관객 상태를 프롬프트에 연결</small></span></div>
+          <div class="item"><span class="st">→</span><span><b>LLM이 자산을 배치한다</b><small>인물·소품을 고르고 3D 공간에 놓는 것까지</small></span></div>
         </div>
 
         <div class="track" style="--tc: var(--rose)">
@@ -894,9 +909,9 @@
 
         <div class="track" style="--tc: var(--amber)">
           <header><b>검증 · 하드웨어</b><u>데이터 확보 이후</u></header>
-          <div class="item"><span class="st">◇</span><span><b>f(R) 학습</b><small>손으로 정한 50·30·20을 데이터가 정하게</small></span></div>
-          <div class="item"><span class="st">◇</span><span><b>절제 실험</b><small>프로브를 하나씩 빼고 예측력 하락 측정 — 논문의 중심 그래프</small></span></div>
-          <div class="item"><span class="st">◇</span><span><b>무요구 조건 검증</b><small>“측정당한다고 느꼈는가” — 사후 설문에 이미 들어 있음</small></span></div>
+          <div class="item"><span class="st">◇</span><span><b>가중치를 데이터로</b><small>손으로 정한 50·30·20을 파일럿이 정하게</small></span></div>
+          <div class="item"><span class="st">◇</span><span><b>자극별 기여도</b><small>하나씩 빼며 예측력 하락 측정 — 논문의 중심 그래프</small></span></div>
+          <div class="item"><span class="st">◇</span><span><b>비유도 조건 검증</b><small>“읽히고 있다고 느꼈는가” — 사후 설문에 이미 들어 있음</small></span></div>
           <div class="item"><span class="st">◇</span><span><b>IR 카메라 이식</b><small>어두운 전시장에서 가시광 웹캠은 원천적으로 안 됨</small></span></div>
           <div class="item"><span class="st">◇</span><span><b>현장 부하 테스트</b><small>얼굴·포즈·손을 동시에 돌릴 때 프레임이 버티는가</small></span></div>
         </div>
