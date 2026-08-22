@@ -1,0 +1,595 @@
+<title>정류장 발표 대본</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@200;300;400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  /* 장표(서사를 계측기로)와 같은 팔레트·서체를 쓴다. 짝이 되는 문서이므로
+     시각 언어를 따로 만들지 않는다. 다만 이건 슬라이드가 아니라 읽는 문서라
+     한 줄 길이와 행간을 낭독에 맞춘다. */
+
+  :root {
+    color-scheme: dark;
+    --ground:      #0e1216;
+    --panel:       #171e24;
+    --panel-2:     #131a20;
+    --line:        #2a343c;
+    --line-soft:   #1f272e;
+    --ink:         #e6eaec;
+    --ink-2:       #aab6bd;
+    --ink-3:       #8a969e;
+    --ink-4:       #7a8892;
+    --sage:        #8fae95;
+    --rose:        #f2a7c0;
+    --amber:       #e0a86a;
+    --glow:        #e0a860;
+
+    --display: "Gowun Batang", "Nanum Myeongjo", Georgia, serif;
+    --body: "IBM Plex Sans KR", "Noto Sans KR", system-ui, sans-serif;
+    /* 한글 대체를 반드시 적어 둔다 — 없으면 시스템 고정폭(윈도우: 굴림체)으로
+       떨어져 뭉개진다. 라틴·숫자만 고정폭으로 남는다. */
+    --mono: "IBM Plex Mono", "IBM Plex Sans KR", "Malgun Gothic", ui-monospace, monospace;
+  }
+
+  @media (prefers-color-scheme: light) {
+    :root:not([data-theme="dark"]) {
+      color-scheme: light;
+      --ground:    #e8e6e0;
+      --panel:     #f4f2ee;
+      --panel-2:   #efedE8;
+      --line:      #c8c6bf;
+      --line-soft: #dbd8d2;
+      --ink:       #171b1e;
+      --ink-2:     #3f474c;
+      --ink-3:     #5f686e;
+      --ink-4:     #848d93;
+      --sage:      #4f7359;
+      --rose:      #b95d81;
+      --amber:     #9c6a24;
+      --glow:      #a8752c;
+    }
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --ground:    #e8e6e0;
+    --panel:     #f4f2ee;
+    --panel-2:   #efedE8;
+    --line:      #c8c6bf;
+    --line-soft: #dbd8d2;
+    --ink:       #171b1e;
+    --ink-2:     #3f474c;
+    --ink-3:     #5f686e;
+    --ink-4:     #848d93;
+    --sage:      #4f7359;
+    --rose:      #b95d81;
+    --amber:     #9c6a24;
+    --glow:      #a8752c;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-weight: 300;
+    line-height: 1.85;
+    word-break: keep-all;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page {
+    max-width: 760px;
+    margin: 0 auto;
+    padding: clamp(2rem, 5vw, 4.5rem) clamp(1.2rem, 4vw, 2.5rem) 6rem;
+  }
+
+  /* ── 머리말 ────────────────────────────────────────────── */
+
+  header { margin-bottom: clamp(2rem, 5vw, 3.2rem); }
+
+  .kicker {
+    font-family: var(--mono);
+    font-size: .72rem;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 .7rem;
+  }
+  h1 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(1.6rem, 4vw, 2.35rem);
+    line-height: 1.35;
+    letter-spacing: -.015em;
+    margin: 0 0 .9rem;
+    text-wrap: balance;
+  }
+  .summary {
+    font-size: clamp(.95rem, 1.6vw, 1.05rem);
+    color: var(--ink-2);
+    margin: 0 0 1.4rem;
+  }
+  .meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem 1.4rem;
+    font-family: var(--mono);
+    font-size: .74rem;
+    color: var(--ink-3);
+    padding-top: 1rem;
+    border-top: 1px solid var(--line);
+  }
+  .meta b { font-weight: 500; color: var(--ink-2); }
+
+  /* ── 준비 ──────────────────────────────────────────────── */
+
+  .prep {
+    background: var(--panel);
+    border: 1px solid var(--line-soft);
+    border-left: 2px solid var(--glow);
+    padding: 1.1rem 1.3rem 1.2rem;
+    margin: 0 0 clamp(2rem, 5vw, 3rem);
+  }
+  .prep h2 {
+    font-family: var(--mono);
+    font-size: .74rem;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    color: var(--glow);
+    margin: 0 0 .7rem;
+    font-weight: 500;
+  }
+  .prep ul { margin: 0; padding-left: 1.1rem; font-size: .92rem; color: var(--ink-2); }
+  .prep li { margin-bottom: .3rem; }
+  .prep b { color: var(--ink); font-weight: 500; }
+
+  /* ── 슬라이드 절 ───────────────────────────────────────── */
+
+  section.beat { margin-bottom: clamp(2.4rem, 6vw, 3.6rem); }
+
+  .slug {
+    display: flex;
+    align-items: baseline;
+    gap: .9rem;
+    padding-bottom: .6rem;
+    margin-bottom: 1.2rem;
+    border-bottom: 1px solid var(--line);
+  }
+  .slug .no {
+    font-family: var(--mono);
+    font-size: 1.5rem;
+    font-weight: 500;
+    color: var(--sage);
+    line-height: 1;
+  }
+  .slug h2 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(1.1rem, 2.2vw, 1.4rem);
+    margin: 0;
+    flex: 1;
+    line-height: 1.4;
+  }
+  .slug .time {
+    font-family: var(--mono);
+    font-size: .76rem;
+    color: var(--ink-3);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* 화면 지시 — 말하는 내용이 아니라 무대 지시 */
+  .cue {
+    font-family: var(--mono);
+    font-size: .78rem;
+    line-height: 1.65;
+    color: var(--ink-3);
+    background: var(--panel-2);
+    border: 1px dashed var(--line);
+    padding: .55rem .8rem;
+    margin: 0 0 1.1rem;
+  }
+  .cue b { color: var(--sage); font-weight: 500; }
+
+  /* 실제로 말할 것 — 이 문서에서 가장 크고 밝다 */
+  .say {
+    border-left: 2px solid var(--sage);
+    padding-left: 1.15rem;
+    margin: 0 0 1.3rem;
+  }
+  .say p {
+    font-size: clamp(1rem, 1.8vw, 1.12rem);
+    line-height: 1.95;
+    margin: 0 0 .95rem;
+    color: var(--ink);
+  }
+  .say p:last-child { margin-bottom: 0; }
+  .say em {
+    font-style: normal;
+    color: var(--sage);
+    font-weight: 500;
+  }
+  .say .pause {
+    display: block;
+    font-family: var(--mono);
+    font-size: .74rem;
+    color: var(--ink-4);
+    margin: -.4rem 0 .7rem;
+  }
+
+  .tip {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: .7rem;
+    font-size: .87rem;
+    line-height: 1.7;
+    color: var(--ink-2);
+    background: var(--panel);
+    border: 1px solid var(--line-soft);
+    padding: .7rem .9rem;
+    margin: 0 0 1rem;
+  }
+  .tip::before {
+    content: "팁";
+    font-family: var(--mono);
+    font-size: .68rem;
+    letter-spacing: .05em;
+    color: var(--amber);
+    padding-top: .18rem;
+  }
+  .tip b { color: var(--ink); font-weight: 500; }
+
+  /* 화면의 표를 짚어 읽는 부분 */
+  .points { display: grid; gap: .1rem; margin: 0 0 1.2rem; }
+  .point {
+    display: grid;
+    grid-template-columns: 82px 1fr;
+    gap: .9rem;
+    padding: .5rem 0;
+    border-top: 1px solid var(--line-soft);
+    font-size: .95rem;
+    align-items: baseline;
+  }
+  .point:last-child { border-bottom: 1px solid var(--line-soft); }
+  .point .what { color: var(--ink); font-weight: 400; }
+  .point .why { color: var(--ink-2); }
+  .point .deg {
+    font-family: var(--mono);
+    font-size: .74rem;
+    color: var(--ink-3);
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── 질문 ──────────────────────────────────────────────── */
+
+  .qa { margin-top: clamp(2.5rem, 6vw, 4rem); }
+  .qa > h2 {
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: clamp(1.25rem, 2.6vw, 1.6rem);
+    margin: 0 0 .5rem;
+  }
+  .qa > p.lede { color: var(--ink-2); font-size: .95rem; margin: 0 0 1.6rem; }
+
+  details {
+    border: 1px solid var(--line-soft);
+    background: var(--panel);
+    margin-bottom: .5rem;
+  }
+  details[open] { border-color: var(--line); }
+  summary {
+    cursor: pointer;
+    padding: .8rem 1rem;
+    font-size: .98rem;
+    color: var(--ink);
+    list-style: none;
+    display: flex;
+    gap: .7rem;
+    align-items: baseline;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary::before {
+    content: "Q";
+    font-family: var(--mono);
+    font-size: .78rem;
+    color: var(--sage);
+    flex: none;
+  }
+  summary:hover { background: var(--panel-2); }
+  summary:focus-visible { outline: 1px solid var(--sage); outline-offset: -1px; }
+  details .ans {
+    padding: 0 1rem 1rem 2.4rem;
+    font-size: .93rem;
+    line-height: 1.85;
+    color: var(--ink-2);
+  }
+  details .ans b { color: var(--ink); font-weight: 500; }
+  details .ans p { margin: 0 0 .6rem; }
+  details .ans p:last-child { margin-bottom: 0; }
+
+  /* ── 꼬리말 ────────────────────────────────────────────── */
+
+  footer {
+    margin-top: clamp(2.5rem, 6vw, 4rem);
+    padding-top: 1.2rem;
+    border-top: 1px solid var(--line);
+    font-size: .84rem;
+    color: var(--ink-3);
+  }
+  footer a { color: var(--sage); }
+
+  .themer {
+    position: fixed;
+    right: 16px; bottom: 16px;
+    appearance: none;
+    background: var(--panel);
+    color: var(--ink-3);
+    border: 1px solid var(--line);
+    font-family: var(--mono);
+    font-size: .62rem;
+    letter-spacing: .1em;
+    padding: 6px 10px;
+    cursor: pointer;
+    z-index: 10;
+  }
+  .themer:hover { color: var(--ink); }
+  .themer:focus-visible { outline: 1px solid var(--sage); outline-offset: 2px; }
+
+  @media print {
+    .themer { display: none; }
+    body { background: #fff; color: #000; }
+    details { break-inside: avoid; }
+    details:not([open]) .ans { display: block; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  }
+</style>
+
+<div class="page">
+
+  <header>
+    <p class="kicker">발표 대본 · 「서사를 계측기로」 4장</p>
+    <h1>이야기가 관객을 읽는다</h1>
+    <p class="summary">
+      30초밖에 없다면 이 한 줄만 말하세요 —
+      <b>“관객에게 아무것도 묻지 않습니다. 정류장에서 벌어지는 일들이 사실은 관객을 재는 자입니다.”</b>
+    </p>
+    <div class="meta">
+      <span><b>전체</b> 약 7분</span>
+      <span><b>장표</b> 4장</span>
+      <span><b>질의응답</b> 7문항 준비됨</span>
+      <span><b>요청</b> 테스터 섭외</span>
+    </div>
+  </header>
+
+  <div class="prep">
+    <h2>시작 전에</h2>
+    <ul>
+      <li>장표는 <b>방향키·스페이스</b>로 넘어갑니다. 우하단 <code>THEME</code>으로 밝기 전환.</li>
+      <li>2장 왼쪽 <b>방위도</b>를 손이나 커서로 짚으면서 말하면 훨씬 잘 전달됩니다.</li>
+      <li>데모(<code>/probe</code>)를 띄울 거면 <b>헤드폰</b>을 미리 꽂아 두세요. 개구리와 두 번째 울음은 소리만 있어서 스피커로는 방향이 안 들립니다.</li>
+      <li>숫자를 외우지 마세요. <b>“50, 30, 20”</b>과 <b>“여섯 자극”</b> 둘만 기억하면 됩니다.</li>
+    </ul>
+  </div>
+
+  <!-- ═══ 1장 ═══════════════════════════════════════════════ -->
+  <section class="beat">
+    <div class="slug">
+      <span class="no">01</span>
+      <h2>표제 — 왜 이 문제를 잡았는가</h2>
+      <span class="time">0:00 – 0:40</span>
+    </div>
+
+    <p class="cue"><b>화면</b> 제목만 있는 장. 위에 작은 원형 다이얼.</p>
+
+    <div class="say">
+      <p>인터랙티브 콘텐츠에는 오래된 문제가 하나 있습니다. 관객이 무슨 생각을 하는지 알려면, <em>물어봐야 한다</em>는 겁니다. 화면에 선택지를 띄우거나, 마이크에 대고 말하게 하거나요.</p>
+      <span class="pause">— 한 박자 쉬고</span>
+      <p>그런데 그 순간 관객은 관람객이 아니라 시험 보는 사람이 됩니다.</p>
+      <p>저희는 반대로 갔습니다. <em>아무것도 묻지 않고, 이야기가 관객을 읽습니다.</em> 제목을 “서사를 계측기로”라고 붙인 이유입니다.</p>
+    </div>
+
+    <div class="tip">
+      <span>제목을 그대로 읽지 마세요. 화면에 이미 있습니다. <b>문제부터 꺼내고 제목으로 착지하는 게</b> 훨씬 낫습니다.</span>
+    </div>
+  </section>
+
+  <!-- ═══ 2장 ═══════════════════════════════════════════════ -->
+  <section class="beat">
+    <div class="slug">
+      <span class="no">02</span>
+      <h2>구조 — 어떻게 읽고, 어떻게 장면을 짓는가</h2>
+      <span class="time">0:40 – 3:40</span>
+    </div>
+
+    <p class="cue"><b>화면</b> 왼쪽 방위도 · 오른쪽 수식과 표 세 덩어리. <b>네 박자로 나눠</b> 말합니다.</p>
+
+    <h3 style="font-family:var(--mono);font-size:.76rem;letter-spacing:.05em;color:var(--sage);margin:0 0 .7rem">① 방위도 — 오늘 발표의 핵심 (50초)</h3>
+
+    <div class="say">
+      <p>화면 왼쪽 그림부터 보시겠습니다. 가운데 주황색 점이 관객입니다. 벤치에 앉아 있습니다.</p>
+      <p>주위에 점이 여섯 개 있죠. 이게 정류장에서 벌어지는 일들입니다. 오른쪽 앞에 찢어진 포스터가 붙어 있고, 왼쪽 멀리 오십 미터 카페에서 우비 입은 사람이 나옵니다. 정면으로는 트럭이 지나가면서 물을 튀기고요.</p>
+      <p>여기 <em>속이 빈 동그라미 두 개</em>가 중요합니다. 소리만 나고 보이는 게 없습니다. 등 뒤 백삼십오도에서 개구리가 울고, 왼쪽 시야 밖에서 고양이가 한 번 더 웁니다.</p>
+      <span class="pause">— 여기서 한 박자</span>
+      <p>관객 입장에서는 그냥 정류장에서 일어나는 일입니다. 그런데 저희는 <em>언제, 어느 방향에서 자극을 줬는지 정확히 압니다.</em></p>
+      <p>그래서 “반응을 봤다”가 아니라 “이 자극에 이렇게 반응했다”를 잴 수 있습니다. 이게 이 연구의 핵심입니다.</p>
+    </div>
+
+    <div class="tip">
+      <span>수식은 <b>읽지 마세요.</b> 물어보면 그때 “자극마다 시점·방향·거리를 알고 있으니 반응을 자극별로 끊어 잴 수 있다는 뜻”이라고만 하면 됩니다.</span>
+    </div>
+
+    <h3 style="font-family:var(--mono);font-size:.76rem;letter-spacing:.05em;color:var(--sage);margin:1.6rem 0 .7rem">② 무엇을 읽는가 — 세 채널 (50초)</h3>
+
+    <div class="say">
+      <p>그 반응을 세 가지로 읽습니다. <em>시선과 자세가 절반</em>, 무슨 말을 했는지가 삼십 퍼센트, 목소리 톤이 이십 퍼센트입니다.</p>
+      <p>목소리 톤은 내용은 아예 무시하고 떨림이나 속도만 봅니다. 말을 안 하면요? 그 두 채널은 그냥 빼고 시선만으로 갑니다. <em>관객한테 말하라고 요구하지 않으니까요.</em></p>
+      <p>그리고 자극이 하나 끝날 때마다 다시 계산합니다. 칠십육 초를 다 보고 한 번에 판단하면, 관객 입장에서는 세상이 갑자기 바뀝니다. 증거가 쌓이는 대로 하늘이 조금씩 기울어야 자연스럽습니다.</p>
+    </div>
+
+    <h3 style="font-family:var(--mono);font-size:.76rem;letter-spacing:.05em;color:var(--sage);margin:1.6rem 0 .7rem">③ 어떻게 장면을 짓는가 — 세 갈래 (50초)</h3>
+
+    <div class="say">
+      <p>읽은 결과로 장면을 짓는데, 성질에 따라 세 갈래로 나뉩니다.</p>
+      <p><em>첫째, 섞을 수 있는 것.</em> 하늘색, 빛의 세기, 안개, 소리 크기. 이건 비율대로 물감처럼 섞습니다.</p>
+      <p><em>둘째, 못 섞는 것.</em> 옆에 앉는 사람입니다. 육십 퍼센트 젊은 여자에 사십 퍼센트 할머니인 사람은 만들 수가 없습니다. 그래서 미리 만들어 둔 것 중에 고르고, 3D 공간에 놓습니다.</p>
+      <p><em>셋째, 아예 새로 만드는 것.</em> 대사입니다. 문장은 “칠십 퍼센트 A문장 더하기 삼십 퍼센트 B문장”으로 섞을 수가 없습니다. 그래서 LLM이 그 자리에서 씁니다.</p>
+    </div>
+
+    <div class="tip">
+      <span>이 세 갈래가 <b>두 번째 기여</b>입니다. “다 섞으면 된다”가 아니라 <b>섞을 수 있는 것과 없는 것을 나눈 것</b>이 설계의 핵심이라고 말하면 좋습니다.</span>
+    </div>
+
+    <h3 style="font-family:var(--mono);font-size:.76rem;letter-spacing:.05em;color:var(--sage);margin:1.6rem 0 .7rem">④ 앞으로 구현할 것 (30초)</h3>
+
+    <div class="say">
+      <p>맨 아래가 앞으로 할 일입니다. LLM이 대사만이 아니라 <em>이야기 전개를 쓰고, 자산을 어디에 놓을지까지</em> 정하게 하는 것입니다.</p>
+      <p>다만 작가가 정한 것 — 언제 비밀을 털어놓는지, 언제 헤어지는지 — 은 AI가 못 바꾸게 <em>코드로 막아 뒀습니다.</em> 프롬프트로 부탁한 게 아니라요. 어기면 미리 녹음해 둔 대사로 자동으로 돌아갑니다.</p>
+    </div>
+  </section>
+
+  <!-- ═══ 3장 ═══════════════════════════════════════════════ -->
+  <section class="beat">
+    <div class="slug">
+      <span class="no">03</span>
+      <h2>쉬운 말 — 관객이 실제로 겪는 것</h2>
+      <span class="time">3:40 – 5:40</span>
+    </div>
+
+    <p class="cue"><b>화면</b> 왼쪽/오른쪽 대비 · 아래 표 여섯 줄. <b>표를 한 줄씩 짚으면서</b> 읽습니다.</p>
+
+    <div class="say">
+      <p>여기부터는 쉽게 말씀드리겠습니다.</p>
+      <p>지금까지 인터랙티브는 대체로 왼쪽입니다. 선택지를 띄우고 고르게 합니다. 결말은 미리 만들어 둔 몇 개 중 하나고요.</p>
+      <p>저희는 <em>고를 게 없습니다.</em> 벤치에 앉아 버스를 기다리기만 하면 됩니다. 그동안 시선이 어디로 갔는지, 목소리가 어땠는지, 표정이 어떻게 움직였는지를 읽고, LLM이 그걸 받아서 이야기를 쓰고 3D 정류장 안에 사람과 사물을 놓습니다.</p>
+      <span class="pause">— 아래 표로 내려가며</span>
+      <p>아래를 보시면, 정류장에서 벌어지는 일들이 사실은 <em>전부 자</em>입니다.</p>
+    </div>
+
+    <div class="points">
+      <div class="point"><span class="deg">72°</span><span><span class="what">찢어진 포스터</span> — <span class="why">글자를 읽으려고 몸을 기울이는 사람인가</span></span></div>
+      <div class="point"><span class="deg">−38°</span><span><span class="what">카페에서 나온 사람</span> — <span class="why">사람한테 관심이 가는 사람인가</span></span></div>
+      <div class="point"><span class="deg">정면</span><span><span class="what">트럭이 튀긴 물</span> — <span class="why">몸이 먼저 놀라는가, 얼마나 빨리 돌아오는가</span></span></div>
+      <div class="point"><span class="deg">뒤 135°</span><span><span class="what">개구리</span> — <span class="why">안 보이는 곳에 민감한가 <b>(소리만)</b></span></span></div>
+      <div class="point"><span class="deg">우→좌</span><span><span class="what">뛰어든 고양이</span> — <span class="why">놀라는가, 웃는가. <b>여기서 공포와 코미디가 갈립니다</b></span></span></div>
+      <div class="point"><span class="deg">−115°</span><span><span class="what">두 번째 울음</span> — <span class="why">아까 그 일을 기억하고 다시 확인하는가 <b>(소리만)</b></span></span></div>
+    </div>
+
+    <div class="say">
+      <p>관객은 자기가 읽히는 줄 모릅니다. <em>재는 자가 곧 이야기니까요.</em></p>
+      <p>그리고 이 모든 게 3D 안에서 일어납니다. 메뉴도, 선택지도, 평면 그림도 없습니다.</p>
+    </div>
+
+    <div class="tip">
+      <span>여섯 줄을 다 읽으면 늘어집니다. <b>개구리와 고양이 두 줄만 또박또박</b> 읽고 나머지는 훑으세요. 그 둘이 제일 잘 와닿습니다.</span>
+    </div>
+  </section>
+
+  <!-- ═══ 4장 ═══════════════════════════════════════════════ -->
+  <section class="beat">
+    <div class="slug">
+      <span class="no">04</span>
+      <h2>계획 — 그리고 오늘의 요청</h2>
+      <span class="time">5:40 – 7:00</span>
+    </div>
+
+    <p class="cue"><b>화면</b> 위쪽 노란 띠(선행 조건) · 아래 세 트랙. <b>노란 띠가 오늘의 핵심</b>입니다.</p>
+
+    <div class="say">
+      <p>마지막입니다. 지금 돌아가는 건 왼쪽 칸입니다. 여섯 자극과 공간음향, 세 채널 추정, 하늘과 빛 연출, 3D 캐릭터 장면, 그리고 검증 장치까지.</p>
+      <span class="pause">— 노란 띠를 가리키며</span>
+      <p>그런데 맨 위에 적어 둔 게 사실 오늘 제일 중요한 얘기입니다.</p>
+      <p>지금 쓰는 임계값이랑 가중치는 — 아까 말씀드린 오십, 삼십, 이십 같은 숫자요 — <em>전부 문서에서 옮긴 규칙이지 측정한 값이 아닙니다.</em></p>
+      <p>LLM이 쓰는 이야기도, 3D에 놓는 자산도, 하늘도 전부 “이 관객을 제대로 읽었다”를 전제로 합니다. 그 전제가 틀리면 위에 뭘 얹어도 <em>정교한 무작위</em>입니다.</p>
+      <p>그래서 다음 순서는 기능이 아니라 검증입니다. 실제로 스무 명에서 서른 명 정도 테스트가 필요합니다.</p>
+      <span class="pause">— 마지막 한 박자</span>
+      <p>지금까지 이걸 못 했던 이유가 있습니다. <em>테스터를 불러도 보여줄 자극이 없었습니다.</em> 이제는 있습니다.</p>
+      <p>그래서 오늘 요청드리는 건 하나입니다. 테스터 섭외입니다. 감사합니다.</p>
+    </div>
+
+    <div class="tip">
+      <span>“아직 안 된 것”을 숨기지 마세요. <b>무엇이 왜 안 됐는지 정확히 아는 것 자체가 진척</b>입니다. 마지막 문장은 요청으로 닫는 게 좋습니다 — 발표의 목적이 그것이니까요.</span>
+    </div>
+  </section>
+
+  <!-- ═══ 질의응답 ══════════════════════════════════════════ -->
+  <div class="qa">
+    <h2>나올 만한 질문</h2>
+    <p class="lede">눌러서 펼치면 답변이 나옵니다. 외우지 말고 <b>첫 문장만</b> 기억하세요.</p>
+
+    <details>
+      <summary>기존 감정 인식 연구와 뭐가 다른가요?</summary>
+      <div class="ans">
+        <p><b>문제 자체가 다릅니다.</b> 대부분의 감정 인식은 “자유로운 얼굴을 보고 감정을 맞힌다”입니다. 저희는 “언제 어느 방향에서 자극을 줬는지 알고, 그에 대한 반응을 잰다”입니다.</p>
+        <p>자극을 아니까 문제가 훨씬 쉬워지고, 같은 조건에서 다시 재면 재현이 됩니다. 그리고 그 자극이 곧 이야기라서 관객은 측정당한다는 걸 모릅니다.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>로맨스는 표정으로 어떻게 잡나요?</summary>
+      <div class="ans">
+        <p><b>못 잡습니다.</b> 공포와 놀람은 표정 연구에 정의돼 있는데 로맨스는 그런 게 없습니다.</p>
+        <p>그래서 로맨스를 감정이 아니라 <b>반응 패턴</b>으로 정의했습니다 — 놀라는 폭이 작고, 빨리 안정되고, 사람이 나오는 자극을 오래 봅니다. 자극별로 재기 때문에 이렇게 정의할 수 있는 겁니다.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>관객이 아무 반응도 없으면 어떻게 되나요?</summary>
+      <div class="ans">
+        <p><b>로맨스로 갑니다. 실패값이 아니라 설계입니다.</b></p>
+        <p>로맨스 인물은 관객이 아무 말 안 해도 혼자 이야기를 끌고 가도록 쓰여 있습니다. 공포는 관객의 긴장이, 코미디는 관객의 웃음이 있어야 장면이 사는데, 로맨스만 무반응을 그대로 흡수할 수 있습니다.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>어두운 전시장에서 웹캠이 되나요?</summary>
+      <div class="ans">
+        <p><b>안 됩니다.</b> 적외선 카메라로 바꿔야 하고, 이건 하드웨어 문제라 소프트웨어로 못 풉니다.</p>
+        <p>다만 판정의 주 신호를 <b>머리 회전각</b>으로 잡아 놨기 때문에, 카메라를 바꾸거나 헤드셋으로 가도 판정 로직은 그대로입니다. 신호를 어디서 받아오는지만 바뀝니다.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>LLM이 엉뚱한 말을 하면요?</summary>
+      <div class="ans">
+        <p><b>프롬프트로 부탁한 게 아니라 코드로 막았습니다.</b></p>
+        <p>아직 밝히면 안 되는 정보를 말하거나, 헤어지기 직전에 새 화제를 꺼내면 그 대사를 버립니다. 그리고 미리 녹음해 둔 대사로 넘어갑니다. <b>5분 타임라인은 무슨 일이 있어도 안 멈춥니다.</b></p>
+      </div>
+    </details>
+
+    <details>
+      <summary>지금 LLM이 실제로 돌고 있나요?</summary>
+      <div class="ans">
+        <p><b>아직 아닙니다.</b> 솔직히 말씀드리면 대사는 아직 고정된 마흔여섯 줄이고, 관객에 따라 바뀌는 건 하늘·빛·소리·인물, 그리고 보조 장르 대사 한 줄입니다.</p>
+        <p>대사 생성 엔진 자체는 만들어져 있고 로맨스 트랙에서 돌아갑니다. 남은 건 관객 상태를 프롬프트에 연결하는 것과, 그 앞에 있는 <b>지연 문제</b>입니다 — 관객이 말을 마치고 1.2초 안에 소리가 나와야 하는데 LLM에 음성 합성까지 더하면 넘습니다.</p>
+      </div>
+    </details>
+
+    <details>
+      <summary>판타지는 왜 뺐나요?</summary>
+      <div class="ans">
+        <p>8월에 세 축으로 확정했습니다. 축이 하나 늘면 대사·조명·인물 제작량이 곱으로 늘어나는데, 그만큼 구분이 뚜렷해지지는 않았습니다.</p>
+        <p>지금 세 축으로도 중간 배합이 무한히 나오기 때문에 표현의 폭은 줄지 않습니다.</p>
+      </div>
+    </details>
+  </div>
+
+  <footer>
+    장표: 「서사를 계측기로」 4장 · 대본과 짝입니다.<br>
+    상세 기술 문서는 저장소의 <code>Bus/규격/프로브_하네스.md</code>, 앱에서는 <code>/guide?doc=probe-harness</code>.
+  </footer>
+</div>
+
+<button class="themer" id="themer" aria-label="밝기 전환">THEME</button>
+
+<script>
+  document.getElementById('themer').addEventListener('click', () => {
+    const root = document.documentElement;
+    const now = root.getAttribute('data-theme');
+    const sysDark = matchMedia('(prefers-color-scheme: dark)').matches;
+    const isDark = now ? now === 'dark' : sysDark;
+    root.setAttribute('data-theme', isDark ? 'light' : 'dark');
+  });
+</script>
