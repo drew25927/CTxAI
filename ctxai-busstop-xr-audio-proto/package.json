@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "synthesize-dialogue": "node scripts/synthesize-dialogue.mjs"
+    "synthesize-dialogue": "node scripts/synthesize-dialogue.mjs",
+    "probe:fixtures": "node scripts/synth-sessions.mjs",
+    "probe:replay": "node scripts/replay.mjs",
+    "probe:golden": "node scripts/replay.mjs --update-golden"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",

@@ -349,3 +349,41 @@ export async function removeTask(id) {
   const tasks = await listTasks();
   await writeTasks(tasks.filter((t) => t.id !== id));
 }
+
+// ── 프로브 세션 ─────────────────────────────────────────
+//
+// 파일럿 세션 하나 = gzip 된 JSONL 한 개 + 요약 JSON 한 개.
+//
+//   sessions/<id>.jsonl.gz    원시 시계열 (요각·랜드마크·표정·프로브 타임스탬프)
+//   sessions/<id>.meta.json   요약 (판정 결과·자기보고·길이) — 목록 화면용
+//
+// 원시 영상은 저장하지 않는다. 랜드마크만 남기면 개인식별성이 훨씬 낮아
+// 동의 절차가 가벼워지고, 판정에 필요한 것도 랜드마크뿐이다.
+// (동의서는 요청서 v5.0 §3.3 의 8/15 항목)
+
+const SESSION_ID = /^[A-Za-z0-9_-]{4,64}$/;
+
+export async function putSession(id, gzBytes, meta) {
+  if (!SESSION_ID.test(id)) throw new Error(`세션 id 형식 오류: ${id}`);
+  await put(`sessions/${id}.jsonl.gz`, gzBytes, "application/gzip");
+  const summary = { ...meta, id, savedAt: new Date().toISOString(), bytes: gzBytes.length };
+  await put(`sessions/${id}.meta.json`, Buffer.from(JSON.stringify(summary, null, 2)), "application/json");
+  return summary;
+}
+
+export async function listSessions() {
+  const files = await list("sessions");
+  const out = [];
+  for (const f of files) {
+    if (!f.endsWith(".meta.json")) continue;
+    const raw = await get(`sessions/${f}`);
+    if (!raw) continue;
+    try { out.push(JSON.parse(raw.toString("utf8"))); } catch (e) {}
+  }
+  return out.sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
+}
+
+export async function getSessionBytes(id) {
+  if (!SESSION_ID.test(id)) return null;
+  return get(`sessions/${id}.jsonl.gz`);
+}

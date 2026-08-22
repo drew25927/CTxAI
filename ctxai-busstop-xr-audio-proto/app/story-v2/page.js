@@ -77,6 +77,9 @@ function recordFor(audioTrack, ms) {
 export default function StoryV2Page() {
   const [phase, setPhase] = useState("gate"); // gate | observe | judge | reveal
   const [fused, setFused] = useState(null); // { scores, dominant, secondary, confidence, reason }
+  // /probe 에서 넘어온 판정. 있으면 관찰을 다시 하지 않고 그 벡터로 바로 간다 —
+  // 다섯 사건에 대한 반응이 이야기를 바꾸는 것을 눈으로 보는 경로다.
+  const [handoff, setHandoff] = useState(null);
 
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -93,6 +96,18 @@ export default function StoryV2Page() {
   const streamRef = useRef(null);
 
   useEffect(() => () => streamRef.current?.getTracks().forEach((t) => t.stop()), []);
+
+  // useSearchParams 대신 location 을 직접 읽는다 — 이 페이지는 정적 렌더라
+  // 훅을 쓰면 Suspense 경계가 필요해진다.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("from") !== "probe") return;
+    try {
+      const raw = sessionStorage.getItem("busstop.probeResult");
+      const saved = raw ? JSON.parse(raw) : null;
+      if (saved?.scores) setHandoff(saved);
+    } catch (e) { /* 없으면 평소대로 관찰한다 */ }
+  }, []);
 
   async function start() {
     try {
@@ -248,7 +263,31 @@ export default function StoryV2Page() {
         )}
       </div>
 
-      {phase === "gate" && (
+      {phase === "gate" && handoff && (
+        <div className={s.intro}>
+          <div className={s.introCard}>
+            <p className={s.introEyebrow}>프로브 하네스에서 넘어옴</p>
+            <h1 className={s.introTitle}>당신의 반응이 이 배합을 만들었습니다</h1>
+            <p className={s.introSub}>
+              {["H", "R", "C"]
+                .filter((g) => (handoff.scores[g] || 0) >= 0.08)
+                .sort((a, b) => handoff.scores[b] - handoff.scores[a])
+                .map((g) => `${DIALOGUE_V2_GENRE_LABEL[g]} ${Math.round(handoff.scores[g] * 100)}%`)
+                .join(" · ")}
+              {handoff.sessionId ? ` · 세션 ${handoff.sessionId}` : ""}
+            </p>
+            <p className={s.introSub}>
+              다섯 사건에 어떻게 반응했는지가 그대로 반영됩니다 — 주도 장르의 그림과 대사를
+              기본으로 하고, 보조 장르 비중만큼 색감이 얹히고 콜백 대사 한 줄이 끼어듭니다.
+            </p>
+            <button className={s.choiceBtn} onClick={() => reveal(handoff)} style={{ justifyContent: "center" }}>
+              <span>이야기 보기</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {phase === "gate" && !handoff && (
         <div className={s.intro}>
           <div className={s.introCard}>
             <p className={s.introEyebrow}>정류장 · 프로토타입 데모 (v2)</p>
@@ -260,6 +299,10 @@ export default function StoryV2Page() {
             <button className={s.choiceBtn} onClick={start} style={{ justifyContent: "center" }}>
               <span>시작하기</span>
             </button>
+            <p className={s.introSub} style={{ marginTop: 14, opacity: 0.7 }}>
+              다섯 사건(포스터·우비 인물·물보라·개구리·고양이)을 실제로 겪고 오시려면{" "}
+              <a href="/probe" style={{ color: "inherit" }}>프로브 하네스</a>를 먼저 거치세요. 헤드폰이 필요합니다.
+            </p>
           </div>
         </div>
       )}

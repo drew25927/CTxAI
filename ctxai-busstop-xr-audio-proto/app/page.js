@@ -314,7 +314,9 @@ export default function TeamPage() {
         <a href="/judge">판정 대시보드 (v1)</a> ·{" "}
         <a href="/story-v2">🆕 시나리오 데모 (v2·연속 블렌딩, 실험적)</a> ·{" "}
         <a href="/judge-v2">판정 대시보드 (v2)</a> ·{" "}
+        <a href="/probe">🎧 프로브 하네스 (다섯 사건 파일럿 · 헤드폰 필요)</a> ·{" "}
         <a href="/guide?doc=tech-direction">기술 발전 방향</a> ·{" "}
+        <a href="/guide?doc=probe-harness">프로브 하네스 설명서</a> ·{" "}
         매니페스트는 자동으로 만들어집니다 —{" "}
         <a href="/api/manifest?download=1">내려받기</a> ·{" "}
         <a href="/api/health">백엔드 상태</a>

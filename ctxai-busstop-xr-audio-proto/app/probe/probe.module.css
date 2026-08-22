@@ -1,0 +1,256 @@
+.wrap {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: #8f96a0;
+  user-select: none;
+  touch-action: none;
+}
+
+.canvasHost {
+  position: absolute;
+  inset: 0;
+  cursor: grab;
+}
+.canvasHost.dragging { cursor: grabbing; }
+
+.hiddenVideo {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0.01;
+  pointer-events: none;
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(12, 14, 18, 0.72);
+  backdrop-filter: blur(6px);
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.card {
+  width: min(560px, 100%);
+  background: #14171c;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 14px;
+  padding: 26px 28px;
+  color: #e8eaee;
+  line-height: 1.65;
+}
+
+.eyebrow {
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: #8b939e;
+  margin: 0 0 6px;
+}
+.card h1 { font-size: 21px; margin: 0 0 12px; font-weight: 600; }
+.card h2 { font-size: 16px; margin: 20px 0 8px; font-weight: 600; }
+.card p { margin: 0 0 12px; font-size: 14px; color: #c3c9d2; }
+.card ul { margin: 0 0 14px; padding-left: 18px; font-size: 14px; color: #c3c9d2; }
+.card li { margin-bottom: 5px; }
+
+.note {
+  font-size: 13px;
+  color: #98a0ab;
+  border-left: 2px solid #3c434d;
+  padding-left: 11px;
+  margin: 14px 0;
+}
+
+.btn {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: #232830;
+  color: #eef1f5;
+  border-radius: 9px;
+  padding: 11px 20px;
+  font-size: 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.btn:hover { background: #2c323b; }
+.btn:disabled { opacity: 0.45; cursor: default; }
+.btnPrimary { background: #3d5a49; border-color: #4d7059; }
+.btnPrimary:hover { background: #47684f; }
+
+.row { display: flex; gap: 9px; flex-wrap: wrap; margin-top: 16px; }
+
+/* 진행 중 화면 — 최소한만 보인다 */
+.hud {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  padding: 14px 18px 18px;
+  background: linear-gradient(transparent, rgba(10, 12, 15, 0.55));
+  color: #dfe3e9;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  pointer-events: none;
+}
+.progressTrack {
+  flex: 1;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.progressFill { height: 100%; background: #8fae95; transition: width 0.2s linear; }
+
+.compass {
+  font-variant-numeric: tabular-nums;
+  color: #aab2bd;
+  min-width: 96px;
+}
+
+.hint {
+  position: absolute;
+  top: 18px; left: 0; right: 0;
+  text-align: center;
+  color: rgba(232, 234, 238, 0.62);
+  font-size: 13px;
+  pointer-events: none;
+  transition: opacity 0.6s;
+}
+.hintFade { opacity: 0; }
+
+/* 설문 */
+.q { margin: 18px 0 6px; font-size: 14px; color: #dfe3e9; }
+.choices { display: flex; gap: 8px; flex-wrap: wrap; }
+.choice {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: #1b1f26;
+  color: #cfd5dd;
+  border-radius: 8px;
+  padding: 9px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+}
+.choice:hover { border-color: rgba(255, 255, 255, 0.3); }
+.choicePicked { background: #3d5a49; border-color: #5b8069; color: #f2f5f7; }
+
+.scale { display: flex; gap: 6px; }
+.scale .choice { min-width: 42px; text-align: center; }
+
+.textarea {
+  width: 100%;
+  min-height: 68px;
+  background: #1b1f26;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  color: #dfe3e9;
+  padding: 10px 12px;
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.status {
+  font-size: 13px;
+  color: #9aa2ad;
+  margin-top: 12px;
+  min-height: 18px;
+}
+.err { color: #d98a8a; }
+
+.result {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  background: #0f1216;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 12px;
+  color: #b9c1cb;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-top: 12px;
+}
+
+.bars { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.barRow { display: flex; align-items: center; gap: 9px; font-size: 12px; }
+.barLabel { width: 66px; color: #b9c1cb; }
+.barTrack { flex: 1; height: 7px; background: rgba(255, 255, 255, 0.09); border-radius: 4px; overflow: hidden; }
+.barFill { height: 100%; background: #8fae95; }
+.barVal { width: 38px; text-align: right; color: #b9c1cb; }
+
+.foot { margin-top: 18px; font-size: 12px; color: #7e8792; }
+.foot a { color: #9fb0a5; }
+
+/* ── 진행 중 누적 판정 (개발용) ─────────────────────────
+   사건이 하나 끝날 때마다 하늘·소리와 함께 이 막대가 기운다.
+   관객용 최종형에는 노출되지 않는다. */
+.liveBlend {
+  position: absolute;
+  right: 18px;
+  top: 18px;
+  width: 168px;
+  padding: 11px 12px 9px;
+  border-radius: 10px;
+  background: rgba(12, 14, 18, 0.5);
+  backdrop-filter: blur(5px);
+  pointer-events: none;
+}
+.liveRow { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+.liveLabel { width: 58px; font-size: 11px; color: #c3c9d2; }
+.liveTrack { flex: 1; height: 5px; background: rgba(255, 255, 255, 0.13); border-radius: 3px; overflow: hidden; }
+.liveFill { height: 100%; background: #8fae95; transition: width 0.7s ease-out; }
+.liveNote { font-size: 10px; color: #8b939e; margin-top: 6px; text-align: right; }
+
+/* ── 캐릭터 장면 자막 ──────────────────────────────────── */
+.subtitle {
+  position: absolute;
+  left: 50%;
+  bottom: 8vh;
+  transform: translateX(-50%);
+  width: min(680px, 88vw);
+  padding: 16px 22px 18px;
+  border-radius: 12px;
+  background: rgba(10, 12, 15, 0.62);
+  backdrop-filter: blur(7px);
+  text-align: center;
+  pointer-events: none;
+  animation: subIn 0.45s ease-out;
+}
+@keyframes subIn {
+  from { opacity: 0; transform: translate(-50%, 10px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+.subtitleSeq {
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: 0.07em;
+  color: #8b939e;
+  margin-bottom: 7px;
+}
+.subtitleText {
+  margin: 0;
+  font-size: 19px;
+  line-height: 1.6;
+  color: #eef1f5;
+  word-break: keep-all;
+}
+
+.skip {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(20, 23, 28, 0.6);
+  color: #b9c1cb;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  font-family: inherit;
+  backdrop-filter: blur(5px);
+}
+.skip:hover { color: #e8eaee; border-color: rgba(255, 255, 255, 0.3); }

@@ -1,0 +1,184 @@
+{
+  "participant-a-romance": {
+    "gaze": {
+      "R": 0.5871,
+      "H": 0.0665,
+      "C": 0.3465
+    },
+    "cam": {
+      "R": 1,
+      "H": 0,
+      "C": 0
+    },
+    "fused": {
+      "R": 0.5871,
+      "H": 0.0665,
+      "C": 0.3465
+    },
+    "confidence": 0.2171,
+    "intensity": {
+      "poster": 0,
+      "wiper": 2,
+      "truck": 1,
+      "frog": 0,
+      "cat": 1,
+      "cry2": 0
+    }
+  },
+  "participant-b-horror": {
+    "gaze": {
+      "R": 0.2869,
+      "H": 0.4957,
+      "C": 0.2173
+    },
+    "cam": {
+      "R": 0.6667,
+      "H": 0.3333,
+      "C": 0
+    },
+    "fused": {
+      "R": 0.2869,
+      "H": 0.4957,
+      "C": 0.2173
+    },
+    "confidence": 0.0553,
+    "intensity": {
+      "poster": 0,
+      "wiper": 2,
+      "truck": 1,
+      "frog": 2,
+      "cat": 2,
+      "cry2": 2
+    }
+  },
+  "participant-c-comedy": {
+    "gaze": {
+      "R": 0.282,
+      "H": 0.3546,
+      "C": 0.3635
+    },
+    "cam": {
+      "R": 0.7267,
+      "H": 0,
+      "C": 0.2733
+    },
+    "fused": {
+      "R": 0.282,
+      "H": 0.3546,
+      "C": 0.3635
+    },
+    "confidence": 0.0056,
+    "intensity": {
+      "poster": 2,
+      "wiper": 2,
+      "truck": 1,
+      "frog": 2,
+      "cat": 2,
+      "cry2": 2
+    }
+  },
+  "reg-frog-only": {
+    "gaze": {
+      "R": 0,
+      "H": 0.8463,
+      "C": 0.1537
+    },
+    "cam": {
+      "R": 0.6667,
+      "H": 0.3333,
+      "C": 0
+    },
+    "fused": {
+      "R": 0,
+      "H": 0.8463,
+      "C": 0.1537
+    },
+    "confidence": 0.6094,
+    "intensity": {
+      "poster": 0,
+      "wiper": 0,
+      "truck": 0,
+      "frog": 2,
+      "cat": 1,
+      "cry2": 0
+    }
+  },
+  "reg-laughing": {
+    "gaze": {
+      "R": 0.2445,
+      "H": 0.268,
+      "C": 0.4875
+    },
+    "cam": {
+      "R": 0.7,
+      "H": 0,
+      "C": 0.3
+    },
+    "fused": {
+      "R": 0.2445,
+      "H": 0.268,
+      "C": 0.4875
+    },
+    "confidence": 0.0465,
+    "intensity": {
+      "poster": 0,
+      "wiper": 0,
+      "truck": 0,
+      "frog": 0,
+      "cat": 2,
+      "cry2": 0
+    }
+  },
+  "reg-mouth-covered": {
+    "gaze": {
+      "R": 1,
+      "H": 0,
+      "C": 0
+    },
+    "cam": {
+      "R": 0.9167,
+      "H": 0.0833,
+      "C": 0
+    },
+    "fused": {
+      "R": 1,
+      "H": 0,
+      "C": 0
+    },
+    "confidence": 1,
+    "intensity": {
+      "poster": 0,
+      "wiper": 0,
+      "truck": 0,
+      "frog": 0,
+      "cat": 0,
+      "cry2": 0
+    }
+  },
+  "reg-silent": {
+    "gaze": {
+      "R": 1,
+      "H": 0,
+      "C": 0
+    },
+    "cam": {
+      "R": 1,
+      "H": 0,
+      "C": 0
+    },
+    "fused": {
+      "R": 1,
+      "H": 0,
+      "C": 0
+    },
+    "confidence": 1,
+    "intensity": {
+      "poster": 0,
+      "wiper": 0,
+      "truck": 0,
+      "frog": 0,
+      "cat": 0,
+      "cry2": 0
+    }
+  }
+}
