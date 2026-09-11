@@ -23,6 +23,9 @@ const FAST_RECOVERY_MS = 2000;
 // 한 프레임 안에서 이보다 더 튀면 손 가림 등 인식 오류로 보고 버린다
 // (실제 고개 회전은 한 프레임 만에 이 정도로 안 튐)
 const MAX_FRAME_JUMP = 0.10;
+// 계산에 쓰는 5개 점의 visibility가 이보다 낮으면 손 등으로 가려진 것으로
+// 보고 버린다 (모델이 랜드마크는 추정해서 내놓지만 신뢰도가 낮은 경우).
+const MIN_VISIBILITY_TH = 0.5;
 
 export const CHANNEL_WEIGHTS = { behavior: 0.5, text: 0.3, voice: 0.2 };
 
@@ -118,6 +121,7 @@ export async function observe(videoEl, durationMs, onTick) {
   const startedAt = performance.now();
   let baseline = null;
   let lostMs = 0;
+  let occludedMs = 0;
   let lastT = 0;
   let lastAccepted = null; // 튐 판정 기준이 되는 마지막으로 받아들인 원값
   let maxFear = 0, maxAmusement = 0;
@@ -134,37 +138,45 @@ export async function observe(videoEl, durationMs, onTick) {
         const result = landmarker.detectForVideo(videoEl, now);
         const lm = result?.faceLandmarks?.[0];
         if (lm) {
-          const sig = frameSignal(lm);
-
-          // 손이 얼굴을 스치는 등으로 한 프레임 만에 물리적으로 불가능하게
-          // 튀면 인식 오류로 보고 버린다 (이전 유효값을 유지) — §관찰 로그 참고.
-          const jump = lastAccepted ? Math.max(Math.abs(sig.dx - lastAccepted.dx), Math.abs(sig.dy - lastAccepted.dy)) : 0;
-          if (lastAccepted && jump > MAX_FRAME_JUMP) {
+          const vis = minVisibility(lm);
+          if (vis < MIN_VISIBILITY_TH) {
+            // 손 등으로 얼굴 일부가 가려져 신뢰도가 낮다 — 이번 프레임은
+            // MAX_FRAME_JUMP 튐 처리와 동일하게 인식 오류로 버린다.
+            if (elapsed > 1200) occludedMs += Math.max(0, frameDelta);
             onTick?.({ faceFound: true, dx: 0, dy: 0, scaleRatio: 1, rejected: true });
           } else {
-            lastAccepted = sig;
-            const fear = blendshapeScore(result?.faceBlendshapes?.[0]?.categories, FEAR_SHAPES);
-            const amusement = blendshapeScore(result?.faceBlendshapes?.[0]?.categories, AMUSEMENT_SHAPES);
-            if (elapsed > 1200) {
-              if (fear > maxFear) maxFear = fear;
-              if (amusement > maxAmusement) maxAmusement = amusement;
-            }
+            const sig = frameSignal(lm);
 
-            samples.push({ t: elapsed, ...sig });
-            if (!baseline && elapsed > 1200) {
-              const early = samples.filter((s) => s.t <= 1200);
-              baseline = {
-                dx: early.reduce((a, s) => a + s.dx, 0) / early.length,
-                dy: early.reduce((a, s) => a + s.dy, 0) / early.length,
-                scale: early.reduce((a, s) => a + s.scale, 0) / early.length,
-              };
+            // 손이 얼굴을 스치는 등으로 한 프레임 만에 물리적으로 불가능하게
+            // 튀면 인식 오류로 보고 버린다 (이전 유효값을 유지) — §관찰 로그 참고.
+            const jump = lastAccepted ? Math.max(Math.abs(sig.dx - lastAccepted.dx), Math.abs(sig.dy - lastAccepted.dy)) : 0;
+            if (lastAccepted && jump > MAX_FRAME_JUMP) {
+              onTick?.({ faceFound: true, dx: 0, dy: 0, scaleRatio: 1, rejected: true });
+            } else {
+              lastAccepted = sig;
+              const fear = blendshapeScore(result?.faceBlendshapes?.[0]?.categories, FEAR_SHAPES);
+              const amusement = blendshapeScore(result?.faceBlendshapes?.[0]?.categories, AMUSEMENT_SHAPES);
+              if (elapsed > 1200) {
+                if (fear > maxFear) maxFear = fear;
+                if (amusement > maxAmusement) maxAmusement = amusement;
+              }
+
+              samples.push({ t: elapsed, ...sig });
+              if (!baseline && elapsed > 1200) {
+                const early = samples.filter((s) => s.t <= 1200);
+                baseline = {
+                  dx: early.reduce((a, s) => a + s.dx, 0) / early.length,
+                  dy: early.reduce((a, s) => a + s.dy, 0) / early.length,
+                  scale: early.reduce((a, s) => a + s.scale, 0) / early.length,
+                };
+              }
+              onTick?.({
+                faceFound: true,
+                dx: baseline ? sig.dx - baseline.dx : 0,
+                dy: baseline ? sig.dy - baseline.dy : 0,
+                scaleRatio: baseline ? sig.scale / baseline.scale : 1,
+              });
             }
-            onTick?.({
-              faceFound: true,
-              dx: baseline ? sig.dx - baseline.dx : 0,
-              dy: baseline ? sig.dy - baseline.dy : 0,
-              scaleRatio: baseline ? sig.scale / baseline.scale : 1,
-            });
           }
         } else {
           if (elapsed > 1200) lostMs += Math.max(0, frameDelta); // 초기 캘리브레이션 구간은 제외
@@ -180,6 +192,7 @@ export async function observe(videoEl, durationMs, onTick) {
   cancelAnimationFrame(raf);
 
   const lostTrackingSec = Number((lostMs / 1000).toFixed(2));
+  const handOcclusionSec = Number((occludedMs / 1000).toFixed(2));
   maxFear = Number(maxFear.toFixed(3));
   maxAmusement = Number(maxAmusement.toFixed(3));
 
@@ -190,7 +203,7 @@ export async function observe(videoEl, durationMs, onTick) {
       ok: true,
       metrics: {
         maxAbsDx: 0, maxAbsDy: 0, maxScaleDrop: 0, reversals: 0,
-        sustainedSec: 0, recoveryMs: durationMs, lostTrackingSec, maxFear, maxAmusement,
+        sustainedSec: 0, recoveryMs: durationMs, lostTrackingSec, handOcclusionSec, maxFear, maxAmusement,
       },
     };
   }
@@ -235,6 +248,7 @@ export async function observe(videoEl, durationMs, onTick) {
       sustainedSec: Number((sustainedMs / 1000).toFixed(2)),
       recoveryMs: Math.round(recoveryMs),
       lostTrackingSec,
+      handOcclusionSec,
       maxFear,
       maxAmusement,
     },
