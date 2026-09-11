@@ -1,34 +1,34 @@
 [
   {
+    "date": "2026-09-11",
+    "text": "Declutter the dashboard: collapse legacy screens, trim duplication"
+  },
+  {
+    "date": "2026-09-11",
+    "text": "Auto-select a freshly uploaded dialogue take on re-upload"
+  },
+  {
+    "date": "2026-09-11",
+    "text": "Add button fallback for reactions when voice recognition fails"
+  },
+  {
+    "date": "2026-09-11",
+    "text": "Reject low-visibility face landmark frames as hand occlusion"
+  },
+  {
+    "date": "2026-09-01",
+    "text": "Implement BlockoutStage per the confirmed plan: fixed terrain, genre-only lighting"
+  },
+  {
+    "date": "2026-08-25",
+    "text": "Rewrite the 3D background plan around v1.1's actual genre-sky table"
+  },
+  {
+    "date": "2026-08-25",
+    "text": "Add a 3D background composition plan doc with reference images"
+  },
+  {
     "date": "2026-08-25",
     "text": "Wrap the horizon in a full 360° forest ring, not just scripted-event angles"
-  },
-  {
-    "date": "2026-08-25",
-    "text": "Lay out the blockout scene's full 360° to match the original script, not guesswork"
-  },
-  {
-    "date": "2026-08-25",
-    "text": "Redesign the blockout scene to match the actual reference art"
-  },
-  {
-    "date": "2026-08-25",
-    "text": "Make /story-vr's 3D scene actually look-aroundable, not just 3D-shaped"
-  },
-  {
-    "date": "2026-08-25",
-    "text": "Add a dedicated URL for the /story-vr prototype"
-  },
-  {
-    "date": "2026-08-25",
-    "text": "Replace flat-image /story-vr backdrop with real 3D blockout geometry"
-  },
-  {
-    "date": "2026-08-25",
-    "text": "Show the real story art in /story-vr instead of GLB wireframe placeholders"
-  },
-  {
-    "date": "2026-08-25",
-    "text": "Add /story-vr — web VR version of the judgment/reveal experience"
   }
 ]
