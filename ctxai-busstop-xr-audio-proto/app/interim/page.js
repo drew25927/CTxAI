@@ -25,8 +25,11 @@
 //   짧은 녹음 안에서 소리가 한 번 크게 튀는지(탄성·비명) 여러 번 반복되는지(웃음)만
 //   보는 잠정 휴리스틱이다.
 //
-// 아직 연결 안 된 것 (화면 우측 HUD에 "미연결"로 표시됨)
-//   기립 감지(S5 등급 A) — 헤드셋 "높이" 변화 트래킹 미구현. 항상 미연결.
+//   기립 감지 — S5(개구리) 등급 A("크게 놀라 기립") 전용. 헤드셋 높이(Y) 변화로 잡는다.
+//   lib/standUpSense.js — 데스크톱 드래그는 카메라 위치가 안 바뀌므로(회전만) 실제
+//   헤드셋 세션(WebXR)에서만 의미가 있고, 데스크톱에서는 항상 false다.
+//
+// 아직 연결 안 된 것
 //   외부 몸 카메라 — 스펙은 별도 카메라를 가정하지만 이 웹 앱엔 얼굴 웹캠 하나뿐이라
 //   S2·S4는 그 웹캠으로 근사한다(lib/interimGrader.js 상단 주석 참고).
 //
@@ -47,6 +50,7 @@ import { CUES, evalActors } from "@/lib/interimTimeline";
 import { createInterimDrift } from "@/lib/interimDrift";
 import { judge } from "@/lib/interimJudge";
 import { createHeadPoseSensor } from "@/lib/headPoseSense";
+import { createStandUpSensor } from "@/lib/standUpSense";
 import { observe } from "@/lib/behaviorSense";
 import { recordClip, analyzeMicBurst } from "@/lib/interimMic";
 import {
@@ -85,7 +89,7 @@ function useQuery() {
 // 드리프트를 tick하고, 판정 시점에 judge()를 부른다. 렌더는 순수하게 actorsRef/driftRef를
 // 프레임마다 갱신하는 것뿐이라 React 상태로 만들지 않는다 — 화면 전환이 필요한 지점만
 // onCue로 페이지에 알린다.
-function InterimDirector({ actorsRef, driftRef, sensorRef, observationsRef, onCue, speed = 1 }) {
+function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, observationsRef, onCue, speed = 1 }) {
   const session = useXR((xr) => xr.session);
   const euler = useMemo(() => new Euler(), []);
   const tRef = useRef(0);
@@ -102,6 +106,7 @@ function InterimDirector({ actorsRef, driftRef, sensorRef, observationsRef, onCu
     const pitch = MathUtils.radToDeg(euler.x);
     const z = session ? state.camera.position.z : 0;
     sensorRef.current?.update(yaw, pitch, z, clamped);
+    standUpRef.current?.update(state.camera.position.y, clamped, !!session);
 
     tRef.current += clamped * speed;
     const t = tRef.current;
@@ -150,6 +155,7 @@ export default function InterimPage() {
   const actorsRef = useRef({});
   const driftRef = useRef(null);
   const sensorRef = useRef(null);
+  const standUpRef = useRef(null);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const micStreamRef = useRef(null);
@@ -158,6 +164,7 @@ export default function InterimPage() {
   const observationsRef = useRef({}); // judge()에 실제로 들어가는 값 — 매 프레임 병합
 
   if (!driftRef.current) driftRef.current = createInterimDrift();
+  if (!standUpRef.current) standUpRef.current = createStandUpSensor();
   if (!sensorRef.current) {
     sensorRef.current = createHeadPoseSensor({
       push: () => {}, // 연속 블렌딩(lib/directionState.js)은 안 쓴다 — 드리프트는 interimDrift가 따로 맡는다
@@ -168,7 +175,7 @@ export default function InterimPage() {
         const grade =
           cue.signal === "S1" ? gradeS1FromHeadPose(detail.feats) :
           cue.signal === "S3" ? gradeS3FromHeadPose(detail.feats) :
-          cue.signal === "S5" ? gradeS5FromHeadPose(detail.feats) : null;
+          cue.signal === "S5" ? gradeS5FromHeadPose(detail.feats, { stoodUp: standUpRef.current?.stoodUp }) : null;
         if (grade) liveGradesRef.current = { ...liveGradesRef.current, [cue.signal]: grade };
       },
     });
@@ -197,6 +204,7 @@ export default function InterimPage() {
         setHud({
           current: { ...d.st.current }, settled: d.st.settled, elapsed: d.st.elapsed,
           grades: merged,
+          stoodUp: !!standUpRef.current?.stoodUp,
           debugSignals: new Set(Object.keys(debugObsRef.current)),
         });
       }
@@ -294,7 +302,7 @@ export default function InterimPage() {
             <ReactiveStage actorsRef={actorsRef} directionRef={driftRef} dominant={genre} reflect={!xrActive} />
             <XRProbe onChange={setXrActive} />
             {phase !== "gate" && (
-              <InterimDirector actorsRef={actorsRef} driftRef={driftRef} sensorRef={sensorRef} observationsRef={observationsRef} onCue={onCue} speed={speed} />
+              <InterimDirector actorsRef={actorsRef} driftRef={driftRef} sensorRef={sensorRef} standUpRef={standUpRef} observationsRef={observationsRef} onCue={onCue} speed={speed} />
             )}
           </XR>
           <OrbitControls target={[0, 1.15, 0.34]} enableZoom={false} enablePan={false} enableDamping dampingFactor={0.08} rotateSpeed={-0.35} />
@@ -351,8 +359,11 @@ export default function InterimPage() {
           <div className={f.hudMeta} style={{ opacity: 0.85 }}>
             센서 — 헤드셋/드래그 <b style={{ color: "#8fd68f" }}>연결됨</b> · 웹캠 <b style={{ color: okColor(camStatus) }}>{CAM_LABEL[camStatus]}</b> · 마이크 <b style={{ color: okColor(micStatus) }}>{MIC_LABEL[micStatus]}</b>
           </div>
+          <div className={f.hudMeta} style={{ opacity: 0.85 }}>
+            기립 감지(S5:A) <b style={{ color: hud.stoodUp ? "#8fd68f" : "#c9c9c9" }}>{!xrActive ? "헤드셋 필요(데스크톱)" : hud.stoodUp ? "감지됨" : "대기 중"}</b>
+          </div>
           <div className={f.hudMeta} style={{ opacity: 0.6 }}>
-            미연결 — 기립 감지(S5:A) <b>미연결</b> (그 외엔 외부 몸 카메라를 얼굴 웹캠으로 근사 중)
+            미연결 — 외부 몸 카메라 (S2·S4는 얼굴 웹캠으로 근사 중)
           </div>
         </div>
       )}
