@@ -20,8 +20,12 @@
 //   웹캠(관객 얼굴) — S2(트럭 물보라)·S4(고양이) 담당. 권한을 거부하거나 얼굴이 안 잡히면
 //   그 신호는 "관측 실패"로 남는다(판정 엔진의 규칙④가 처리). lib/behaviorSense.js 재사용.
 //
+//   마이크 — S2·S4의 보조 신호(웃음·탄성·비명). 표정과 같은 사건을 다른 채널로 보는
+//   것이라, 표정에 안 잡혀도 소리가 크게 나면 그대로 인정한다. lib/interimMic.js —
+//   짧은 녹음 안에서 소리가 한 번 크게 튀는지(탄성·비명) 여러 번 반복되는지(웃음)만
+//   보는 잠정 휴리스틱이다.
+//
 // 아직 연결 안 된 것 (화면 우측 HUD에 "미연결"로 표시됨)
-//   마이크(웃음·탄성·비명) — S2·S4의 보조 신호. 항상 미연결.
 //   기립 감지(S5 등급 A) — 헤드셋 "높이" 변화 트래킹 미구현. 항상 미연결.
 //   외부 몸 카메라 — 스펙은 별도 카메라를 가정하지만 이 웹 앱엔 얼굴 웹캠 하나뿐이라
 //   S2·S4는 그 웹캠으로 근사한다(lib/interimGrader.js 상단 주석 참고).
@@ -30,7 +34,8 @@
 //   ?s1=A&s2=B...   특정 신호를 강제로 덮어쓴다(점검용) — 주면 그 신호는 실제 센서 대신
 //                   이 값을 쓴다. 안 주면 실제 센서 결과를 쓴다.
 //   ?speed=3        영화 시간 배속 (데모용)
-//   ?cam=0          웹캠 채널 끄기 (S2·S4가 항상 "관측 실패"로 남는다)
+//   ?cam=0          웹캠 채널 끄기
+//   ?mic=0          마이크 채널 끄기 (둘 다 끄면 S2·S4가 항상 "관측 실패"로 남는다)
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
@@ -43,6 +48,7 @@ import { createInterimDrift } from "@/lib/interimDrift";
 import { judge } from "@/lib/interimJudge";
 import { createHeadPoseSensor } from "@/lib/headPoseSense";
 import { observe } from "@/lib/behaviorSense";
+import { recordClip, analyzeMicBurst } from "@/lib/interimMic";
 import {
   gradeS1FromHeadPose, gradeS3FromHeadPose, gradeS5FromHeadPose,
   gradeS2FromWebcam, gradeS4FromWebcam,
@@ -138,6 +144,7 @@ export default function InterimPage() {
   const [xrActive, setXrActive] = useState(false);
   const [xrError, setXrError] = useState(null);
   const [camStatus, setCamStatus] = useState("idle"); // idle | starting | on | denied | no-face | off
+  const [micStatus, setMicStatus] = useState("idle"); // idle | starting | on | denied | off
   const [hud, setHud] = useState(null);
 
   const actorsRef = useRef({});
@@ -145,6 +152,7 @@ export default function InterimPage() {
   const sensorRef = useRef(null);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
+  const micStreamRef = useRef(null);
   const debugObsRef = useRef({});   // ?s1=A 같은 강제 덮어쓰기
   const liveGradesRef = useRef({}); // 실제 센서가 매긴 등급
   const observationsRef = useRef({}); // judge()에 실제로 들어가는 값 — 매 프레임 병합
@@ -198,6 +206,7 @@ export default function InterimPage() {
 
   const speed = Number(q.speed) || 1;
   const useCam = q.cam !== "0";
+  const useMic = q.mic !== "0";
 
   function onCue(cue) {
     if (cue.name === "judged") { setGenre(cue.result.genre); return; }
@@ -214,14 +223,29 @@ export default function InterimPage() {
   }
 
   async function runWebcamGrade(signal) {
-    if (!useCam || camStatus === "denied" || !videoRef.current) return;
     const ms = WEBCAM_GRADE_MS[signal] || 3000;
-    const obs = await observe(videoRef.current, ms, null);
-    if (!obs.ok) { setCamStatus("model-fail"); return; }
-    const m = obs.metrics;
-    if ((m.lostTrackingSec || 0) > (ms / 1000) * 0.6) { setCamStatus("no-face"); return; }
-    setCamStatus("on");
-    const grade = signal === "S2" ? gradeS2FromWebcam(m) : gradeS4FromWebcam(m);
+    const wantsCam = useCam && camStatus !== "denied" && videoRef.current;
+    const wantsMic = micStreamRef.current && micStatus !== "denied";
+    if (!wantsCam && !wantsMic) return;
+
+    const [obs, micBlob] = await Promise.all([
+      wantsCam ? observe(videoRef.current, ms, null) : Promise.resolve(null),
+      wantsMic ? recordClip(micStreamRef.current, ms) : Promise.resolve(null),
+    ]);
+    const mic = micBlob ? await analyzeMicBurst(micBlob) : null;
+
+    let m = null;
+    if (obs) {
+      if (!obs.ok) setCamStatus("model-fail");
+      else {
+        m = obs.metrics;
+        if ((m.lostTrackingSec || 0) > (ms / 1000) * 0.6) { setCamStatus("no-face"); m = null; }
+        else setCamStatus("on");
+      }
+    }
+    if (!m && !mic) return; // 웹캠·마이크 둘 다 아무것도 못 잡았으면 관측 실패로 남긴다(규칙④)
+
+    const grade = signal === "S2" ? gradeS2FromWebcam(m, mic) : gradeS4FromWebcam(m, mic);
     liveGradesRef.current = { ...liveGradesRef.current, [signal]: grade };
   }
 
@@ -235,9 +259,20 @@ export default function InterimPage() {
         if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play(); }
       } catch { setCamStatus("denied"); }
     } else setCamStatus("off");
+
+    if (useMic) {
+      try {
+        setMicStatus("starting");
+        micStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        setMicStatus("on");
+      } catch { setMicStatus("denied"); }
+    } else setMicStatus("off");
   }
 
-  useEffect(() => () => { streamRef.current?.getTracks().forEach((t) => t.stop()); }, []);
+  useEffect(() => () => {
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    micStreamRef.current?.getTracks().forEach((t) => t.stop());
+  }, []);
 
   async function enterVr() {
     try { await xrStore.enterVR(); } catch { setXrError("VR 진입에 실패했습니다 — 헤드셋 연결과 브라우저의 WebXR 지원을 확인해 주세요."); }
@@ -247,6 +282,8 @@ export default function InterimPage() {
   const gateShown = phase === "gate";
   const showHud = q.hud !== "0" && !gateShown;
   const CAM_LABEL = { idle: "대기", starting: "연결 중…", on: "연결됨", denied: "권한 거부", "no-face": "얼굴 인식 실패", "model-fail": "모델 로딩 실패", off: "꺼짐(?cam=0)" };
+  const MIC_LABEL = { idle: "대기", starting: "연결 중…", on: "연결됨", denied: "권한 거부", off: "꺼짐(?mic=0)" };
+  const okColor = (v) => (v === "on" ? "#8fd68f" : v === "denied" || v === "model-fail" ? "#e08a8a" : "#c9c9c9");
 
   return (
     <div className={s.stage} style={{ "--accent": accent }}>
@@ -286,7 +323,7 @@ export default function InterimPage() {
             <p className={s.introSub}>
               고르는 것은 없습니다. 약 2분 동안 평범한 사건들이 일어나고, 당신의 반응에 따라
               하늘과 빛, 옆에 앉는 사람이 정해집니다. 헤드셋이 있으면 위 "Enter VR"로 들어가고,
-              없으면 드래그로 둘러보세요. {useCam ? "웹캠은 몸의 반응을 보태는 보조 채널입니다." : ""}
+              없으면 드래그로 둘러보세요. {useCam || useMic ? "웹캠·마이크는 반응을 보태는 보조 채널입니다." : ""}
             </p>
             <div className={s.choices}>
               <button className={s.choiceBtn} onClick={start}>
@@ -312,10 +349,10 @@ export default function InterimPage() {
             신호 <b>{SIGNALS.map((sig) => `${sig}:${hud.grades[sig] || "-"}${hud.debugSignals.has(sig) ? "(강제)" : ""}`).join(" ")}</b>
           </div>
           <div className={f.hudMeta} style={{ opacity: 0.85 }}>
-            센서 — 헤드셋/드래그 <b style={{ color: "#8fd68f" }}>연결됨</b> · 웹캠 <b style={{ color: camStatus === "on" ? "#8fd68f" : camStatus === "denied" || camStatus === "model-fail" ? "#e08a8a" : "#c9c9c9" }}>{CAM_LABEL[camStatus]}</b>
+            센서 — 헤드셋/드래그 <b style={{ color: "#8fd68f" }}>연결됨</b> · 웹캠 <b style={{ color: okColor(camStatus) }}>{CAM_LABEL[camStatus]}</b> · 마이크 <b style={{ color: okColor(micStatus) }}>{MIC_LABEL[micStatus]}</b>
           </div>
           <div className={f.hudMeta} style={{ opacity: 0.6 }}>
-            미연결 — 마이크 <b>미연결</b> · 기립 감지(S5:A) <b>미연결</b>
+            미연결 — 기립 감지(S5:A) <b>미연결</b> (그 외엔 외부 몸 카메라를 얼굴 웹캠으로 근사 중)
           </div>
         </div>
       )}

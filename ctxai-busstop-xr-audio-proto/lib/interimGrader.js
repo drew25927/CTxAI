@@ -50,10 +50,16 @@ export function gradeS5FromHeadPose(feats, { stoodUp = false } = {}) {
   return "D";                        // 무관심
 }
 
-// ── S2·S4 — 웹캠 (lib/behaviorSense.js observe()의 metrics) ──
+// ── S2·S4 — 웹캠 + 마이크 (lib/behaviorSense.js observe()의 metrics,
+//            lib/interimMic.js analyzeMicBurst()의 {loud, burstCount}) ──
+//
+// 마이크는 얼굴 표정과 "같은 걸 다른 채널로" 보는 것이라 — 표정에 안 잡혀도 소리가
+// 크게 났으면(웃음·탄성) 그대로 인정한다. 둘 중 하나만 강하게 나와도 충분하다.
 
-/** S2 놀람 — 물웅덩이 튀김(트럭). */
-export function gradeS2FromWebcam(metrics) {
+/** S2 놀람 — 물웅덩이 튀김(트럭). mic은 없으면 생략 가능(선택 인자). */
+export function gradeS2FromWebcam(metrics, mic = null) {
+  // 단발로 크게 소리 남 = 탄성·비명(웃음 쪽 웃음·탄성 등급과 같은 칸) — 표정과 무관하게 인정.
+  if (mic && mic.burstCount === 1 && mic.loud > 0.4) return "C";
   if (!metrics) return "D";
   if ((metrics.maxAmusement || 0) > 0.5) return "C"; // 웃음·탄성
   const startle = Math.max(metrics.maxAbsDy || 0, metrics.maxScaleDrop || 0);
@@ -62,8 +68,10 @@ export function gradeS2FromWebcam(metrics) {
   return "D";                     // 무반응
 }
 
-/** S4 정서 — 고양이와 눈맞춤. */
-export function gradeS4FromWebcam(metrics) {
+/** S4 정서 — 고양이와 눈맞춤. mic은 없으면 생략 가능(선택 인자). */
+export function gradeS4FromWebcam(metrics, mic = null) {
+  // 반복되는 소리(하하하) = 웃음 — 표정과 무관하게 인정.
+  if (mic && mic.burstCount >= 2 && mic.loud > 0.3) return "D";
   if (!metrics) return "E";
   const fear = metrics.maxFear || 0, amuse = metrics.maxAmusement || 0;
   if (amuse > 0.5) return "D";                     // 웃음
