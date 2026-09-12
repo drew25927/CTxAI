@@ -12,6 +12,8 @@ export const DEV_SCREENS = [
         desc: "장르 하나로 확정해서 보여주는 이전 버전." },
       { href: "/story-v2", tag: "V2 · 신규", tagKind: "new", title: "시나리오 데모",
         desc: "장르 배합 비율(예: 공포60%+코미디40%) 그대로 보여주는 최신 버전." },
+      { href: "/film", tag: "V3 · 실시간 영화", tagKind: "new", title: "반응형 실시간 영화",
+        desc: "판정을 한 번으로 끝내지 않고, 관객 반응에 따라 하늘·빛·옆사람·대사가 체험 내내 계속 바뀜." },
       { href: "/story-vr", tag: "실험 · VR", tagKind: "exp", title: "시나리오 데모 (웹 VR)",
         desc: "헤드셋/웹캠 관찰 + 3D 배경. 판정 로직은 V2와 동일." },
       { href: "/demo", tag: "실험", tagKind: "exp", title: "로맨스 LLM 대사 목업", legacy: true,

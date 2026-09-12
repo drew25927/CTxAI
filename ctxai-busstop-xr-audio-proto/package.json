@@ -4,21 +4,27 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "film": "env -u NODE_ENV -u TURBOPACK next dev",
+    "build:clean": "env -u NODE_ENV -u TURBOPACK next build",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "milestones": "node scripts/gen-milestones.mjs",
-    "synthesize-dialogue": "node scripts/synthesize-dialogue.mjs"
+    "synthesize-dialogue": "node scripts/synthesize-dialogue.mjs",
+    "pull-assets": "node scripts/pull-assets.mjs",
+    "test": "node scripts/test-direction.mjs && node scripts/sim-headpose.mjs",
+    "gen-pool": "node scripts/gen-dialogue-pool.mjs"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.115.0",
     "@google/model-viewer": "^4.3.1",
     "@mediapipe/tasks-vision": "^1.0.1",
     "@react-three/drei": "^9.122.0",
     "@react-three/fiber": "^8.18.0",
+    "@react-three/postprocessing": "^2.19.1",
     "@react-three/xr": "^6.6.30",
     "marked": "^18.0.9",
     "next": "14.2.35",
+    "postprocessing": "^6.39.5",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "three": "^0.183.0"
