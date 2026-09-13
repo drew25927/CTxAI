@@ -58,6 +58,28 @@ function describe(sess) {
     + (sess.selfReport ? ` · 본인 느낌: ${GENRE[sess.selfReport]?.label}` : "");
 }
 
+// 관객 반응 지문 — 세션 JSON 의 control.theta 로. (fingerprintText 와 같은 규칙, 여기선 로컬)
+function fingerprint(theta) {
+  if (!theta || theta.nResp < 2) return null;
+  const lat = theta.L < 0.5 ? "빠르게 반응하고" : "한 박자 늦게 반응하고";
+  const rec = theta.tau < 2 ? "금방 가라앉았으며" : "여운이 오래 남았으며";
+  const hab = theta.rho > 0.25 ? "반복될수록 반응이 줄었습니다" : "반복돼도 반응이 유지됐습니다";
+  return `${lat} ${rec} ${hab}`;
+}
+
+// 집중·긴장 한 줄 — engagement.summary 로.
+function engageLine(sess) {
+  const s = sess?.engagement?.summary;
+  if (!s) return null;
+  const parts = [];
+  if (s.probeResponseRate != null) parts.push(`사건 반응 ${Math.round(s.probeResponseRate * 100)}%`);
+  if (s.topSegments?.[0]?.near) parts.push(`가장 집중 ${EVENT_LABEL[s.topSegments[0].near.name] || s.topSegments[0].near.name}`);
+  if (s.laughEpisodes?.length) parts.push(`웃음 ${s.laughEpisodes.length}회`);
+  if (s.dropPoint) parts.push(`집중 풀림 ${Math.floor(s.dropPoint.t / 60)}:${String(Math.floor(s.dropPoint.t % 60)).padStart(2, "0")}`);
+  const fp = fingerprint(sess?.control?.theta);
+  return { metrics: parts.join(" · "), fp };
+}
+
 function diverge(a, b) {
   if (!a?.trajectory || !b?.trajectory) return null;
   const bt = b.trajectory;
@@ -123,6 +145,11 @@ export default function ComparePage() {
               </select>
             </div>
             <p style={{ margin: 0, fontSize: 13, color: "rgba(255,255,255,0.75)" }}>{describe(sess)}</p>
+            {(() => { const e = engageLine(sess); return e && (e.metrics || e.fp) ? (
+              <p style={{ margin: "6px 0 0", fontSize: 12.5, color: "rgba(255,255,255,0.6)" }}>
+                {e.metrics}{e.fp ? <> · <span style={{ fontStyle: "italic" }}>{e.fp}</span></> : null}
+              </p>
+            ) : null; })()}
           </div>
         ))}
         <p className={s.dim} style={{ fontSize: 12 }}>세션은 /film 종료 시 data/sessions/ 에 자동 저장됩니다. 전시에서는 두 사람이 이 화면을 나란히 보는 자리를 체험 자리와 떨어뜨려 두세요 (요청서 v5.0 §3.3 마이크 오염).</p>
