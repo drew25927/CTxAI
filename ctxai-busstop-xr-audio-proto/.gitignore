@@ -11,3 +11,4 @@ assets/vo/
 .vercel-token
 .env*
 data/sessions/
+data/engagement_export/

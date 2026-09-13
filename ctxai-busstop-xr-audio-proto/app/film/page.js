@@ -34,6 +34,12 @@ import { Euler, MathUtils, Vector3 } from "three";
 import ReactiveStage from "@/components/ReactiveStage";
 import { createDirectionState, rank } from "@/lib/directionState";
 import { createHeadPoseSensor } from "@/lib/headPoseSense";
+import { createEngagementSensor } from "@/lib/engagementSense";
+import { fitViewerModel } from "@/lib/viewerModel";
+import { estimateTensionSeries } from "@/lib/tensionEstimate";
+import { curveAt } from "@/lib/tensionCurve";
+import { runController } from "@/lib/slotController";
+import { selectTrack } from "@/lib/trackSelect";
 import { deriveBgmGains, TRIGGERS } from "@/lib/directionMap";
 import { CUES, evalActors } from "@/lib/filmTimeline";
 import { DIALOGUE_V2_LINES, DIALOGUE_V2_GENRE_LABEL } from "@/lib/dialogueV2Lines";
@@ -54,7 +60,36 @@ const GENRE_META = {
   C: { accent: "#e0a86a", label: "블랙코미디" },
 };
 const CAM_WINDOW_MS = 8000;
-const EVENT_LABEL = { poster: "포스터", cafeBell: "우비 인물", truckSplash: "물보라", frog: "개구리", cat: "고양이", catScream: "비명" };
+const EVENT_LABEL = { poster: "포스터", cafeBell: "우비 인물", truck: "물보라", figure: "우비 인물", truckSplash: "물보라", frog: "개구리", cat: "고양이", catScream: "비명", "micro-lamp": "가로등", "micro-door": "먼 문" };
+
+// 관객 반응 지문을 한 문장으로 — fitViewerModel 의 θ 를 사람이 읽는 말로.
+function fingerprintText(theta) {
+  if (!theta || theta.nResp < 2) return null;
+  const lat = theta.L < 0.5 ? "자극에 빠르게 반응하고" : "한 박자 늦게 반응하고";
+  const rec = theta.tau < 2 ? "금방 가라앉았으며" : "여운이 오래 남았으며";
+  const hab = theta.rho > 0.25 ? "반복될수록 반응이 눈에 띄게 줄었습니다" : "반복돼도 반응이 유지됐습니다";
+  const gain = theta.g > 1 ? "전반적으로 자극에 크게 흔들렸고, " : theta.g < 0.45 ? "전반적으로 차분했고, " : "";
+  return `${gain}${lat} ${rec} ${hab}`;
+}
+
+// 디렉터 모니터의 작은 그래프 — 작가 목표 곡선(점선)과 관객 긴장 추정 x̂(실선), 현재 시각 표시.
+function MonitorChart({ series = [], track = "H", tNow = 0, ceiling = 1 }) {
+  const W = 292, H = 60, PAD = 4;
+  const tMax = Math.max(180, tNow, series.length ? series[series.length - 1].t : 0);
+  const x = (t) => PAD + (t / tMax) * (W - PAD * 2);
+  const y = (v) => H - PAD - v * (H - PAD * 2);
+  const target = [];
+  for (let t = 0; t <= tMax; t += 6) target.push(`${t === 0 ? "M" : "L"}${x(t).toFixed(1)},${y(curveAt(track, t).target).toFixed(1)}`);
+  const xhat = series.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.tension).toFixed(1)}`).join(" ");
+  return (
+    <svg width={W} height={H} style={{ display: "block", background: "rgba(255,255,255,0.04)", borderRadius: 6 }}>
+      <line x1={PAD} x2={W - PAD} y1={y(ceiling)} y2={y(ceiling)} stroke="rgba(224,168,106,0.4)" strokeDasharray="2 3" />
+      <path d={target.join(" ")} fill="none" stroke="rgba(255,255,255,0.45)" strokeDasharray="4 3" strokeWidth="1.5" />
+      {xhat && <path d={xhat} fill="none" stroke="#7fd1ff" strokeWidth="2" />}
+      <line x1={x(tNow)} x2={x(tNow)} y1={PAD} y2={H - PAD} stroke="rgba(255,255,255,0.3)" />
+    </svg>
+  );
+}
 
 // URL 옵션은 마운트 뒤에 읽는다 — 서버 렌더와 첫 클라이언트 렌더가 같아야 하이드레이션 오류가 없다.
 function useQuery() {
@@ -64,7 +99,7 @@ function useQuery() {
 }
 
 // 캔버스 안에서 도는 디렉터 — 카메라 포즈를 센서에 넣고, 상태를 tick 하고, 타임라인을 밀고, 큐를 쏜다.
-function FilmDirector({ directionRef, sensorRef, actorsRef, filmRef, onCue, speed, debugBus = false, debugTruck = false }) {
+function FilmDirector({ directionRef, sensorRef, engagementRef, actorsRef, filmRef, onCue, speed, debugBus = false, debugTruck = false }) {
   const session = useXR((xr) => xr.session);
   const euler = useMemo(() => new Euler(), []);
   useFrame((state, dt) => {
@@ -79,9 +114,13 @@ function FilmDirector({ directionRef, sensorRef, actorsRef, filmRef, onCue, spee
     euler.setFromQuaternion(state.camera.quaternion, "YXZ");
     let yaw = -MathUtils.radToDeg(euler.y);
     let pitch = MathUtils.radToDeg(euler.x);
+    const roll = MathUtils.radToDeg(euler.z);
     if (film.autoGaze && film.autoGazeHold) { yaw = film.autoGazeHold.yaw; pitch = film.autoGazeHold.pitch; }
     const z = session ? state.camera.position.z : 0;
     sensorRef.current?.update(yaw, pitch, z, clamped);
+    // 집중도·잔움직임·탐침 반응 — 같은 자세 스트림에서 데이터 세 층을 뽑는다(파일럿·모델·제작 도구용)
+    const cp = state.camera.position;
+    engagementRef.current?.update({ yaw, pitch, roll, x: session ? cp.x : 0, y: session ? cp.y : 0, z }, clamped);
 
     // 영화 시간
     film.t += clamped * speed;
@@ -101,8 +140,11 @@ function FilmDirector({ directionRef, sensorRef, actorsRef, filmRef, onCue, spee
     if (actors.npc?.visible && actors.npc.seated && !film.autoGaze) {
       const dx = actors.npc.x - state.camera.position.x;
       const dz = actors.npc.z - state.camera.position.z;
-      sensorRef.current?.setNpcAzimuth(MathUtils.radToDeg(Math.atan2(dx, -dz)));
-    } else sensorRef.current?.setNpcAzimuth(null);
+      const npcAz = MathUtils.radToDeg(Math.atan2(dx, -dz));
+      sensorRef.current?.setNpcAzimuth(npcAz);
+      // 의도 일치용 "지금 볼 곳": 관객을 볼 차례(lineGaze 큼)면 옆사람, 혼잣말이면 정면, 대사 없으면 미지정
+      engagementRef.current?.setIntent(film.lineGaze == null ? null : film.lineGaze > 0.4 ? npcAz : 0);
+    } else { sensorRef.current?.setNpcAzimuth(null); engagementRef.current?.setIntent(null); }
 
     // 질문 뒤 기다리는 동안 — 머리 자세의 폭(끄덕임·가로젓기·돌림)을 잰다. 자동 시선 중엔 held 값이라 응답이 생기지 않는다.
     if (film.listen) {
@@ -238,6 +280,7 @@ export default function FilmPage() {
 
   const directionRef = useRef(null);
   const sensorRef = useRef(null);
+  const engagementRef = useRef(null);
   const actorsRef = useRef({});
   const paramsRef = useRef(null);
   const filmRef = useRef({ running: false, t: 0, dominant: null, npcDistance: 0.9, busAt: null, onFrame: null });
@@ -301,6 +344,22 @@ export default function FilmPage() {
       const film = filmRef.current;
       // 착석 뒤 옆사람의 거리는 상태가 정한다 (요청서 v5.0 §2.7: 0.5~1.4m)
       film.npcDistance = paramsRef.current?.npcDistance ?? 0.9;
+
+      // 디렉터 모니터 — 관객모델 θ̂·긴장 추정 x̂·목표 곡선·다음 자극 추천 (advisory: 아직 자극을 바꾸진 않는다)
+      if (q.monitor === "1") {
+        const eng = engagementRef.current?.data?.();
+        const track = (q.track || film.dominant || snap.dominant || "H").toUpperCase();
+        if (eng) {
+          const theta = fitViewerModel(eng.stimuli);
+          const series = estimateTensionSeries(eng);
+          const last = series[series.length - 1];
+          const tgt = curveAt(track, film.t);
+          const rec = runController(track, theta);
+          const next = rec.entries.find((e) => e.t > film.t) || rec.entries[rec.entries.length - 1];
+          const sel = theta.nResp >= 1 ? selectTrack(theta, { genrePrior: snap.current, priorWeight: 0.3 }) : null;
+          setMonitor({ track, theta, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, series, next, nStim: eng.stimuli.length, sel });
+        }
+      }
       setHud({ ...snap, t: film.t, params: paramsRef.current, lastEvidence: d.st.lastEvidence, camStatus, events: sensorRef.current?.report?.().events || [] });
     }, 250);
     return () => clearInterval(id);
@@ -327,6 +386,7 @@ export default function FilmPage() {
     const d = createDirectionState({ followRate: 0.6, decayHalfLifeSec: 150, settleMass: 2.5 });
     directionRef.current = d;
     sensorRef.current = createHeadPoseSensor({ push: d.pushEvidence, mark: d.markEvent });
+    engagementRef.current = createEngagementSensor({ mark: d.markEvent });
     paramsRef.current = null;
     filmRef.current = { running: true, t: 0, dominant: null, npcDistance: 0.9, busAt: null, onFrame: null };
     setDominant(null); setLine(null); setCaption(""); setAskStatus(null);
@@ -360,7 +420,11 @@ export default function FilmPage() {
     if (!d) return;
     if (cue.sfx) playSfx(cue.sfx, { volume: cue.volume ?? 0.8, loop: !!cue.loop });
     if (cue.slot) playFile(`${cue.slot}.mp3`, cue.volume ?? 1);
-    if (cue.sense) sensorRef.current?.beginEvent(cue.name, cue.sense.azimuth, cue.sense.dur / speed, { kind: cue.sense.kind, tail: 4 / speed });
+    if (cue.sense) {
+      sensorRef.current?.beginEvent(cue.name, cue.sense.azimuth, cue.sense.dur / speed, { kind: cue.sense.kind, tail: 4 / speed });
+      // 탐침 반응 기록 — 채널·용량은 잠정(오디오 큐는 소리, 그 밖은 시청각). 궤적 추종 기획에서 정식화한다.
+      engagementRef.current?.beginStimulus({ name: cue.name, azimuth: cue.sense.azimuth, dur: cue.sense.dur / speed, kind: cue.sense.kind, channel: cue.sfx ? "audio" : "av", dose: cue.volume ?? null, tail: 4 / speed });
+    }
     d.markEvent("cue", cue.name);
 
     if (cue.name === "judge") {
@@ -575,12 +639,25 @@ export default function FilmPage() {
   function sessionData(extra = {}) {
     const d = directionRef.current;
     if (!d) return null;
-    return d.exportSession({ dominant: filmRef.current.dominant, speed, headPose: sensorRef.current?.report?.(), ...extra });
+    // 궤적 추종 로그(advisory) — 관객모델 θ̂와 제어기 추천 계획. 실제 자극은 아직 고정이라 "무엇을 골랐을지"의 기록이다.
+    let control;
+    try {
+      const eng = engagementRef.current?.data?.();
+      if (eng && eng.stimuli.length) {
+        const track = (q.track || filmRef.current.dominant || "H").toUpperCase();
+        const theta = fitViewerModel(eng.stimuli);
+        control = { track, theta, plan: runController(track, theta).entries };
+      }
+    } catch { /* 로그 실패는 무시 */ }
+    return d.exportSession({ dominant: filmRef.current.dominant, speed, headPose: sensorRef.current?.report?.(), engagement: engagementRef.current?.report?.(), control, ...extra });
   }
 
   // 종료 시 자동 저장 (data/sessions/, Supabase 아님). 실패해도 체험은 영향 없다.
   const [savedId, setSavedId] = useState(null);
   const [selfReport, setSelfReport] = useState(null);
+  const [engSummary, setEngSummary] = useState(null);
+  const [monitor, setMonitor] = useState(null); // 디렉터 모니터(?monitor=1): 목표 곡선 vs 추정 x̂, 관객모델 θ̂, 다음 자극 추천
+  const [fingerprint, setFingerprint] = useState(null); // 종료 카드 반응 지문(관객 응답 모델 θ)
   async function saveSession(extra = {}) {
     const data = sessionData(extra);
     if (!data) return;
@@ -590,7 +667,15 @@ export default function FilmPage() {
       if (j?.ok) setSavedId(j.id);
     } catch { /* 로컬 저장 실패는 무시 */ }
   }
-  useEffect(() => { if (phase === "end") { setSelfReport(null); saveSession(); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [phase]);
+  useEffect(() => {
+    if (phase === "end") {
+      setSelfReport(null);
+      const eng = engagementRef.current?.data?.();
+      setEngSummary(engagementRef.current?.report?.()?.summary || null);
+      setFingerprint(eng ? fingerprintText(fitViewerModel(eng.stimuli)) : null);
+      saveSession();
+    } /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [phase]);
 
   function downloadSession() {
     const data = sessionData({ selfReport });
@@ -618,7 +703,7 @@ export default function FilmPage() {
             <ReactiveStage directionRef={directionRef} actorsRef={actorsRef} dominant={dominant} paramsOut={paramsRef} cueRef={filmRef} useRig={useRig} rigTest={q.rigtest === "1"} signText={signText} reflect={fx && !xrActive} benchYaw={Number(q.benchyaw) || 0} />
             <XRProbe onChange={setXrActive} />
             <Effects enabled={fx} />
-            <FilmDirector directionRef={directionRef} sensorRef={sensorRef} actorsRef={actorsRef} filmRef={filmRef} onCue={onCue} speed={speed} debugBus={q.bus === "1"} debugTruck={q.truck === "1"} />
+            <FilmDirector directionRef={directionRef} sensorRef={sensorRef} engagementRef={engagementRef} actorsRef={actorsRef} filmRef={filmRef} onCue={onCue} speed={speed} debugBus={q.bus === "1"} debugTruck={q.truck === "1"} />
             {q.gaze !== "0" && <DesktopGaze controlsRef={controlsRef} actorsRef={actorsRef} filmRef={filmRef} />}
           </XR>
           {/* 드래그 = 제자리에서 고개 돌리기. 타깃을 카메라 바로 앞 1cm 에 두면 궤도 회전이 머리 회전처럼 된다
@@ -692,6 +777,27 @@ export default function FilmPage() {
         </div>
       )}
 
+      {monitor && phase !== "gate" && phase !== "end" && (
+        <div style={{ position: "fixed", top: 12, left: 12, zIndex: 40, width: 320, padding: "12px 14px", borderRadius: 10, background: "rgba(12,14,20,0.82)", color: "#e6e9f0", font: "12px/1.5 ui-monospace, monospace", border: "1px solid rgba(255,255,255,0.12)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+            <b>디렉터 모니터</b><span style={{ opacity: 0.6 }}>트랙 {monitor.track} · 자극 {monitor.nStim}</span>
+          </div>
+          <MonitorChart series={monitor.series} track={monitor.track} tNow={snap?.t ?? 0} ceiling={monitor.ceiling} />
+          <div style={{ display: "flex", justifyContent: "space-between", margin: "6px 0" }}>
+            <span>목표 <b>{monitor.target?.toFixed(2)}</b></span>
+            <span>추정 x̂ <b style={{ color: monitor.xhat > monitor.target + monitor.tol ? "#e0a86a" : monitor.xhat < monitor.target - monitor.tol ? "#8fae95" : "#cfe" }}>{monitor.xhat?.toFixed(2)}</b></span>
+          </div>
+          <div style={{ opacity: 0.85 }}>관객모델 θ̂: 이득 {monitor.theta.g} · 지연 {monitor.theta.L}s · 회복 {monitor.theta.tau}s · 습관화 {monitor.theta.rho} <span style={{ opacity: 0.5 }}>(확신 {Math.round(monitor.theta.confidence * 100)}%)</span></div>
+          {monitor.sel && <div style={{ opacity: 0.85 }}>도달가능 트랙: R {monitor.sel.reach.R} · H {monitor.sel.reach.H} · C {monitor.sel.reach.C} → <b>{monitor.sel.track}</b></div>}
+          {monitor.next && (
+            <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.1)" }}>
+              다음 <b>{EVENT_LABEL[monitor.next.slotId] || monitor.next.slotId}</b> → <b>{monitor.next.variantId}</b> (용량 {monitor.next.dose})
+              <div style={{ opacity: 0.7, fontSize: 11 }}>{monitor.next.reason}</div>
+            </div>
+          )}
+        </div>
+      )}
+
       {phase === "gate" && (
         <div className={s.intro}>
           <div className={s.introCard}>
@@ -748,6 +854,15 @@ export default function FilmPage() {
               {["R", "H", "C"].map((g) => <span key={g}><i style={{ background: GENRE_META[g].accent }} />{GENRE_META[g].label}</span>)}
               <span><i style={{ background: "rgba(255,255,255,0.35)" }} />정착도</span>
             </div>
+            {engSummary && (
+              <p className={f.endSub} style={{ marginTop: 12 }}>
+                집중한 순간: <b style={{ color: accent }}>{engSummary.topSegments?.[0]?.near ? EVENT_LABEL[engSummary.topSegments[0].near.name] || engSummary.topSegments[0].near.name : (engSummary.topSegments?.[0] ? `${Math.round(engSummary.topSegments[0].t0)}초 무렵` : "-")}</b>
+                {engSummary.probeResponseRate != null && <> · 사건에 반응한 비율 <b>{Math.round(engSummary.probeResponseRate * 100)}%</b></>}
+                {engSummary.laughEpisodes?.length > 0 && <> · 웃음 <b>{engSummary.laughEpisodes.length}회</b></>}
+                {engSummary.dropPoint && <> · 집중이 풀린 지점 <b>{Math.floor(engSummary.dropPoint.t / 60)}:{String(Math.floor(engSummary.dropPoint.t % 60)).padStart(2, "0")}</b></>}
+              </p>
+            )}
+            {fingerprint && <p className={f.endSub} style={{ marginTop: 6, fontStyle: "italic" }}>당신의 반응: {fingerprint}</p>}
             {/* 파일럿용 자기보고 — "당신이 느낀 정류장은?" 시스템 판정과의 일치율 재료 */}
             <div className={f.legend} style={{ justifyContent: "center", alignItems: "center", gap: 8 }}>
               <span>당신이 느낀 정류장은?</span>
