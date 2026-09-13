@@ -38,10 +38,10 @@ import { createEngagementSensor } from "@/lib/engagementSense";
 import { fitViewerModel } from "@/lib/viewerModel";
 import { estimateTensionSeries } from "@/lib/tensionEstimate";
 import { curveAt } from "@/lib/tensionCurve";
-import { runController } from "@/lib/slotController";
+import { runController, microDecision } from "@/lib/slotController";
 import { selectTrack } from "@/lib/trackSelect";
 import { deriveBgmGains, TRIGGERS } from "@/lib/directionMap";
-import { CUES, evalActors } from "@/lib/filmTimeline";
+import { CUES, evalActors, T } from "@/lib/filmTimeline";
 import { DIALOGUE_V2_LINES, DIALOGUE_V2_GENRE_LABEL } from "@/lib/dialogueV2Lines";
 import { observe, judgeFromBehavior } from "@/lib/behaviorSense";
 import { loadDialoguePool, pickPoolLine, poolCoverage } from "@/lib/dialoguePool";
@@ -360,6 +360,27 @@ export default function FilmPage() {
           setMonitor({ track, theta, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, series, next, nStim: eng.stimuli.length, sel });
         }
       }
+      // 실제 제어(?control=1) — 판정 뒤 장면에서만. 도입부 다섯 사건은 관객을 공정히 읽기 위한
+      // 중립 탐침이라 건드리지 않는다(용량을 바꾸면 그 사건이 만드는 θ 추정이 오염된다). 판정 뒤에는
+      // 장르가 정해졌으니, 관객 긴장 x̂ 이 작가 곡선 아래로 처지면 은은한 기존 소리(먼 기척)를 한 번
+      // 넣어 곡선 쪽으로 끌어올린다. 에셋이 필요 없는 유일한 실제 액추에이터다.
+      if (q.control === "1" && film.dominant && film.t >= T.npcSeated && film.t <= 150) {
+        const eng = engagementRef.current?.data?.();
+        if (eng && eng.stimuli.length) {
+          const theta = fitViewerModel(eng.stimuli);
+          const series = estimateTensionSeries(eng);
+          const xhat = series.length ? series[series.length - 1].tension : null;
+          const tgt = curveAt(film.dominant, film.t);
+          const { fire, dose } = microDecision({ xhat, target: tgt.target, tol: tgt.tol, tNow: film.t, lastAt: film.lastMicroAt ?? -Infinity, count: film.microCount || 0 });
+          if (fire) {
+            playSfx("13", { volume: 0.12 + 0.22 * dose }); // 먼 기척(클래터) — 은은하게
+            engagementRef.current?.beginStimulus({ name: `micro-${(film.microCount || 0) + 1}`, azimuth: -60, dur: 1.5 / speed, kind: "probe", channel: "audio", dose, tail: 3 / speed });
+            d.markEvent("control:micro", { t: Math.round(film.t * 10) / 10, xhat, target: tgt.target, dose });
+            film.lastMicroAt = film.t; film.microCount = (film.microCount || 0) + 1;
+          }
+        }
+      }
+
       setHud({ ...snap, t: film.t, params: paramsRef.current, lastEvidence: d.st.lastEvidence, camStatus, events: sensorRef.current?.report?.().events || [] });
     }, 250);
     return () => clearInterval(id);
@@ -388,7 +409,7 @@ export default function FilmPage() {
     sensorRef.current = createHeadPoseSensor({ push: d.pushEvidence, mark: d.markEvent });
     engagementRef.current = createEngagementSensor({ mark: d.markEvent });
     paramsRef.current = null;
-    filmRef.current = { running: true, t: 0, dominant: null, npcDistance: 0.9, busAt: null, onFrame: null };
+    filmRef.current = { running: true, t: 0, dominant: null, npcDistance: 0.9, busAt: null, onFrame: null, lastMicroAt: -999, microCount: 0 };
     setDominant(null); setLine(null); setCaption(""); setAskStatus(null);
     if (bias) d.pushEvidence({ [bias.g]: 1 }, bias.w, "bias", `?bias=${bias.g}`);
     d.setPhase("intro");

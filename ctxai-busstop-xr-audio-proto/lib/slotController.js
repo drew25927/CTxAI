@@ -94,6 +94,21 @@ export function chooseVariant(track, cands, idx, x0, theta, channelCounts, prev,
   return { ...best, reason };
 }
 
+/**
+ * 판정 뒤 장면의 미세 자극 결정(실제 액추에이터) — 관객 긴장 x̂ 이 작가 곡선 아래로 처지면 은은한
+ * 자극을 한 번 넣어 곡선 쪽으로 끌어올린다. 도입부 중립 탐침은 건드리지 않으므로 이 함수는 판정 뒤에만 쓴다.
+ * @returns {{fire:boolean, dose:number}}
+ */
+export function microDecision({ xhat, target, tol, tNow, lastAt = -Infinity, count = 0 }, { gap = 12, max = 3, doseMin = 0.2, doseMax = 0.6, doseBias = 0.2 } = {}) {
+  if (xhat == null || !Number.isFinite(xhat)) return { fire: false, dose: 0 };
+  const below = xhat < target - tol;
+  const spaced = tNow - lastAt > gap;
+  const budget = count < max;
+  if (!(below && spaced && budget)) return { fire: false, dose: 0 };
+  const dose = Math.max(doseMin, Math.min(doseMax, (target - xhat) + doseBias));
+  return { fire: true, dose: Math.round(dose * 1000) / 1000 };
+}
+
 /** 후보 슬롯 목록 — 시각 고정 슬롯을 시각 순으로. (미세 슬롯은 t 를 주면 포함) */
 export function candidateSlots(extra = []) {
   const fixed = SLOTS.filter((s) => s.t != null).map((s) => ({ ...s }));

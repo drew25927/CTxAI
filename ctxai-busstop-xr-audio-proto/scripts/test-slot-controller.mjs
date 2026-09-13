@@ -50,4 +50,25 @@ test("reason 문자열에 목표·예측이 들어간다", () => {
   assert.ok(/도달 한계/.test(c.reason), c.reason); // 이득 낮으니 도달 한계 표시
 });
 
+
+// microDecision (판정 뒤 미세 자극 액추에이터)
+import { microDecision } from "../lib/slotController.js";
+test("microDecision: 곡선 아래로 처지고 간격·예산 남으면 발동, 용량은 처진 만큼", () => {
+  const r = microDecision({ xhat: 0.2, target: 0.65, tol: 0.1, tNow: 80, lastAt: -Infinity, count: 0 });
+  assert.equal(r.fire, true);
+  assert.ok(r.dose > 0.2 && r.dose <= 0.6, `dose ${r.dose}`);
+});
+test("microDecision: 목표 근처면 발동 안 함", () => {
+  assert.equal(microDecision({ xhat: 0.6, target: 0.65, tol: 0.1, tNow: 80, lastAt: -Infinity, count: 0 }).fire, false);
+});
+test("microDecision: 최근에 이미 넣었으면(간격 부족) 발동 안 함", () => {
+  assert.equal(microDecision({ xhat: 0.2, target: 0.65, tol: 0.1, tNow: 75, lastAt: 70, count: 1 }).fire, false);
+});
+test("microDecision: 예산(max) 소진되면 발동 안 함", () => {
+  assert.equal(microDecision({ xhat: 0.2, target: 0.65, tol: 0.1, tNow: 200, lastAt: -Infinity, count: 3 }).fire, false);
+});
+test("microDecision: xhat 없으면 발동 안 함", () => {
+  assert.equal(microDecision({ xhat: null, target: 0.65, tol: 0.1, tNow: 80, lastAt: -Infinity, count: 0 }).fire, false);
+});
+
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);
