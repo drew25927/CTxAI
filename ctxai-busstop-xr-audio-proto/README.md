@@ -14,13 +14,25 @@ KAIST CTxAI 캡스톤 7조 <버스 정류장>의 팀 도구이자 체험 프로�
 
 `/film` URL 옵션: `?speed=3`(영화 시간 배속) · `?scene=240`(장면 목표 길이 초) · `?cam=0`(웹캠 채널 끄기) · `?hud=0`(HUD 숨김) · `?voice=1`(음성 채널) · `?voicefake=horror`(마이크 대신 샘플) ·
 `?rig=0`(리깅 캐릭터 대신 캡슐) · `?fx=0`(후처리·도로 반사 끄기, Quest 성능 점검) · `?pool=1`(대사 변주 풀) · `?bias=H:6`(강제 배합, 발표·QA용 — 정지 관객은 로맨스 증거가 쌓여 6 정도라야 확실히 기운다) · `?rigtest=1`(캐릭터 서기·앉기 점검) ·
-`?auto=1`(게이트 없이 1.5초 뒤 자동 시작) · `?gaze=0`(데스크톱 자동 시선 끄기 — 기본은 옆사람이 앉으면 카메라가 오른쪽으로 돈다)
+`?auto=1`(게이트 없이 1.5초 뒤 자동 시작) · `?gaze=0`(데스크톱 자동 시선 끄기 — 기본은 옆사람이 앉으면 카메라가 오른쪽으로 돈다) ·
+`?monitor=1`(디렉터 모니터 — 목표 긴장 곡선 vs 관객 긴장 추정, 관객 응답 모델 θ̂, 다음 자극 추천, 도달 가능 트랙) · `?track=H|R|C`(모니터 목표 트랙 고정)
 
 헤드리스 관찰: `scripts/observe.sh shots/run1` 한 줄이 헤드리스 크롬을 띄우고 `/film?auto=1&cam=0` 을 열어 5초마다 PNG·HUD 텍스트(`hud.txt`)를 남긴다(dev 서버 포트는 `FILM_PORT`, 기본 3017).
 낱개로는 `node scripts/cdp.mjs open|eval|shot|drag|loop|close` — `drag` 로 고개를 돌리고 `shot` 으로 한 장 찍는다. 탭은 한 번에 하나만(둘이면 fps 가 떨어져 영화 시간이 느려진다).
 소리 있는 완주 영상: `node scripts/cdp.mjs record 9224 "http://localhost:3017/film?cam=0" /tmp/film_rec 225 12` → `scripts/assemble-recording.sh /tmp/film_rec out.mp4`. 디자인만 볼 때는 `/film?auto=1&cam=0&bus=1`(정차한 버스)·`?truck=1`·`?rigtest=1`(리그·머리 크기)·`?answer=1`(답함 갈래 강제).
 
 설계와 매핑표, 남은 일은 [`Bus/규격/반응형_실시간_영화.md`](../Bus/규격/반응형_실시간_영화.md).
+
+## 궤적 추종 연출 엔진 + 집중도 트래킹 (2026-09-13)
+
+작가가 트랙별 긴장 곡선을 쓰면, 엔진이 관객마다 다른 반응 동역학을 사건들에서 식별해 자극을 골라 그 곡선을 좇게 한다. 헤드 포즈에서 집중도·탐침 반응·잔움직임을 데이터로 남긴다. 설계·한계는 설계 문서 §8·§9, 기획은 [`../../work/기획_7조_궤적추종연출_20260912_v1.md`](../../work/기획_7조_궤적추종연출_20260912_v1.md).
+
+- 순수 함수 라이브러리(전부 회귀 테스트): `lib/engagementSense.js`(집중도·탐침·잔움직임), `lib/viewerModel.js`(관객 응답 모델 θ), `lib/tensionCurve.js`(곡선·슬롯), `lib/tensionEstimate.js`(긴장 추정 x̂), `lib/slotController.js`(슬롯 MPC), `lib/trackSelect.js`(도달 가능성 트랙 선택).
+- `npm test` — 전 모듈 회귀(진단 + 통합 파이프라인 + 경계 조건).
+- `npm run sim` — 합성 관객 300명으로 제어 on/off 궤적 분산 비교(H·R·C). 제어 on 이 분산·목표오차를 줄이는지 확인.
+- `npm run export:engagement` — `data/sessions/*.json` 을 분석·학습용 CSV 로(`data/engagement_export/`): 세션별 `_raw`·`_windows`·`_stimuli`·`_control`, 전체 `sessions_summary.csv`.
+- `/film?monitor=1` — 위 옵션 참고. 세션 종료 시 JSON 에 `engagement`·`control` 로그가 남는다.
+- **현재 advisory** — 모니터·로그·시뮬레이션은 동작하지만 실제 자극은 아직 고정이다. 용량별 SFX·근접 트럭·고양이 변형 에셋이 오면 `onCue` 에서 `chooseVariant` 결과를 적용해 실제 제어가 된다.
 
 ## 로컬 실행
 
