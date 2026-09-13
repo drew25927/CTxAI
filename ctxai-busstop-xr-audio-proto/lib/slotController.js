@@ -36,6 +36,8 @@ function decayTo(peak, dt, tau) {
   const base = TENSION_PARAMS.BASE;
   return clamp01(base + (peak - base) * Math.exp(-Math.max(0, dt) / tau));
 }
+/** 슬롯 사이 감쇠에 쓸 회복 시정수 — 관객별 τ(없으면 기본값). 지상진실 시뮬레이터와 같은 규약. */
+function tauOf(theta, P) { return Number.isFinite(theta?.tau) && theta.tau > 0 ? theta.tau : P.DEFAULT_TAU; }
 
 /** 한 슬롯·한 변형의 즉시 비용과 결과 상태. */
 function stepCost(track, slot, variant, x0, theta, channelCounts, prev, P) {
@@ -62,7 +64,7 @@ function horizonCost(track, cands, idx, x0, theta, channelCounts, prev, depth, P
     const r = stepCost(track, slot, v, x0, theta, channelCounts, prev, P);
     const cc = { ...channelCounts, [slot.channel]: (channelCounts[slot.channel] || 0) + 1 };
     const next = cands[idx + 1];
-    const x1 = next ? decayTo(r.peak, next.t - slot.t, r.nth != null ? P.DEFAULT_TAU : P.DEFAULT_TAU) : r.peak;
+    const x1 = next ? decayTo(r.peak, next.t - slot.t, tauOf(theta, P)) : r.peak;
     const future = horizonCost(track, cands, idx + 1, x1, theta, cc, { t: slot.t, channel: slot.channel }, depth - 1, P);
     best = Math.min(best, r.cost + future);
   }
@@ -81,7 +83,7 @@ export function chooseVariant(track, cands, idx, x0, theta, channelCounts, prev,
     const r = stepCost(track, slot, v, x0, theta, channelCounts, prev, P);
     const cc = { ...channelCounts, [slot.channel]: (channelCounts[slot.channel] || 0) + 1 };
     const next = cands[idx + 1];
-    const x1 = next ? decayTo(r.peak, next.t - slot.t, P.DEFAULT_TAU) : r.peak;
+    const x1 = next ? decayTo(r.peak, next.t - slot.t, tauOf(theta, P)) : r.peak;
     const future = horizonCost(track, cands, idx + 1, x1, theta, cc, { t: slot.t, channel: slot.channel }, P.HORIZON - 1, P);
     const total = r.cost + future;
     if (!best || total < best.total) best = { variantId: v.id, dose: v.dose, predTension: r3(r.peak), target: r3(r.target), cost: r3(total), nth: r.nth, total };
@@ -116,7 +118,7 @@ export function runController(track, theta, { extraSlots = [], params = CONTROL_
     channelCounts[slot.channel] = (channelCounts[slot.channel] || 0) + 1;
     prev = { t: slot.t, channel: slot.channel };
     const next = cands[i + 1];
-    x0 = next ? decayTo(choice.predTension, next.t - slot.t, P.DEFAULT_TAU) : choice.predTension;
+    x0 = next ? decayTo(choice.predTension, next.t - slot.t, tauOf(theta, P)) : choice.predTension;
   }
   return { entries, plan: entries.map((e) => ({ slotId: e.slotId, variantId: e.variantId, t: e.t, channel: e.channel, dose: e.dose, predTension: e.predTension })) };
 }
