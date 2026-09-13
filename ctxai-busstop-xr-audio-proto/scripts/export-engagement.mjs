@@ -72,10 +72,11 @@ async function main() {
       topSegment: s.topSegments?.[0] ? `${s.topSegments[0].t0}-${s.topSegments[0].t1}s(${s.topSegments[0].near?.name ?? "-"})` : null,
       dropPointSec: s.dropPoint?.t ?? null,
       ctlTrack: ctl?.track ?? null, thetaG: th.g ?? null, thetaL: th.L ?? null, thetaTau: th.tau ?? null, thetaRho: th.rho ?? null, thetaConf: th.confidence ?? null,
+      microFires: (j.events || []).filter((ev) => ev.name === "control:micro").length,
     });
   }
 
-  const sumCols = ["id", "hasEngagement", "dominant", "selfReport", "durationSec", "rateHz", "stimuli", "probeResponseRate", "anticipationRate", "meanEngagement", "calmMean", "fidgetMean", "intentMatchMean", "laughEpisodes", "topSegment", "dropPointSec", "ctlTrack", "thetaG", "thetaL", "thetaTau", "thetaRho", "thetaConf"];
+  const sumCols = ["id", "hasEngagement", "dominant", "selfReport", "durationSec", "rateHz", "stimuli", "probeResponseRate", "anticipationRate", "meanEngagement", "calmMean", "fidgetMean", "intentMatchMean", "laughEpisodes", "topSegment", "dropPointSec", "ctlTrack", "thetaG", "thetaL", "thetaTau", "thetaRho", "thetaConf", "microFires"];
   const sumLines = [sumCols.join(","), ...summary.map((r) => csvRow(sumCols.map((c) => r[c])))];
   await fs.writeFile(path.join(OUT, "sessions_summary.csv"), sumLines.join("\n"));
 
