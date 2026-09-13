@@ -357,7 +357,7 @@ export default function FilmPage() {
           const rec = runController(track, theta);
           const next = rec.entries.find((e) => e.t > film.t) || rec.entries[rec.entries.length - 1];
           const sel = theta.nResp >= 1 ? selectTrack(theta, { genrePrior: snap.current, priorWeight: 0.3 }) : null;
-          setMonitor({ track, theta, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, series, next, nStim: eng.stimuli.length, sel });
+          setMonitor({ track, theta, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, series, next, nStim: eng.stimuli.length, sel, control: q.control === "1", micro: film.microCount || 0 });
         }
       }
       // 실제 제어(?control=1) — 판정 뒤 장면에서만. 도입부 다섯 사건은 관객을 공정히 읽기 위한
@@ -810,6 +810,7 @@ export default function FilmPage() {
           </div>
           <div style={{ opacity: 0.85 }}>관객모델 θ̂: 이득 {monitor.theta.g} · 지연 {monitor.theta.L}s · 회복 {monitor.theta.tau}s · 습관화 {monitor.theta.rho} <span style={{ opacity: 0.5 }}>(확신 {Math.round(monitor.theta.confidence * 100)}%)</span></div>
           {monitor.sel && <div style={{ opacity: 0.85 }}>도달가능 트랙: R {monitor.sel.reach.R} · H {monitor.sel.reach.H} · C {monitor.sel.reach.C} → <b>{monitor.sel.track}</b></div>}
+          <div style={{ opacity: 0.85 }}>실제 제어: {monitor.control ? <b style={{ color: "#7fd1ff" }}>ON · 미세 자극 {monitor.micro}/3</b> : <span style={{ opacity: 0.6 }}>OFF (advisory)</span>}</div>
           {monitor.next && (
             <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.1)" }}>
               다음 <b>{EVENT_LABEL[monitor.next.slotId] || monitor.next.slotId}</b> → <b>{monitor.next.variantId}</b> (용량 {monitor.next.dose})
