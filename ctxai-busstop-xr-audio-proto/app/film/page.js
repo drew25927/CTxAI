@@ -682,7 +682,13 @@ export default function FilmPage() {
                 return (
                   <div key={e.name} className={f.evRow}>
                     <span>{EVENT_LABEL[e.name] || e.name}</span>
-                    <span className={s.dim}>{e.feats.looked ? `봤음 ${e.feats.lookSec.toFixed(1)}s` : "안 봄"}{e.feats.recheck ? " · 재확인" : ""}{e.feats.retreat > 0.03 ? " · 물러남" : ""}</span>
+                    <span className={s.dim} title="임계값: LOOK_TOLERANCE_DEG=28 · STARTLE_YAW_VEL=140 · RETREAT_M=0.07 · SUSTAIN_SEC=2.0 (lib/headPoseSense.js)">
+                      {e.feats.looked ? `봤음 ${e.feats.lookSec.toFixed(1)}s` : "안 봄"}
+                      {e.feats.recheck ? " · 재확인" : ""}
+                      {` · 속도${e.feats.maxVel.toFixed(0)}°/s`}
+                      {` · 후퇴${e.feats.retreat.toFixed(2)}m`}
+                      {e.feats.recoverySec != null ? ` · 회복${e.feats.recoverySec.toFixed(1)}s` : ""}
+                    </span>
                     <span style={{ color: GENRE_META[top].accent }}>{GENRE_META[top].label} {Math.round(e[top] * 100)}</span>
                   </div>
                 );
