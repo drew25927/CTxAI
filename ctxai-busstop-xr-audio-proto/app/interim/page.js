@@ -162,6 +162,7 @@ export default function InterimPage() {
   const debugObsRef = useRef({});   // ?s1=A 같은 강제 덮어쓰기
   const liveGradesRef = useRef({}); // 실제 센서가 매긴 등급
   const observationsRef = useRef({}); // judge()에 실제로 들어가는 값 — 매 프레임 병합
+  const rawRef = useRef({});        // 등급 뒤에 숨은 원시 점수 — 실측 보정 때 HUD로 보려고
 
   if (!driftRef.current) driftRef.current = createInterimDrift();
   if (!standUpRef.current) standUpRef.current = createStandUpSensor();
@@ -176,7 +177,10 @@ export default function InterimPage() {
           cue.signal === "S1" ? gradeS1FromHeadPose(detail.feats) :
           cue.signal === "S3" ? gradeS3FromHeadPose(detail.feats) :
           cue.signal === "S5" ? gradeS5FromHeadPose(detail.feats, { stoodUp: standUpRef.current?.stoodUp }) : null;
-        if (grade) liveGradesRef.current = { ...liveGradesRef.current, [cue.signal]: grade };
+        if (grade) {
+          liveGradesRef.current = { ...liveGradesRef.current, [cue.signal]: grade };
+          rawRef.current = { ...rawRef.current, [cue.signal]: formatHeadPoseRaw(detail.feats) };
+        }
       },
     });
   }
@@ -204,6 +208,7 @@ export default function InterimPage() {
         setHud({
           current: { ...d.st.current }, settled: d.st.settled, elapsed: d.st.elapsed,
           grades: merged,
+          raw: { ...rawRef.current },
           stoodUp: !!standUpRef.current?.stoodUp,
           debugSignals: new Set(Object.keys(debugObsRef.current)),
         });
@@ -255,6 +260,7 @@ export default function InterimPage() {
 
     const grade = signal === "S2" ? gradeS2FromWebcam(m, mic) : gradeS4FromWebcam(m, mic);
     liveGradesRef.current = { ...liveGradesRef.current, [signal]: grade };
+    rawRef.current = { ...rawRef.current, [signal]: formatWebcamMicRaw(m, mic) };
   }
 
   async function start() {
@@ -356,6 +362,13 @@ export default function InterimPage() {
           <div className={f.hudMeta}>
             신호 <b>{SIGNALS.map((sig) => `${sig}:${hud.grades[sig] || "-"}${hud.debugSignals.has(sig) ? "(강제)" : ""}`).join(" ")}</b>
           </div>
+          {SIGNALS.some((sig) => !hud.debugSignals.has(sig) && hud.raw?.[sig]) && (
+            <div className={f.hudMeta} style={{ opacity: 0.7, fontSize: "0.85em" }}>
+              {SIGNALS.filter((sig) => !hud.debugSignals.has(sig) && hud.raw?.[sig]).map((sig) => (
+                <div key={sig}>{sig} 원시값: {hud.raw[sig]}</div>
+              ))}
+            </div>
+          )}
           <div className={f.hudMeta} style={{ opacity: 0.85 }}>
             센서 — 헤드셋/드래그 <b style={{ color: "#8fd68f" }}>연결됨</b> · 웹캠 <b style={{ color: okColor(camStatus) }}>{CAM_LABEL[camStatus]}</b> · 마이크 <b style={{ color: okColor(micStatus) }}>{MIC_LABEL[micStatus]}</b>
           </div>
@@ -395,4 +408,21 @@ export default function InterimPage() {
 function mmss(sec) {
   const s2 = Math.max(0, Math.floor(sec));
   return `${String(Math.floor(s2 / 60)).padStart(2, "0")}:${String(s2 % 60).padStart(2, "0")}`;
+}
+
+// 등급(A~E) 뒤에 숨은 원시 점수 — HUD 디버그 줄용. 임계값을 몇 대 몇으로 넘었는지
+// 안 보이면 실측 보정 때 눈대중으로만 고쳐야 해서, 실제 비교한 숫자를 그대로 보여준다.
+// lib/interimGrader.js의 등급 함수들과 나란히 두고 봐야 뜻이 통한다.
+const n2 = (x) => (Number.isFinite(x) ? x.toFixed(2) : "-");
+function formatHeadPoseRaw(feats) {
+  if (!feats) return "관측없음";
+  return `look=${n2(feats.lookSec)}s retreat=${n2(feats.retreat)} recheck=${feats.recheck ? "Y" : "N"}`;
+}
+function formatWebcamMicRaw(m, mic) {
+  const startle = m ? Math.max(m.maxAbsDy || 0, m.maxScaleDrop || 0) : null;
+  const cam = m
+    ? `fear=${n2(m.maxFear)} amuse=${n2(m.maxAmusement)} startle=${n2(startle)} sustain=${n2(m.sustainedSec)}s`
+    : "웹캠없음";
+  const micStr = mic ? `mic(loud=${n2(mic.loud)},n=${mic.burstCount})` : "마이크없음";
+  return `${cam} ${micStr}`;
 }
