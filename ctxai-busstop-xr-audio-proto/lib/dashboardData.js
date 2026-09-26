@@ -27,6 +27,8 @@ export const DEV_SCREENS = [
         desc: "장르 하나로 확정되는 점수를 보여주는 이전 버전." },
       { href: "/judge-v2", tag: "V2 · 신규", tagKind: "new", title: "판정 대시보드",
         desc: "3채널 점수와 배합 비율을 실시간 막대그래프로 확인." },
+      { href: "/facecheck", tag: "필수 · 점검", tagKind: "util", title: "웹캠 표정 인식 확인",
+        desc: "공포·웃음 실시간 숫자로 카메라 확인. /interim·/film 셀프테스트 전에 팀원 각자 해볼 것." },
       { href: "/verify", tag: "점검", tagKind: "util", title: "파이프라인 점검",
         desc: "웹캠·음성 인식이 서버까지 잘 도는지 빠르게 확인." },
       { href: "/selftest", tag: "점검", tagKind: "util", title: "브라우저 호환성 점검",
