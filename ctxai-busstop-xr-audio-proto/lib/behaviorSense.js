@@ -175,6 +175,8 @@ export async function observe(videoEl, durationMs, onTick) {
                 dx: baseline ? sig.dx - baseline.dx : 0,
                 dy: baseline ? sig.dy - baseline.dy : 0,
                 scaleRatio: baseline ? sig.scale / baseline.scale : 1,
+                fear,
+                amusement,
               });
             }
           }
