@@ -43,6 +43,7 @@ import { estimateTensionSeries } from "@/lib/tensionEstimate";
 import DirectorMonitor from "@/components/DirectorMonitor";
 import { curveAt } from "@/lib/tensionCurve";
 import { runController, microDecision } from "@/lib/slotController";
+import { actuationFor, bgmScale } from "@/lib/controlActuate";
 import { selectTrack } from "@/lib/trackSelect";
 import { deriveBgmGains, TRIGGERS } from "@/lib/directionMap";
 import { CUES, evalActors, T } from "@/lib/filmTimeline";
@@ -295,6 +296,7 @@ export default function FilmPage() {
   const engagementRef = useRef(null);
   const actorsRef = useRef({});
   const paramsRef = useRef(null);
+  const adjustRef = useRef(null);   // 연속 액추에이터 결과(actuationFor) — ReactiveStage 가 매 프레임 읽어 오프셋을 얹는다
   const filmRef = useRef({ running: false, t: 0, dominant: null, npcDistance: 0.9, busAt: null, onFrame: null });
   const controlsRef = useRef(null);
   const audioRef = useRef(new Map());
@@ -352,7 +354,8 @@ export default function FilmPage() {
       if (!d) return;
       const snap = d.snapshot();
       const gains = deriveBgmGains(snap.current, snap.settled);
-      for (const g of ["H", "R", "C"]) { const a = bgmRef.current[g]; if (a) a.volume += (gains[g] - a.volume) * 0.35; }
+      const bgmMul = bgmScale(adjustRef.current?.offsets); // 연속 액추에이터의 BGM 배율(직전 틱 값, 제어 OFF 면 1)
+      for (const g of ["H", "R", "C"]) { const a = bgmRef.current[g]; if (a) a.volume += (Math.min(1, gains[g] * bgmMul) - a.volume) * 0.35; }
       const film = filmRef.current;
       // 착석 뒤 옆사람의 거리는 상태가 정한다 (요청서 v5.0 §2.7: 0.5~1.4m)
       film.npcDistance = paramsRef.current?.npcDistance ?? 0.9;
@@ -370,20 +373,40 @@ export default function FilmPage() {
           const rec = runController(track, theta);
           const next = rec.entries.find((e) => e.t > film.t) || rec.entries[rec.entries.length - 1];
           const sel = theta.nResp >= 1 ? selectTrack(theta, { genrePrior: snap.current, priorWeight: 0.3 }) : null;
-          setMonitor({ track, theta, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, series, next, nStim: eng.stimuli.length, sel, control: q.control === "1", micro: film.microCount || 0 });
+          setMonitor({ track, theta, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, series, next, nStim: eng.stimuli.length, sel, control: q.control === "1", micro: film.microCount || 0, actuate: adjustRef.current });
         }
       }
       // 실제 제어(?control=1) — 판정 뒤 장면에서만. 도입부 다섯 사건은 관객을 공정히 읽기 위한
       // 중립 탐침이라 건드리지 않는다(용량을 바꾸면 그 사건이 만드는 θ 추정이 오염된다). 판정 뒤에는
-      // 장르가 정해졌으니, 관객 긴장 x̂ 이 작가 곡선 아래로 처지면 은은한 기존 소리(먼 기척)를 한 번
-      // 넣어 곡선 쪽으로 끌어올린다. 에셋이 필요 없는 유일한 실제 액추에이터다.
-      if (q.control === "1" && film.dominant && film.t >= T.npcSeated && film.t <= 150) {
+      // 장르가 정해졌으니 두 손으로 관객 긴장 x̂ 을 작가 곡선 쪽으로 몬다:
+      //   (1) 연속 액추에이터(lib/controlActuate.js) — 침묵·BGM·가로등·안개·거리·시선을 양방향으로 은은하게.
+      //       결과는 adjustRef 에 두고 ReactiveStage 가 매 프레임 deriveParams 값 위에 얹는다(대사 간격 gapMs
+      //       와 옆사람 거리는 paramsRef 를 읽으므로 따라온다). 제어 OFF 면 오프셋 0(항등).
+      //   (2) 미세 자극(slotController.microDecision) — 곡선 아래로 처지면 먼 기척 소리를 한 번(3회 한도).
+      // 기록: 2초(영화 시간)마다 control:actuate 이벤트 — 제어 OFF 세션에도 남겨 ON/OFF 궤적을 비교할 수 있게.
+      const controlOn = q.control === "1";
+      const inScene = !!film.dominant && film.t >= T.npcSeated && film.t <= 150;
+      if (inScene) {
         const eng = engagementRef.current?.data?.();
-        if (eng && eng.stimuli.length) {
-          const theta = fitViewerModel(eng.stimuli);
-          const series = estimateTensionSeries(eng);
-          const xhat = series.length ? series[series.length - 1].tension : null;
-          const tgt = curveAt(film.dominant, film.t);
+        const theta = eng && eng.stimuli.length ? fitViewerModel(eng.stimuli) : null;
+        const series = eng && eng.stimuli.length ? estimateTensionSeries(eng) : [];
+        const xhat = series.length ? series[series.length - 1].tension : null;
+        const tgt = curveAt(film.dominant, film.t);
+        const prev = adjustRef.current;
+        const dtFilm = prev ? Math.max(0, Math.min(2, film.t - prev.t)) : 0.25 * speed;
+        const act = actuationFor({ xhat, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, track: film.dominant, theta, prev, dt: dtFilm, active: controlOn });
+        adjustRef.current = { ...act, t: film.t, xhat, target: tgt.target };
+        if (film.lastActuateLogAt == null || film.t - film.lastActuateLogAt >= 2) {
+          const p = paramsRef.current || {};
+          const r3 = (v) => (Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null);
+          d.markEvent("control:actuate", {
+            t: Math.round(film.t * 10) / 10, active: controlOn, mode: act.mode, u: act.u, err: act.err, gScale: act.gScale,
+            xhat: r3(xhat), target: r3(tgt.target), offsets: act.offsets, bgm: r3(bgmScale(act.offsets)),
+            applied: { npcSilence: r3(p.npcSilence), lampOn: r3(p.lampOn), fogDensity: r3(p.fogDensity), npcDistance: r3(p.npcDistance), npcGaze: r3(p.npcGaze) },
+          });
+          film.lastActuateLogAt = film.t; film.actuateLogCount = (film.actuateLogCount || 0) + 1;
+        }
+        if (controlOn && eng && eng.stimuli.length) {
           const { fire, dose } = microDecision({ xhat, target: tgt.target, tol: tgt.tol, tNow: film.t, lastAt: film.lastMicroAt ?? -Infinity, count: film.microCount || 0 });
           if (fire) {
             playSfx("13", { volume: 0.12 + 0.22 * dose }); // 먼 기척(클래터) — 은은하게
@@ -393,6 +416,9 @@ export default function FilmPage() {
             film.lastMicroAt = film.t; film.microCount = (film.microCount || 0) + 1;
           }
         }
+      } else if (adjustRef.current && adjustRef.current.u !== 0) {
+        // 장면 밖(150초 뒤 버스 도착 구간) — 구동량을 서서히 0 으로 되돌린다
+        adjustRef.current = { ...actuationFor({ xhat: null, target: 0, tol: 0, track: film.dominant, prev: adjustRef.current, dt: 0.25 * speed, active: true }), t: film.t };
       }
 
       setHud({ ...snap, t: film.t, params: paramsRef.current, lastEvidence: d.st.lastEvidence, camStatus, events: sensorRef.current?.report?.().events || [] });
@@ -425,7 +451,8 @@ export default function FilmPage() {
     viewerSimRef.current = viewerSim ? createGazeSim(viewerSim, { seed: viewerSeed, speed }) : null; // 합성 관객은 영화 시간을 산다(배속이면 반응도 압축)
     if (viewerSimRef.current) d.markEvent("viewer:synthetic", { profile: viewerSim, seed: viewerSeed });
     paramsRef.current = null;
-    filmRef.current = { running: true, t: 0, dominant: null, npcDistance: 0.9, busAt: null, onFrame: null, lastMicroAt: -999, microCount: 0 };
+    adjustRef.current = null;
+    filmRef.current = { running: true, t: 0, dominant: null, npcDistance: 0.9, busAt: null, onFrame: null, lastMicroAt: -999, microCount: 0, lastActuateLogAt: null, actuateLogCount: 0 };
     setDominant(null); setLine(null); setCaption(""); setAskStatus(null);
     if (bias) d.pushEvidence({ [bias.g]: 1 }, bias.w, "bias", `?bias=${bias.g}`);
     d.setPhase("intro");
@@ -678,14 +705,17 @@ export default function FilmPage() {
   function sessionData(extra = {}) {
     const d = directionRef.current;
     if (!d) return null;
-    // 궤적 추종 로그(advisory) — 관객모델 θ̂와 제어기 추천 계획. 실제 자극은 아직 고정이라 "무엇을 골랐을지"의 기록이다.
+    // 궤적 추종 로그 — 관객모델 θ̂와 제어기 추천 계획(슬롯 계획은 advisory), 연속 액추에이션 요약.
+    // 실제로 움직인 것은 ?control=1 일 때의 미세 자극(control:micro)과 연속 파라미터(control:actuate 이벤트).
     let control;
     try {
       const eng = engagementRef.current?.data?.();
       if (eng && eng.stimuli.length) {
         const track = (q.track || filmRef.current.dominant || "H").toUpperCase();
         const theta = fitViewerModel(eng.stimuli);
-        control = { track, theta, plan: runController(track, theta).entries };
+        const a = adjustRef.current;
+        control = { track, theta, plan: runController(track, theta).entries,
+          actuation: { on: q.control === "1", ticks: filmRef.current.actuateLogCount || 0, micro: filmRef.current.microCount || 0, last: a ? { t: a.t, u: a.u, mode: a.mode, offsets: a.offsets } : null } };
       }
     } catch { /* 로그 실패는 무시 */ }
     const vs = viewerSimRef.current;
@@ -741,7 +771,7 @@ export default function FilmPage() {
         <Canvas shadows="soft" gl={{ antialias: true }}>
           <PerspectiveCamera makeDefault position={CANVAS_CAMERA.position} fov={CANVAS_CAMERA.fov} />
           <XR store={xrStore}>
-            <ReactiveStage directionRef={directionRef} actorsRef={actorsRef} dominant={dominant} paramsOut={paramsRef} cueRef={filmRef} useRig={useRig} rigTest={q.rigtest === "1"} signText={signText} reflect={fx && !xrActive} benchYaw={Number(q.benchyaw) || 0} />
+            <ReactiveStage directionRef={directionRef} actorsRef={actorsRef} dominant={dominant} paramsOut={paramsRef} adjustRef={adjustRef} cueRef={filmRef} useRig={useRig} rigTest={q.rigtest === "1"} signText={signText} reflect={fx && !xrActive} benchYaw={Number(q.benchyaw) || 0} />
             <XRProbe onChange={setXrActive} />
             <Effects enabled={fx} />
             <FilmDirector directionRef={directionRef} sensorRef={sensorRef} engagementRef={engagementRef} actorsRef={actorsRef} filmRef={filmRef} onCue={onCue} speed={speed} debugBus={q.bus === "1"} debugTruck={q.truck === "1"} viewerSimRef={viewerSimRef} controlsRef={controlsRef} />

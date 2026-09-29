@@ -18,6 +18,7 @@ import { RGBELoader } from "three/examples/jsm/loaders/RGBELoader.js";
 import { clone as skeletonClone } from "three/examples/jsm/utils/SkeletonUtils.js";
 import { Cypress, RoundPine, Reeds, ForestRing, Shelter, Bench, Cafe } from "./BlockoutStage";
 import { deriveParams } from "@/lib/directionMap";
+import { applyActuation } from "@/lib/controlActuate";
 import Puddles from "./Puddles";
 import Bus from "./Bus";
 import Truck from "./Truck";
@@ -592,8 +593,10 @@ function Cat({ x, z, running, facingBench, bob }) {
  * @param {React.MutableRefObject} props.actorsRef     evalActors() 결과 (디렉터가 매 프레임 갱신)
  * @param {string|null} props.dominant                 앉는 인물 R/H/C
  * @param {React.MutableRefObject} [props.paramsOut]   파생 파라미터를 밖(HUD)에 노출
+ * @param {React.MutableRefObject} [props.adjustRef]   연속 액추에이터(lib/controlActuate.js actuationFor)의 결과.
+ *   `.current.offsets` 가 있으면 deriveParams 값 위에 얹어 무대·옆사람·대사 간격에 반영한다. 없거나 0 이면 항등.
  */
-export default function ReactiveStage({ directionRef, actorsRef, dominant, paramsOut, cueRef = null, useRig = true, rigTest = false, signText, reflect = true, benchYaw = 0 }) {
+export default function ReactiveStage({ directionRef, actorsRef, dominant, paramsOut, adjustRef = null, cueRef = null, useRig = true, rigTest = false, signText, reflect = true, benchYaw = 0 }) {
   const { scene, camera } = useThree();
   const skyMat = useRef();
   const sun = useRef();
@@ -623,7 +626,11 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
     const d = directionRef.current;
     if (!d) return;
     const st = d.st;
-    const p = deriveParams(st.current, st.settled);
+    // 상태 → 파생 파라미터. 판정 뒤 제어(?control=1)가 켜져 있으면 연속 액추에이터의 오프셋을 얹는다
+    // (침묵·가로등·안개·거리·시선. 범위는 applyActuation 이 자른다). 오프셋이 없으면 원래 값 그대로.
+    const base = deriveParams(st.current, st.settled);
+    const off = adjustRef?.current?.offsets;
+    const p = off ? applyActuation(base, off) : base;
     if (paramsOut) paramsOut.current = p;
     const actors = actorsRef.current || {};
 

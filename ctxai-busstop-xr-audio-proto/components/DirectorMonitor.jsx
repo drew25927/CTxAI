@@ -9,7 +9,8 @@
 //
 // monitor 객체 모양(페이지가 250ms/200ms 틱마다 만든다):
 //   { track, theta:{g,L,tau,rho,confidence,nResp}, xhat, target?, tol?, ceiling?, series:[{t,tension}],
-//     nStim, sel?:{track,reach}, control?:bool, micro?:number, next?:{slotId,variantId,dose,reason}, note? }
+//     nStim, sel?:{track,reach}, control?:bool, micro?:number, next?:{slotId,variantId,dose,reason}, note?,
+//     actuate?:{u,mode,offsets} }   ← /film 연속 액추에이터(lib/controlActuate.js)의 현재 구동량·오프셋
 
 import { curveAt } from "@/lib/tensionCurve";
 
@@ -41,6 +42,21 @@ export function MonitorChart({ series = [], track = "H", tNow = 0, ceiling = 1, 
 }
 
 const fmt2 = (v) => (Number.isFinite(v) ? v.toFixed(2) : "-");
+const sgn = (v, d = 2) => (v > 0 ? "+" : "") + v.toFixed(d);
+const ACT_MODE = { arouse: "각성", relax: "이완", hold: "유지", off: "대기" };
+
+// 연속 액추에이터 한 줄 — 0 이 아닌 축만. (BGM 은 배율, 나머지는 deriveParams 값에 더한 오프셋)
+function actuateText(a) {
+  const o = a.offsets || {};
+  const parts = [];
+  if (o.npcSilence) parts.push(`침묵 ${sgn(o.npcSilence)}s`);
+  if (o.bgmGain) parts.push(`BGM ×${(1 + o.bgmGain).toFixed(2)}`);
+  if (o.lampOn) parts.push(`가로등 ${sgn(o.lampOn)}`);
+  if (o.fogDensity) parts.push(`안개 ${sgn(o.fogDensity, 3)}`);
+  if (o.npcDistance) parts.push(`거리 ${sgn(o.npcDistance)}m`);
+  if (o.npcGaze) parts.push(`시선 ${sgn(o.npcGaze * 100, 0)}%`);
+  return parts.length ? parts.join(" · ") : "오프셋 0";
+}
 
 export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTarget = true, marks = [], eventLabel = {}, title = "디렉터 모니터" }) {
   if (!monitor) return null;
@@ -65,6 +81,9 @@ export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTar
       {monitor.sel && <div style={{ opacity: 0.85 }}>도달가능 트랙: R {monitor.sel.reach.R} · H {monitor.sel.reach.H} · C {monitor.sel.reach.C} → <b>{monitor.sel.track}</b></div>}
       {monitor.control != null && (
         <div style={{ opacity: 0.85 }}>실제 제어: {monitor.control ? <b style={{ color: "#7fd1ff" }}>ON · 미세 자극 {monitor.micro ?? 0}/3</b> : <span style={{ opacity: 0.6 }}>OFF (advisory)</span>}</div>
+      )}
+      {monitor.control && monitor.actuate && (
+        <div style={{ opacity: 0.85, fontSize: 11 }}>연속 구동 <b>{ACT_MODE[monitor.actuate.mode] || monitor.actuate.mode}</b> u {sgn(monitor.actuate.u || 0)} · {actuateText(monitor.actuate)}</div>
       )}
       {monitor.note && <div style={{ opacity: 0.7 }}>{monitor.note}</div>}
       {monitor.next && (
