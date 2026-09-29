@@ -55,7 +55,7 @@ import { loadDialoguePool, pickPoolLine, poolCoverage } from "@/lib/dialoguePool
 import { beatOf, gazeFor, playsLine, playedCount, beatsTotalSec, answerWatchStart, answerWatchUpdate, answerWatchResult } from "@/lib/dialogueBeats";
 import { scoresFromMoodApi } from "@/lib/textKeywords";
 import { analyzeProsody } from "@/lib/voiceProsody";
-import { mixLines } from "@/lib/viewerText";
+import { mixLines, mmss, fingerprintText, focusText, filmTimeEvents, STIMULUS_LABEL } from "@/lib/viewerText";
 import s from "../story/story.module.css";
 import f from "./film.module.css";
 
@@ -68,17 +68,8 @@ const GENRE_META = {
   C: { accent: "#e0a86a", label: "블랙코미디" },
 };
 const CAM_WINDOW_MS = 8000;
-const EVENT_LABEL = { poster: "포스터", cafeBell: "우비 인물", truck: "물보라", figure: "우비 인물", truckSplash: "물보라", frog: "개구리", cat: "고양이", catScream: "비명", "micro-lamp": "가로등", "micro-door": "먼 문" };
-
-// 관객 반응 지문을 한 문장으로 — fitViewerModel 의 θ 를 사람이 읽는 말로.
-function fingerprintText(theta) {
-  if (!theta || theta.nResp < 2) return null;
-  const lat = theta.L < 0.5 ? "자극에 빠르게 반응하고" : "한 박자 늦게 반응하고";
-  const rec = theta.tau < 2 ? "금방 가라앉았으며" : "여운이 오래 남았으며";
-  const hab = theta.rho > 0.25 ? "반복될수록 반응이 눈에 띄게 줄었습니다" : "반복돼도 반응이 유지됐습니다";
-  const gain = theta.g > 1 ? "전반적으로 자극에 크게 흔들렸고, " : theta.g < 0.45 ? "전반적으로 차분했고, " : "";
-  return `${gain}${lat} ${rec} ${hab}`;
-}
+const EVENT_LABEL = STIMULUS_LABEL; // 사건 이름표는 종료 카드·비교 화면·/interim 과 한 표(lib/viewerText.js)
+// 관객 반응 지문(fingerprintText)·집중한 순간(focusText)도 lib/viewerText.js — 비교 화면과 사본이 갈라졌던 문제(B84·B108)
 
 // URL 옵션은 마운트 뒤에 읽는다 — 서버 렌더와 첫 클라이언트 렌더가 같아야 하이드레이션 오류가 없다.
 function useQuery() {
@@ -1019,10 +1010,10 @@ export default function FilmPage() {
             </div>
             {engSummary && (
               <p className={f.endSub} style={{ marginTop: 12 }}>
-                집중한 순간: <b style={{ color: accent }}>{engSummary.topSegments?.[0]?.near ? EVENT_LABEL[engSummary.topSegments[0].near.name] || engSummary.topSegments[0].near.name : (engSummary.topSegments?.[0] ? `${Math.round(engSummary.topSegments[0].t0)}초 무렵` : "-")}</b>
+                집중한 순간: <b style={{ color: accent }}>{focusText(engSummary, { events: filmTimeEvents(directionRef.current?.st.events, speed), speed }) || "-"}</b>
                 {engSummary.probeResponseRate != null && <> · 사건에 반응한 비율 <b>{Math.round(engSummary.probeResponseRate * 100)}%</b></>}
                 {engSummary.laughEpisodes?.length > 0 && <> · 웃음 <b>{engSummary.laughEpisodes.length}회</b></>}
-                {engSummary.dropPoint && <> · 집중이 풀린 지점 <b>{Math.floor(engSummary.dropPoint.t / 60)}:{String(Math.floor(engSummary.dropPoint.t % 60)).padStart(2, "0")}</b></>}
+                {engSummary.dropPoint && <> · 집중이 풀린 지점 <b>{mmss(engSummary.dropPoint.t * (speed || 1))}</b></>}
               </p>
             )}
             {fingerprint && <p className={f.endSub} style={{ marginTop: 6, fontStyle: "italic" }}>당신의 반응: {fingerprint}</p>}

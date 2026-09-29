@@ -17,8 +17,8 @@
 import { curveAt } from "@/lib/tensionCurve";
 
 // 작은 그래프 — 작가 목표 곡선(점선)과 관객 긴장 추정 x̂(실선), 현재 시각 표시, 사건 눈금.
-export function MonitorChart({ series = [], track = "H", tNow = 0, ceiling = 1, tMax: tMaxProp = 180, showTarget = true, marks = [] }) {
-  const W = 292, H = 60, PAD = 4;
+export function MonitorChart({ series = [], track = "H", tNow = 0, ceiling = 1, tMax: tMaxProp = 180, showTarget = true, marks = [], width = 292, height = 60 }) {
+  const W = width, H = height, PAD = 4; // 기본 292×60 은 모니터 패널 폭. /interim 종료 카드는 더 넓게 그린다(B14a)
   const tMax = Math.max(tMaxProp, tNow, series.length ? series[series.length - 1].t : 0);
   const x = (t) => PAD + (t / tMax) * (W - PAD * 2);
   const y = (v) => H - PAD - v * (H - PAD * 2);

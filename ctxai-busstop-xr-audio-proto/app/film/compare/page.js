@@ -11,10 +11,10 @@
 import { useEffect, useMemo, useState } from "react";
 import s from "../../story/story.module.css";
 import f from "../film.module.css";
-import { mixLines, verdictOf } from "@/lib/viewerText";
+import { mixLines, verdictOf, mmss, fingerprintText, focusText, filmTimeEvents, STIMULUS_LABEL } from "@/lib/viewerText";
 
 const GENRE = { R: { label: "로맨스", accent: "#f2a7c0" }, H: { label: "공포", accent: "#8fae95" }, C: { label: "블랙코미디", accent: "#e0a86a" } };
-const EVENT_LABEL = { poster: "포스터", cafeBell: "우비 인물", truckSplash: "물보라", frog: "개구리", cat: "고양이", catScream: "비명" };
+const EVENT_LABEL = STIMULUS_LABEL; // 사건 이름표는 종료 카드와 한 표(lib/viewerText.js)
 
 function useQuery() {
   const [q, setQ] = useState({});
@@ -67,25 +67,20 @@ function describe(sess) {
     + (sess.selfReport ? ` · 본인 느낌: ${GENRE[sess.selfReport]?.label}` : "");
 }
 
-// 관객 반응 지문 — 세션 JSON 의 control.theta 로. (fingerprintText 와 같은 규칙, 여기선 로컬)
-function fingerprint(theta) {
-  if (!theta || theta.nResp < 2) return null;
-  const lat = theta.L < 0.5 ? "빠르게 반응하고" : "한 박자 늦게 반응하고";
-  const rec = theta.tau < 2 ? "금방 가라앉았으며" : "여운이 오래 남았으며";
-  const hab = theta.rho > 0.25 ? "반복될수록 반응이 줄었습니다" : "반복돼도 반응이 유지됐습니다";
-  return `${lat} ${rec} ${hab}`;
-}
-
-// 집중·긴장 한 줄 — engagement.summary 로.
+// 집중·긴장 한 줄 — engagement.summary 로. 반응 지문(fingerprintText)·집중한 순간(focusText)은 종료 카드와 같은 함수(lib/viewerText.js, B84·B108).
+// 세션의 집중도 시각은 실제 경과 초라 배속 회차(sess.speed)는 영화 시간으로 곱해 적는다(/film 세션은 이벤트도 실제 초라 filmTimeEvents 로).
 function engageLine(sess) {
   const s = sess?.engagement?.summary;
   if (!s) return null;
+  const sp = sess?.speed || 1;
   const parts = [];
   if (s.probeResponseRate != null) parts.push(`사건 반응 ${Math.round(s.probeResponseRate * 100)}%`);
-  if (s.topSegments?.[0]?.near) parts.push(`가장 집중 ${EVENT_LABEL[s.topSegments[0].near.name] || s.topSegments[0].near.name}`);
+  const events = sess?.route === "interim" ? sess.events : filmTimeEvents(sess?.events, sp);
+  const focus = focusText(s, { events, speed: sp });
+  if (focus) parts.push(`가장 집중 ${focus}`);
   if (s.laughEpisodes?.length) parts.push(`웃음 ${s.laughEpisodes.length}회`);
-  if (s.dropPoint) parts.push(`집중 풀림 ${Math.floor(s.dropPoint.t / 60)}:${String(Math.floor(s.dropPoint.t % 60)).padStart(2, "0")}`);
-  const fp = fingerprint(sess?.control?.theta);
+  if (s.dropPoint) parts.push(`집중 풀림 ${mmss(s.dropPoint.t * sp)}`);
+  const fp = fingerprintText(sess?.control?.theta);
   return { metrics: parts.join(" · "), fp };
 }
 

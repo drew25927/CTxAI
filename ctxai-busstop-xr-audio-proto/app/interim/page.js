@@ -71,7 +71,8 @@ import { fitViewerModel } from "@/lib/viewerModel";
 import { estimateTensionSeries } from "@/lib/tensionEstimate";
 import { selectTrack } from "@/lib/trackSelect";
 import { probeFor, probeMarks, interimTrack } from "@/lib/interimProbes";
-import DirectorMonitor from "@/components/DirectorMonitor";
+import DirectorMonitor, { MonitorChart } from "@/components/DirectorMonitor";
+import { fingerprintText, focusText } from "@/lib/viewerText";
 import { T } from "@/lib/interimTimeline";
 import s from "../story/story.module.css";
 import f from "../film/film.module.css";
@@ -227,6 +228,7 @@ export default function InterimPage() {
   const startedAtRef = useRef(null);
   const [monitor, setMonitor] = useState(null); // 디렉터 모니터(?monitor=1)
   const [savedId, setSavedId] = useState(null);
+  const [endEngine, setEndEngine] = useState(null); // 종료 카드 재료 — 반응 지문·x̂ 곡선·집중한 순간(B14a)
   const viewerSimRef = useRef(null);  // 합성 관객(?viewer=, lib/gazeSim.js) — start() 에서 만든다
   const controlsRef = useRef(null);   // OrbitControls — 합성 관객이 카메라를 돌릴 때 target 이 필요하다
 
@@ -427,6 +429,16 @@ export default function InterimPage() {
   }
   useEffect(() => {
     if (phase !== "end") return;
+    // 종료 카드(B14a) — 관객 반응 지문(θ̂)·긴장 x̂ 곡선·집중한 순간을 /film 종료 카드와 같은 함수로 만든다(lib/viewerText.js).
+    // 팀 판정(장르)은 그대로 제목이고, 그 아래에 "왜 이 사람에게 이 결과인가" 를 관객 자신의 반응으로 보여 준다.
+    try {
+      const eng = engagementRef.current?.data?.();
+      const summary = engagementRef.current?.report?.()?.summary || null;
+      const theta = eng ? fitViewerModel(eng.stimuli || []) : null;
+      // 센서 시각은 실제 경과 초 — 카드의 S1~S5 눈금(영화 시간)과 맞추려고 배속을 곱한다(HUD 와 같은 규칙)
+      const series = eng ? estimateTensionSeries(eng).map((p) => (speed === 1 ? p : { ...p, t: r3(p.t * speed) })) : [];
+      setEndEngine({ theta, summary, series, fingerprint: fingerprintText(theta), focus: focusText(summary, { events: eventsRef.current, speed }) });
+    } catch { setEndEngine(null); }
     const data = sessionData();
     if (!data) return;
     fetch("/api/session", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) })
@@ -556,10 +568,29 @@ export default function InterimPage() {
 
       {phase === "end" && (
         <div className={s.intro}>
-          <div className={s.introCard}>
+          <div className={s.introCard} style={{ width: "min(640px, 94vw)" }}>
             <p className={s.introEyebrow}>정류장 · 중간시연</p>
             <h1 className={s.introTitle}>{genre ? GENRE_META[genre].label : "-"}</h1>
-            <p className={s.introSub}>체험이 끝났습니다.{savedId ? <><br /><span style={{ opacity: 0.6, fontSize: "0.85em" }}>세션 저장: {savedId}</span></> : null}</p>
+            <p className={s.introSub} style={{ marginBottom: 14 }}>체험이 끝났습니다.{savedId ? <><br /><span style={{ opacity: 0.6, fontSize: "0.85em" }}>세션 저장: {savedId}</span></> : null}</p>
+            {/* 관객 반응 지문·x̂ 미니 그래프·집중한 순간 — 같은 다섯 사건에 다른 두 사람이 다른 카드를 받는다(B14a) */}
+            {endEngine && (
+              <div style={{ textAlign: "left", margin: "0 auto 20px", maxWidth: 520 }}>
+                {endEngine.series.length > 0 && (
+                  <>
+                    <MonitorChart series={endEngine.series} track={genre || "H"} tNow={T.end} tMax={T.end} ceiling={1} showTarget={false} marks={PROBE_MARKS} width={520} height={84} />
+                    <p className={s.introSub} style={{ margin: "6px 0 12px", fontSize: 11.5 }}>긴장 추정 x̂ — S1~S5 다섯 사건에 대한 당신의 반응에서 추정한 곡선</p>
+                  </>
+                )}
+                {endEngine.fingerprint && <p className={s.introSub} style={{ margin: "0 0 6px", fontStyle: "italic", color: "rgba(255,255,255,0.82)" }}>당신의 반응: {endEngine.fingerprint}</p>}
+                {endEngine.summary && (
+                  <p className={s.introSub} style={{ margin: 0 }}>
+                    집중한 순간: <b style={{ color: accent }}>{endEngine.focus || "-"}</b>
+                    {endEngine.summary.probeResponseRate != null && <> · 사건에 반응한 비율 <b>{Math.round(endEngine.summary.probeResponseRate * 100)}%</b></>}
+                    {endEngine.theta && endEngine.theta.nResp >= 2 && <> · <span style={{ opacity: 0.7 }}>관객모델 θ̂ 이득 {endEngine.theta.g} · 회복 {endEngine.theta.tau}s</span></>}
+                  </p>
+                )}
+              </div>
+            )}
             <div className={s.choices}>
               <button className={s.choiceBtn} onClick={() => window.location.reload()}>다시 앉기 ↺</button>
             </div>
