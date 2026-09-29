@@ -101,7 +101,59 @@ test("예감: 자극 전에 이미 그쪽을 보고 있으면 preLook=1", () => 
   feed(s, 5, () => ({ yaw: 70 }));
   const r = s.report();
   assert.equal(r.stimuli[0].preLook, 1);
+  assert.equal(r.stimuli[0].preTurn, 1, "정면(0°)을 보다가 자극 2초 전에 70° 로 돌렸다");
   assert.equal(r.summary.anticipationRate, 1);
+});
+
+test("예감(B158 후속): 원래 정면을 보던 관객에게 정면 8° 사건은 preLook=1 이지만 preTurn=0", () => {
+  const s = createEngagementSensor();
+  feed(s, 8, still);
+  s.beginStimulus({ name: "truckSplash", azimuth: 8, dur: 2.5, kind: "probe", channel: "av", tail: 1 });
+  feed(s, 4, still);
+  const st = s.report().stimuli[0];
+  assert.equal(st.preLook, 1);
+  assert.equal(st.preTurn, 0);
+});
+
+test("이미 보던 사건(B158): 시작할 때 사건 방향 안을 보고 있었고 움직이지 않았으면 atOnset=1 · turned=0 · responded=0", () => {
+  // 1배속 /interim 차분형 S2 물보라(방위 8°)의 모양 — 정면을 보던 관객이 그대로 앉아 있었다(편차 0.6° · 각속도 2.4°/s)
+  const s = createEngagementSensor();
+  feed(s, 6, still);
+  s.beginStimulus({ name: "truckSplash", azimuth: 8, dur: 2.5, kind: "probe", channel: "av", dose: 0.6, tail: 2 });
+  feed(s, 6, (t) => ({ yaw: 0.3 * Math.sin(t) }));
+  const r = s.report().stimuli[0];
+  assert.equal(r.atOnset, 1);
+  assert.equal(r.looked, 1, "looked 는 '그쪽을 봤다' 그대로 남는다");
+  assert.equal(r.turned, 0);
+  assert.equal(r.responded, 0, "돌아본 것도 움찔한 것도 아니다");
+  assert.equal(s.report().summary.probeResponseRate, 0);
+  assert.ok(s.current().probeResp > 0.5, `지켜본 관객의 집중도 탐침 항은 사전값 0.5 에서 내려가지 않는다 (${s.current().probeResp})`);
+});
+
+test("이미 보던 사건에 움찔(B158): 빠른 고개 움직임이 있으면 turned=0 이어도 responded=1", () => {
+  const s = createEngagementSensor();
+  feed(s, 6, still);
+  s.beginStimulus({ name: "truckSplash", azimuth: 8, dur: 2.5, kind: "probe", channel: "av", dose: 0.6, tail: 2 });
+  // 0.1초 뒤 0.1초 동안 18° 움찔(≈180°/s) 후 제자리
+  feed(s, 6, (t) => ({ yaw: t < 0.1 ? 0 : t < 0.2 ? -180 * (t - 0.1) : -18 + Math.min(18, 20 * (t - 0.2)) }));
+  const r = s.report().stimuli[0];
+  assert.equal(r.atOnset, 1);
+  assert.equal(r.turned, 0);
+  assert.equal(r.responded, 1);
+  assert.ok(r.moveLatency != null && r.moveLatency < 0.3, `moveLatency ${r.moveLatency}`);
+});
+
+test("돌아본 사건(B158): 시작할 때 다른 곳을 보다가 사건 쪽으로 돌리면 atOnset=0 · turned=1", () => {
+  const s = createEngagementSensor();
+  feed(s, 6, still);
+  s.beginStimulus({ name: "poster", azimuth: 72, dur: 3, kind: "probe", channel: "av", dose: 0.6, tail: 2 });
+  // 천천히(≈40°/s) 돌려 움직임 응답 없이 시선만으로 응답
+  feed(s, 6, (t) => ({ yaw: Math.min(72, 40 * t) }));
+  const r = s.report().stimuli[0];
+  assert.equal(r.atOnset, 0);
+  assert.equal(r.turned, 1);
+  assert.equal(r.moveLatency, null, "느린 회전이라 움직임 응답은 없다");
+  assert.equal(r.responded, 1);
 });
 
 test("의도 일치: setIntent(60) 동안 60° 를 보면 intentMatch≈1, 정면을 보면 ≈0, 해제하면 null", () => {

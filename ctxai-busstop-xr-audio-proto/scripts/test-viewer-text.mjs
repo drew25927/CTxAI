@@ -111,8 +111,23 @@ test("fingerprintText: 세 프로필이 서로 다른 문장을 받는다", () =
   const out = Object.fromEntries(Object.entries(THETA).map(([k, th]) => [k, fingerprintText(th)]));
   assert.equal(out.fearful, "자극마다 크게 흔들렸고, 빠르게 반응하고 금방 가라앉았으며 반복돼도 반응이 유지됐습니다");
   assert.equal(out.curious, "자극에 또렷이 흔들렸고, 빠르게 반응하고 금방 가라앉았으며 반복돼도 반응이 유지됐습니다");
-  assert.equal(out.calm, "자극에 살짝 흔들렸고, 빠르게 반응하고 금방 가라앉았으며 반복돼도 반응이 유지됐습니다");
+  // 차분형은 응답 2/5 · 신뢰도 0.2 · θ̂ 사전값 — 성향 문장이 아니라 반응 수만(B147)
+  assert.equal(out.calm, "사건 5개 중 두 번만 반응해 반응 지문을 쓰기에는 이릅니다");
   assert.equal(new Set(Object.values(out)).size, 3);
+});
+test("fingerprintText(B147): 신뢰도 0.2·사전값 θ̂(응답 2건) 에는 습관화·회복 같은 성향 구절이 없다", () => {
+  const fp = fingerprintText(THETA.calm);
+  assert.doesNotMatch(fp, /반복|유지|줄었|가라앉|여운|흔들/);
+  assert.match(fp, /5개 중 두 번만/);
+});
+test("fingerprintText(B147): 습관화 구절은 반응이 두 가지 이상의 반복 횟수(nth)에 걸쳤을 때만", () => {
+  // levels 1 — ρ 는 사전값이므로 습관화를 말하지 않고 회복 구절로 문장을 닫는다
+  assert.equal(fingerprintText({ g: 1.0, L: 0.2, tau: 1, rho: 0.15, n: 5, nResp: 3, levels: 1, confidence: 0.3 }), "자극에 또렷이 흔들렸고, 빠르게 반응하고 금방 가라앉았습니다");
+  assert.equal(fingerprintText({ g: 1.0, L: 0.2, tau: 3, rho: 0.15, n: 5, nResp: 3, levels: 1, confidence: 0.3 }), "자극에 또렷이 흔들렸고, 빠르게 반응하고 여운이 오래 남았습니다");
+  assert.match(fingerprintText({ g: 1.0, L: 0.2, tau: 1, rho: 0.15, n: 5, nResp: 3, levels: 2, confidence: 0.6 }), /반복돼도 반응이 유지됐습니다$/);
+  // levels 가 없는 옛 θ̂ — 확신도가 nResp/5 의 절반이면 nth 가 한 가지였다
+  assert.doesNotMatch(fingerprintText({ g: 1.0, L: 0.2, tau: 1, rho: 0.15, n: 5, nResp: 4, confidence: 0.4 }), /반복/);
+  assert.match(fingerprintText({ g: 1.0, L: 0.2, tau: 1, rho: 0.15, n: 5, nResp: 4, confidence: 0.8 }), /반복/);
 });
 test("fingerprintText(B84): 비교 화면에서 같은 문장이던 공포형(g 1.287)·차분형(g 0.208)이 갈린다", () => {
   const a = fingerprintText({ g: 1.287, L: 0.15, tau: 0.8, rho: 0.0, n: 9, nResp: 9 });
@@ -122,13 +137,13 @@ test("fingerprintText(B84): 비교 화면에서 같은 문장이던 공포형(g 
   assert.match(b, /^전반적으로 차분했고/);
 });
 test("fingerprintText: 응답 0·1건도 문장이 나온다(null 아님) — 지문 대신 사실을 적는다", () => {
-  assert.equal(fingerprintText({ g: 0, L: 0, tau: 0, rho: 0, n: 5, nResp: 0 }), "사건 5개에 고개를 돌린 기록이 없어 반응 지문을 만들지 못했습니다");
+  assert.equal(fingerprintText({ g: 0, L: 0, tau: 0, rho: 0, n: 5, nResp: 0 }), "사건 5개에 반응한 기록이 없어 반응 지문을 만들지 못했습니다");
   assert.equal(fingerprintText({ g: 0.5, L: 0.2, tau: 1, rho: 0, n: 5, nResp: 1 }), "사건 5개 중 한 번만 반응해 반응 지문을 쓰기에는 이릅니다");
   assert.equal(fingerprintText({ g: 0, L: 0, tau: 0, rho: 0, n: 0, nResp: 0 }), "기록된 사건이 없어 반응 지문을 만들지 못했습니다");
   assert.equal(fingerprintText(null), null);
 });
 test("fingerprintText: 지연·회복·습관화 구절도 임계값으로 갈린다", () => {
-  const slow = fingerprintText({ g: 1.0, L: 0.9, tau: 3, rho: 0.4, n: 5, nResp: 5 });
+  const slow = fingerprintText({ g: 1.0, L: 0.9, tau: 3, rho: 0.4, n: 5, nResp: 5, levels: 3, confidence: 1 });
   assert.equal(slow, "자극에 또렷이 흔들렸고, 한 박자 늦게 반응하고 여운이 오래 남았으며 반복될수록 반응이 눈에 띄게 줄었습니다");
 });
 
@@ -166,6 +181,8 @@ test("MOMENT_TEXT(B128·B144): 세 기준의 이름 — 옛 '본 것'·'가장 �
   assert.equal(MOMENT_TEXT.calm, "가장 차분히 집중한 순간");
   assert.equal(MOMENT_TEXT.turned, "돌아본 사건");
   assert.equal(MOMENT_TEXT.flinched, "움찔만 한 사건");
+  assert.equal(MOMENT_TEXT.watched, "보고만 있던 사건");
+  assert.ok(MOMENT_BASIS.some((b) => b.startsWith("보고만 있던 = ")), "새 갈래(B158)도 읽는 법에 정의가 있다");
   const all = [...Object.values(MOMENT_TEXT), ...MOMENT_BASIS].join(" | ");
   assert.ok(!/본 것|x̂ 최고 \d/.test(all), all);
   assert.ok(MOMENT_BASIS.some((b) => b.includes("±28°")) && MOMENT_BASIS.some((b) => b.includes("x̂")) && MOMENT_BASIS.some((b) => b.includes("집중도")));

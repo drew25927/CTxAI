@@ -95,23 +95,35 @@ export function stimulusLabel(name) {
 /**
  * 관객 반응 지문 — fitViewerModel 의 θ̂ 를 사람이 읽는 한 문장으로. /film 종료 카드·/film/compare·/interim 이 같은 규칙(B84·B108).
  * 이득 g 는 네 단(크게 흔들림 / 또렷이 / 가볍게 / 차분) — 1배속 합성 관객 세 프로필(공포형 g≈1.27, 호기심형 g≈1.04, 차분형 g≈0.6)이
- * 서로 다른 문장을 받도록 잡은 잠정치다. 응답이 2건 미만이면 지문 대신 그 사실을 정직하게 적는다(문장은 항상 나온다).
+ * 서로 다른 문장을 받도록 잡은 잠정치다.
+ * 응답이 minResp(3) 건 미만이면 θ̂ 는 사전분포에 끌린 값이라 성향을 단정하지 않고 반응 수만 적는다 — 1배속 /interim 차분형(응답 2/5 ·
+ * 신뢰도 0.2 · θ̂ 사전값)이 "…반복돼도 반응이 유지됐습니다" 를 받던 문제(B147). 습관화 구절은 반복 횟수(nth)가 다른 사건에 반응했을 때만
+ * (θ̂.levels ≥ 2) 붙인다 — 한 가지 nth 에서만 반응했으면 ρ 는 사전값 그대로다. 문장은 항상 나온다.
  */
-export const FINGERPRINT_THRESHOLDS = { gainHigh: 1.2, gainClear: 0.9, gainLow: 0.45, latencyFast: 0.5, recoverFast: 2, habituate: 0.25 }; // 잠정치
+export const FINGERPRINT_THRESHOLDS = { gainHigh: 1.2, gainClear: 0.9, gainLow: 0.45, latencyFast: 0.5, recoverFast: 2, habituate: 0.25, minResp: 3 }; // 잠정치
+const TIMES = ["", "한 번", "두 번", "세 번", "네 번"];
 export function fingerprintText(theta, T = FINGERPRINT_THRESHOLDS) {
   if (!theta) return null;
   const n = theta.n ?? 0, nResp = theta.nResp ?? 0;
   if (n === 0) return "기록된 사건이 없어 반응 지문을 만들지 못했습니다";
-  if (nResp === 0) return `사건 ${n}개에 고개를 돌린 기록이 없어 반응 지문을 만들지 못했습니다`;
-  if (nResp < 2) return `사건 ${n}개 중 한 번만 반응해 반응 지문을 쓰기에는 이릅니다`;
+  if (nResp === 0) return `사건 ${n}개에 반응한 기록이 없어 반응 지문을 만들지 못했습니다`;
+  if (nResp < T.minResp) return `사건 ${n}개 중 ${TIMES[nResp] || `${nResp}번`}만 반응해 반응 지문을 쓰기에는 이릅니다`;
   const gain = theta.g >= T.gainHigh ? "자극마다 크게 흔들렸고, "
     : theta.g >= T.gainClear ? "자극에 또렷이 흔들렸고, "
     : theta.g >= T.gainLow ? "자극에 살짝 흔들렸고, "
     : "전반적으로 차분했고, ";
   const lat = theta.L < T.latencyFast ? "빠르게 반응하고" : "한 박자 늦게 반응하고";
-  const rec = theta.tau < T.recoverFast ? "금방 가라앉았으며" : "여운이 오래 남았으며";
+  const fast = theta.tau < T.recoverFast;
+  if (!habituationObserved(theta)) return `${gain}${lat} ${fast ? "금방 가라앉았습니다" : "여운이 오래 남았습니다"}`;
+  const rec = fast ? "금방 가라앉았으며" : "여운이 오래 남았으며";
   const hab = theta.rho > T.habituate ? "반복될수록 반응이 눈에 띄게 줄었습니다" : "반복돼도 반응이 유지됐습니다";
   return `${gain}${lat} ${rec} ${hab}`;
+}
+/** 습관화 ρ 가 관측에서 나왔는가 — levels(응답이 걸친 nth 가짓수) ≥ 2. levels 가 없는 옛 θ̂ 는 확신도에 곱해진 0.5 배로 되살린다. */
+export function habituationObserved(theta) {
+  if (!theta) return false;
+  if (theta.levels != null) return theta.levels >= 2;
+  return (theta.confidence ?? 0) >= Math.min(1, (theta.nResp ?? 0) / 5) - 1e-3;
 }
 
 // 장면 이름 — /film 은 phase 이벤트(intro·judged·scene·bus), /interim 은 cue 이벤트(judge·transition·greeting)로 장면이 바뀐다.
@@ -181,8 +193,10 @@ export function focusSpan(summary, speed = 1) {
 
 /**
  * 카드의 세 기준(B128·B144) — 한 카드에 나란히 놓이는 세 값은 서로 다른 것을 잰다.
- *  turned/flinched/missed  사건마다 "돌아봤나" — 사건 방향 ±28°(ENGAGE_PARAMS.LOOK_TOL_DEG) 안으로 고개를 돌렸는가.
+ *  turned/flinched/watched/missed
+ *                          사건마다 "돌아봤나" — 사건 방향 ±28°(ENGAGE_PARAMS.LOOK_TOL_DEG) 안으로 고개를 돌렸는가.
  *                          돌아보지 않았어도 빠른 고개 움직임·후퇴가 있으면 반응(responded)이라 "움찔만" 으로 따로 센다.
+ *                          사건이 시작될 때 이미 그쪽을 보고 있었고 움찔하지도 않았으면 "보고만 있던" — 돌아본 것도, 놓친 것도 아니다(B158).
  *  peak                    긴장 추정 x̂ 최고 — 반응의 크기. 돌아보지 않은 사건이 여기 올 수 있다(1배속 /film ON 공포형의 개구리:
  *                          135° 뒤라 돌아보지 않았지만 511°/s 로 움찔해 x̂ 1.00).
  *  calm                    집중도 점수 최고 2초 — 사건 반응률·잔움직임 억제·의도 방향 응시의 합성(lib/engagementSense.js).
@@ -193,13 +207,15 @@ export function focusSpan(summary, speed = 1) {
 export const MOMENT_TEXT = {
   turned: "돌아본 사건",
   flinched: "움찔만 한 사건",
+  watched: "보고만 있던 사건",
   missed: "반응 없던 사건",
   peak: "가장 크게 반응한 순간",
   calm: "가장 차분히 집중한 순간",
 };
 export const MOMENT_BASIS = [
   "돌아본 사건 = 사건 방향 ±28° 안으로 고개를 돌림",
-  "움찔만 = 고개가 빠르게 움직였지만 사건 쪽을 돌아보지는 않음",
+  "움찔만 = 고개가 빠르게 움직였지만 사건 쪽으로 돌아보지는 않음(이미 보던 사건에 움찔한 경우 포함)",
+  "보고만 있던 = 사건이 시작될 때 이미 그쪽을 보고 있었고 움찔하지 않음",
   "가장 크게 반응 = 긴장 추정 x̂ 최고(반응의 크기 · 상한 1.0 에 닿은 봉우리가 여럿이면 잘리기 전 값으로 가름)",
   "가장 차분히 집중 = 집중도 점수 최고 2초(사건 반응률·잔움직임 억제·의도 방향 응시)",
 ];

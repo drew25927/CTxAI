@@ -8,9 +8,9 @@
 //   windows    2초 창마다 잔움직임 특징: 각속도 RMS, 위치 흔들림, 정지 비율, roll 활동, 0.5~4Hz 대역
 //              RMS(안절부절), 4~6Hz 대역 RMS(웃음 리듬 후보), 방향 전환 횟수, 정면 이탈 비율,
 //              의도 방향 일치율, 기준 대비 pitch, 후퇴.
-//   stimuli    탐침(연출된 사건)마다 반응 레코드: 예감(자극 전 3초에 그쪽을 먼저 봤는가)·자극 전 움직임·
-//              응답 여부·시선 지연·움직임 지연·응시·최대 편차·최대 각속도·후퇴·회복·재확인, 그리고
-//              자극 메타(시각·종류·채널·용량·같은 채널 몇 번째).
+//   stimuli    탐침(연출된 사건)마다 반응 레코드: 예감(자극 전 3초에 그쪽을 먼저 봤는가 preLook · 그쪽으로 돌렸는가 preTurn)·시작 순간 이미 그쪽을
+//              보던 중(atOnset)·자극 전 움직임·응답 여부(돌아봄 turned·빠른 움직임·후퇴)·시선 지연·움직임 지연·
+//              응시·최대 편차·최대 각속도·후퇴·회복·재확인, 그리고 자극 메타(시각·종류·채널·용량·같은 채널 몇 번째).
 //   engagement 창마다 집중도 합성 점수(잠정) = 탐침 응답률 · 잔움직임 억제 · 의도 일치의 가중 평균.
 //
 // 근거: 몰입할 때 목적 없는 움직임이 억제된다(비도구적 움직임 억제, NIMI), 빠져나간 관객은 탐침에
@@ -238,16 +238,21 @@ export function createEngagementSensor({ mark, params } = {}) {
     const nth = channelCount.get(channel) || 0;
     channelCount.set(channel, nth + 1);
     const onset = t;
-    let preLook = 0, preMove = 0;
+    // preTurn — 자극 전 창 안에서 다른 곳을 보다가 그쪽으로 고개를 돌렸는가(예감). preLook 은 그쪽을 본 적이 있는가라서, 정면 가까운
+    // 사건(물보라 8°)은 정면만 보던 관객도 1 이 된다 — 예감이 아니라 원래 시선이다(B158 후속). x̂ 의 예감 상승은 preTurn 을 쓴다.
+    let preLook = 0, preMove = 0, preAway = 0, preTurn = 0;
     for (const h of history) {
       if (h.t < onset - P.PRE_LOOK_SEC) continue;
-      if (angDiff(h.yaw, azimuth) <= P.LOOK_TOL_DEG) preLook = 1;
+      const on = angDiff(h.yaw, azimuth) <= P.LOOK_TOL_DEG;
+      if (on) { preLook = 1; if (preAway) preTurn = 1; } else preAway = 1;
       if (h.t >= onset - P.PRE_MOVE_SEC) preMove = Math.max(preMove, h.v);
     }
     active.set(name, {
       name, kind, channel, dose, nth, onset: r2(onset), dur: r2(dur), azimuth,
       observeUntil: onset + dur + tail, respWindow: kind === "track" ? dur : P.RESPONSE_SEC,
-      preLook, preMove: r1(preMove), yawAtOnset: prev?.yaw ?? baseline?.yaw ?? 0,
+      preLook, preTurn, preMove: r1(preMove), yawAtOnset: prev?.yaw ?? baseline?.yaw ?? 0,
+      // 자극이 시작되는 순간 이미 사건 방향 ±LOOK_TOL 안을 보고 있었는가 — 그러면 첫 표본에서 looked 가 켜지지만 고개를 돌린 것이 아니다(B158)
+      atOnset: angDiff(prev?.yaw ?? baseline?.yaw ?? 0, azimuth) <= P.LOOK_TOL_DEG ? 1 : 0,
       looked: 0, lookLatency: null, moveLatency: null, lookSec: 0, peakAmp: 0, maxVel: 0, retreat: 0,
       leftAt: null, everLeft: false, recoverySec: null, recheck: 0, maskedSec: 0,
     });
@@ -256,16 +261,22 @@ export function createEngagementSensor({ mark, params } = {}) {
 
   function closeStimulus(st) {
     active.delete(st.name);
-    const looked = st.looked && st.lookLatency != null && st.lookLatency <= st.respWindow;
-    const responded = looked || st.moveLatency != null || st.retreat >= P.RETREAT_M ? 1 : 0;
+    // 응답 = 사건 쪽으로 고개를 돌림(turned) · 빠른 고개 움직임 · 후퇴. 이미 그쪽을 보고 있던 사건(atOnset)은 looked 가 저절로 켜지므로
+    // 돌아본 것으로 세지 않는다 — 1배속 /interim 차분형은 정면 8° 물보라를 보고만 있었는데(최대 편차 0.6°·각속도 2.4°/s) 응답으로 세여
+    // θ̂ 응답 수와 "돌아본 사건" 에 들어갔다(B158). 보고 있던 사건에 움찔했으면 움직임 응답으로 그대로 센다.
+    const turned = st.looked && !st.atOnset && st.lookLatency != null && st.lookLatency <= st.respWindow ? 1 : 0;
+    const responded = turned || st.moveLatency != null || st.retreat >= P.RETREAT_M ? 1 : 0;
     const rec = {
       name: st.name, kind: st.kind, channel: st.channel, dose: st.dose, nth: st.nth, onset: st.onset, dur: st.dur, azimuth: st.azimuth,
-      preLook: st.preLook, preMove: st.preMove, responded, looked: st.looked, lookLatency: st.lookLatency, moveLatency: st.moveLatency,
+      preLook: st.preLook, preTurn: st.preTurn, preMove: st.preMove, atOnset: st.atOnset, responded, turned, looked: st.looked, lookLatency: st.lookLatency, moveLatency: st.moveLatency,
       lookSec: r2(st.lookSec), peakAmp: r1(st.peakAmp), maxVel: r1(st.maxVel), retreat: r3(st.retreat), recoverySec: st.recoverySec, recheck: st.recheck,
       maskedSec: r2(st.maskedSec),
     };
     done.push(rec);
-    probeResp += P.PROBE_ALPHA * (responded - probeResp);
+    // 집중도의 탐침 항은 "빠져나가지 않았는가" 를 잰다 — 이미 보던 사건을 계속 지켜본 관객(atOnset · 응시가 사건 길이의 절반 이상)은
+    // 반응(responded)은 아니어도 빠져나간 것도 아니므로 응답률을 깎지 않는다. θ̂·카드의 반응 비율은 responded 그대로다.
+    const attended = responded || (st.atOnset && st.lookSec >= 0.5 * st.dur) ? 1 : 0;
+    probeResp += P.PROBE_ALPHA * (attended - probeResp);
     mark?.("stim:done", rec);
   }
 

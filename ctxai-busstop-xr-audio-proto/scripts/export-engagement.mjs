@@ -17,7 +17,7 @@ function csvRow(vals) { return vals.map((v) => (v == null ? "" : typeof v === "s
 
 const WIN_COLS = ["t0", "t1", "n", "angVelRms", "stillRatio", "rollActivity", "posJitter", "band05_4", "band4_6", "reversals", "awayRatio", "intentMatch", "stimRatio", "pitchRel", "retreat"];
 const ENG_COLS = ["t", "score", "probeResp", "calm", "intent", "laugh", "fidget"];
-const STIM_COLS = ["name", "kind", "channel", "dose", "nth", "onset", "dur", "azimuth", "preLook", "preMove", "responded", "looked", "lookLatency", "moveLatency", "lookSec", "peakAmp", "maxVel", "retreat", "recoverySec", "recheck", "maskedSec"];
+const STIM_COLS = ["name", "kind", "channel", "dose", "nth", "onset", "dur", "azimuth", "preLook", "preMove", "atOnset", "responded", "turned", "looked", "lookLatency", "moveLatency", "lookSec", "peakAmp", "maxVel", "retreat", "recoverySec", "recheck", "maskedSec"];
 
 async function main() {
   let names = [];

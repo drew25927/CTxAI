@@ -61,7 +61,7 @@ function usableResponses(stimuli) {
  * 관객 응답 모델 식별.
  * @param {Array} stimuli  engagementSense report().stimuli
  * @param {object} [prior] VIEWER_PRIOR 덮어쓰기
- * @returns {{g,L,tau,rho,n,nResp,confidence}}
+ * @returns {{g,L,tau,rho,n,nResp,levels,confidence}}
  */
 export function fitViewerModel(stimuli, prior = VIEWER_PRIOR) {
   const P = { ...VIEWER_PRIOR, ...prior };
@@ -88,17 +88,22 @@ export function fitViewerModel(stimuli, prior = VIEWER_PRIOR) {
     const wData = ys.length, wG = P.kG, wR = P.kRho;
     logG = (fit.intercept * wData + Math.log(P.g) * wG) / (wData + wG);
     slope = (fit.slope * wData + Math.log(1 - P.rho) * wR) / (wData + wR);
-  } else if (ys.length === 1) {
-    // 점 하나 — 절편만 갱신(습관화는 사전분포 유지)
-    logG = (ys[0] * 1 + Math.log(P.g) * P.kG) / (1 + P.kG);
+  } else if (ys.length >= 1) {
+    // 반복 횟수(nth)가 하나뿐 — 기울기(습관화)는 식별할 수 없으니 사전분포 기울기를 두고 절편만 갱신한다.
+    // 예전에는 점이 정확히 하나일 때만 갱신해서, 같은 nth 에서 두 번 이상 반응한 관객(/interim 의 개구리·우비 인물은 둘 다 채널 첫 사건)은
+    // g 가 사전값 0.6 그대로 남았다 — 카드 지문이 사전값 문장이 된 원인(B147).
+    const mx = xs.reduce((a, b) => a + b, 0) / xs.length;
+    const my = ys.reduce((a, b) => a + b, 0) / ys.length;
+    logG = ((my - slope * mx) * ys.length + Math.log(P.g) * P.kG) / (ys.length + P.kG);
   }
   const g = clamp(Math.exp(logG), 0.02, 5);
   const rho = clamp(1 - Math.exp(slope), -0.9, 0.95);
 
-  // 확신도 — 응답 수가 많고 nth 분산이 있을수록 높다
-  const confidence = clamp(nResp / 5, 0, 1) * (new Set(xs).size >= 2 ? 1 : 0.5);
+  // 확신도 — 응답 수가 많고 nth 분산이 있을수록 높다. levels = 응답이 걸친 nth 가짓수(2 미만이면 ρ 는 사전값 그대로다)
+  const levels = new Set(xs).size;
+  const confidence = clamp(nResp / 5, 0, 1) * (levels >= 2 ? 1 : 0.5);
 
-  return { g: r3(g), L: r3(L), tau: r3(tau), rho: r3(rho), n, nResp, confidence: r3(confidence) };
+  return { g: r3(g), L: r3(L), tau: r3(tau), rho: r3(rho), n, nResp, levels, confidence: r3(confidence) };
 }
 
 /** 자극 하나에 대한 예측 반응 크기. */

@@ -205,7 +205,7 @@ test("judgeTime·judgeLine: /interim 은 judge 큐(1:55)와 팀 5신호 점수 �
 });
 
 test("lookResponses(B128): /interim 은 S 번호 순으로 돌아본·움찔만·반응 없던 사건, 기준은 engagement.stimuli 하나", () => {
-  assert.deepEqual(lookResponses(CALM), { turned: ["S1 우비 인물", "S2 물보라"], flinched: [], missed: ["S4 고양이"] });
+  assert.deepEqual(lookResponses(CALM), { turned: ["S1 우비 인물", "S2 물보라"], flinched: [], watched: [], missed: ["S4 고양이"] });
   assert.deepEqual(lookResponses(FEARFUL).turned, ["S1 우비 인물", "S2 물보라", "S4 고양이"]);
   // 돌아보지 않았지만 빠른 고개 움직임이 있으면 "움찔만" — 옛 "안 본 것" 과 x̂ 최고가 같은 사건일 때 모순처럼 읽히던 경우
   const flinch = { ...FEARFUL, engagement: { ...FEARFUL.engagement, stimuli: [...FEARFUL.engagement.stimuli, stim("frog", 95, 1, { looked: 0, lookLatency: null, lookSec: 0 })] } };
@@ -214,13 +214,26 @@ test("lookResponses(B128): /interim 은 S 번호 순으로 돌아본·움찔만�
   assert.equal(lookText(lookResponses(CALM)), "돌아본 사건: S1 우비 인물, S2 물보라 · 반응 없던 사건: S4 고양이");
 });
 
+test("lookResponses(B158): 시작할 때 이미 보던 사건은 돌아본 것이 아니다 — 움찔했으면 '움찔만', 아니면 '보고만 있던'", () => {
+  // 1배속 /interim 차분형 S2 물보라(review38): preLook 1 · lookLatency 0.03 · 최대 편차 0.6° · 각속도 2.4°/s — 새 센서는 atOnset 1 · turned 0 · responded 0
+  const watched = stim("truckSplash", 35, 0, { preLook: 1, atOnset: 1, turned: 0, looked: 1, lookLatency: 0.03, moveLatency: null, lookSec: 3.92, peakAmp: 0.6, maxVel: 2.4 });
+  // 1배속 공포형 S2: 이미 보던 물보라에 222°/s 로 움찔 — responded 1 · turned 0
+  const flinchedAt = stim("truckSplash", 35, 1, { preLook: 1, atOnset: 1, turned: 0, looked: 1, lookLatency: 0.02, moveLatency: 0.02, maxVel: 222 });
+  const figure = stim("figureApproach", 15, 1, { kind: "track", turned: 1, atOnset: 0 });
+  const calm = { ...CALM, engagement: { ...CALM.engagement, stimuli: [figure, watched, stim("cat", 75, 0, { atOnset: 0, turned: 0 })] } };
+  assert.deepEqual(lookResponses(calm), { turned: ["S1 우비 인물"], flinched: [], watched: ["S2 물보라"], missed: ["S4 고양이"] });
+  assert.equal(lookText(lookResponses(calm)), "돌아본 사건: S1 우비 인물 · 보고만 있던 사건: S2 물보라 · 반응 없던 사건: S4 고양이");
+  const fear = { ...CALM, engagement: { ...CALM.engagement, stimuli: [figure, flinchedAt] } };
+  assert.deepEqual(lookResponses(fear), { turned: ["S1 우비 인물"], flinched: ["S2 물보라"], watched: [], missed: [] });
+});
+
 test("lookResponses(B128): /film 은 사건 시각 순, 같은 이름표(미세 자극 먼 문 소리)는 ×N, engagement 없으면 헤드 포즈 채점", () => {
   const film = { ...ON, engagement: { ...ON.engagement, stimuli: [
     stim("micro-1", 68, 1), stim("frog", 37, 1, { looked: 0 }), stim("poster", 6, 1), stim("micro-2", 80, 1), stim("cat", 44, 0, { looked: 0 }),
   ] } };
-  assert.deepEqual(lookResponses(film), { turned: ["포스터", "먼 문 소리 ×2"], flinched: ["개구리"], missed: ["고양이"] });
+  assert.deepEqual(lookResponses(film), { turned: ["포스터", "먼 문 소리 ×2"], flinched: ["개구리"], watched: [], missed: ["고양이"] });
   const old = { ...ON, engagement: undefined, headPose: { events: [{ name: "poster", feats: { looked: 1 } }, { name: "frog", feats: { looked: 0 } }] } };
-  assert.deepEqual(lookResponses(old), { turned: ["포스터"], flinched: [], missed: ["개구리"] });
+  assert.deepEqual(lookResponses(old), { turned: ["포스터"], flinched: [], watched: [], missed: ["개구리"] });
   assert.equal(lookResponses({ ...ON, engagement: undefined }), null);
   assert.equal(lookText(null), "");
 });

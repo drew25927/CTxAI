@@ -14,7 +14,7 @@
 import { estimateTensionSeries } from "./tensionEstimate.js";
 import { probeMarks } from "./interimProbes.js";
 import { T as INTERIM_T } from "./interimTimeline.js";
-import { GENRE_LABEL, mmss, stimulusLabel, filmTimeEvents, focusText, focusSpan } from "./viewerText.js";
+import { GENRE_LABEL, mmss, stimulusLabel, filmTimeEvents, focusText, focusSpan, MOMENT_TEXT } from "./viewerText.js";
 
 // 슬롯 변형 id(lib/tensionCurve.js SLOTS) → 비교 화면 이름. 모르는 것은 id 그대로.
 const VARIANT_LABEL = { once: "한 번", twice: "두 번", loud: "크게", soft: "작게", mid: "중간", playful: "장난스럽게", sudden: "갑자기", brief: "잠깐", linger: "머묾", return: "돌아옴", near: "가까이", far: "멀리", flicker: "깜빡임", shut: "닫힘" };
@@ -189,13 +189,15 @@ export function judgeLine(sess) {
 }
 
 /**
- * 사건별 반응 세 갈래(B128) — 돌아본 사건(looked: 사건 방향 ±28° 안으로 고개를 돌림) · 움찔만 한 사건(responded 인데 looked 아님:
- * 빠른 고개 움직임·후퇴만 있고 사건 쪽을 돌아보지는 않음) · 반응 없던 사건. 두 라우트 모두 우리 관측 축 engagement.stimuli 하나로 가른다
+ * 사건별 반응 네 갈래(B128·B158) — 돌아본 사건(turned: 사건 방향 ±28° 안으로 고개를 돌림) · 움찔만 한 사건(responded 인데 turned 아님:
+ * 빠른 고개 움직임·후퇴만 있고 사건 쪽으로 돌아보지는 않음) · 보고만 있던 사건(atOnset: 시작할 때 이미 그쪽을 보고 있었고 반응 없음) ·
+ * 반응 없던 사건. turned·atOnset 이 없는 옛 세션(B158 이전)은 looked 를 돌아본 것으로 읽는다(보고만 있던 갈래는 비어 있다 — 그때 센서는
+ * 그것을 가르지 않았다). 두 라우트 모두 우리 관측 축 engagement.stimuli 하나로 가른다
  * (/film 헤드 포즈 채점 headPose.events[].feats.looked 도 같은 ±28° 기준 — 옛 "본 것/안 본 것" 은 그것을 기준 없이 적었다).
  * 긴장 x̂ 는 반응의 크기라 돌아보지 않은 사건이 x̂ 최고일 수 있다 — 그래서 "움찔만" 을 따로 적는다.
  * /interim 은 S 번호 순·S 번호를 앞에(팀 등급과 별개), /film 은 사건 시각 순. 같은 이름표가 한 갈래에 여러 번이면(미세 자극
  * "먼 문 소리") 한 번만 적고 "×3" 을 붙인다. engagement 가 없는 옛 /film 세션은 헤드 포즈 채점으로 돌아본 것만 가른다.
- * @returns {{turned:string[], flinched:string[], missed:string[]}|null}
+ * @returns {{turned:string[], flinched:string[], watched:string[], missed:string[]}|null}
  */
 export function lookResponses(sess) {
   const st = sess?.engagement?.stimuli;
@@ -206,6 +208,7 @@ export function lookResponses(sess) {
     return {
       turned: group(ev.filter((e) => e.feats?.looked).map((e) => stimulusLabel(e.name))),
       flinched: [],
+      watched: [],
       missed: group(ev.filter((e) => !e.feats?.looked).map((e) => stimulusLabel(e.name))),
     };
   }
@@ -214,10 +217,12 @@ export function lookResponses(sess) {
   const sorted = interim
     ? st.slice().sort((a, b) => (sig[a.name] || a.name).localeCompare(sig[b.name] || b.name))
     : st.slice().sort((a, b) => (a.onset ?? 0) - (b.onset ?? 0));
+  const turned = (s) => (s.turned ?? s.looked) ? 1 : 0;
   return {
-    turned: group(sorted.filter((s) => s.looked).map(tag)),
-    flinched: group(sorted.filter((s) => !s.looked && s.responded).map(tag)),
-    missed: group(sorted.filter((s) => !s.looked && !s.responded).map(tag)),
+    turned: group(sorted.filter(turned).map(tag)),
+    flinched: group(sorted.filter((s) => !turned(s) && s.responded).map(tag)),
+    watched: group(sorted.filter((s) => !turned(s) && !s.responded && s.atOnset).map(tag)),
+    missed: group(sorted.filter((s) => !turned(s) && !s.responded && !s.atOnset).map(tag)),
   };
 }
 function group(labels) {
@@ -226,11 +231,11 @@ function group(labels) {
   return [...count].map(([l, n]) => (n > 1 ? `${l} ×${n}` : l));
 }
 
-/** 세 갈래를 한 줄로 — "돌아본 사건: 포스터, 물보라 · 움찔만 한 사건: 개구리". 비어 있는 갈래는 뺀다. */
+/** 네 갈래를 한 줄로 — "돌아본 사건: 포스터, 물보라 · 움찔만 한 사건: 개구리". 비어 있는 갈래는 뺀다. 이름은 카드와 같은 MOMENT_TEXT. */
 export function lookText(lr) {
   if (!lr) return "";
-  return [["turned", "돌아본 사건"], ["flinched", "움찔만 한 사건"], ["missed", "반응 없던 사건"]]
-    .filter(([k]) => lr[k]?.length).map(([k, name]) => `${name}: ${lr[k].join(", ")}`).join(" · ");
+  return ["turned", "flinched", "watched", "missed"]
+    .filter((k) => lr[k]?.length).map((k) => `${MOMENT_TEXT[k]}: ${lr[k].join(", ")}`).join(" · ");
 }
 
 export const X_CEIL = 0.999; // x̂ 는 1.0 에서 잘린다 — 창 안 최댓값(B150) 뒤 공포형 합성 관객은 봉우리가 1.0 에 여럿 붙는다(B152)

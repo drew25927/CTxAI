@@ -5,8 +5,8 @@
 //
 // 모델(인과·causal):
 //   x̂(t) = clamp01( BASE + Σ_k A_k·kernel(t − onset_k; τ_k) + FID·fidget(t) )
-//   A_k    = K_RESP · responseMagnitude(자극 k)         반응이 클수록 큰 봉우리
-//   kernel = 자극 뒤 지수 감쇠(회복 시정수 τ_k = recoverySec 또는 기본값), 자극 전 preLook 이면 완만한 예감 상승
+//   A_k    = K_RESP · responseMagnitude(자극 k)         반응이 클수록 큰 봉우리 · 반응하지 않은 사건(responded 0)은 0
+//   kernel = 자극 뒤 지수 감쇠(회복 시정수 τ_k = recoverySec 또는 기본값), 자극 전 그쪽으로 고개를 돌렸으면(preTurn) 완만한 예감 상승
 //   fidget = 잔움직임(각속도)에서 온 낮은 지속 각성
 //
 // 사건 창은 탐침 반응이, 사이는 감쇠와 잔움직임이 채운다. 값은 0~1. τ_k 로 "회복이 느린 관객은
@@ -30,16 +30,26 @@ export const TENSION_PARAMS = Object.freeze({
 function clamp01(x) { return Number.isFinite(x) ? Math.max(0, Math.min(1, x)) : 0; }
 const r3 = (x) => Math.round(x * 1000) / 1000;
 
+/**
+ * 예감 세기 — 자극 전에 그쪽으로 고개를 돌렸는가(preTurn). preTurn 이 없는 옛 레코드는 preLook.
+ * preLook 만으로는 정면 가까운 사건(물보라 8°)을 정면만 보던 관객도 1 이라, 1배속 /interim 차분형은 움직이지 않은 물보라에서
+ * x̂ 가 0.31 로 가장 높았다(B158 후속 · 턴 40).
+ */
+function anticipation(st) { return st.preTurn ?? st.preLook ?? 0; }
+
 /** 자극 하나가 시각 t 에 더하는 긴장 기여. */
 function stimContribution(st, t, P) {
   const onset = st.onset ?? st.t ?? 0;
-  const A = P.K_RESP * responseMagnitude(st);
+  // 반응하지 않은 사건은 봉우리가 없다 — θ̂(fitViewerModel)도 responded 0 은 버린다. 이미 보던 사건을 계속 본 응시(lookSec)가
+  // 반응 크기로 둔갑하지 않게 한다(B158). responded 가 없는 레코드는 예전처럼 크기만 본다.
+  const A = st.responded === 0 ? 0 : P.K_RESP * responseMagnitude(st);
   if (t < onset) {
-    // 예감 — 자극 직전에 그쪽을 미리 봤을 때만 완만히 오른다
-    if (!st.preLook) return 0;
+    // 예감 — 자극 직전에 그쪽으로 고개를 돌렸을 때만 완만히 오른다
+    const ant = anticipation(st);
+    if (!ant) return 0;
     const dt = onset - t;
     if (dt > P.ANT_SEC) return 0;
-    return P.K_ANT * st.preLook * (1 - dt / P.ANT_SEC);
+    return P.K_ANT * ant * (1 - dt / P.ANT_SEC);
   }
   const dt = t - onset;
   const tau = st.recoverySec != null && st.recoverySec > 0 ? st.recoverySec : P.DEFAULT_TAU;
@@ -72,7 +82,7 @@ function stimMaxInWindow(stimuli, t0, t1, P) {
       const onset = st.onset ?? st.t ?? 0;
       const pk = onset + P.RISE_SEC;                       // 반응 봉우리 꼭대기
       if (pk > t0 && pk < t1) cands.push(pk);
-      if (st.preLook && onset > t0 && onset <= t1) cands.push(onset - 1e-6); // 예감 꼭대기(자극 직전)
+      if (anticipation(st) && onset > t0 && onset <= t1) cands.push(onset - 1e-6); // 예감 꼭대기(자극 직전)
     }
   }
   let best = -Infinity, bestT = t1;

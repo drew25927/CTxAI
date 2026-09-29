@@ -83,4 +83,24 @@ test("응답 하나 → 절편만 갱신, 습관화는 사전분포 유지, 확�
   assert.ok(m.g > VIEWER_PRIOR.g, `g ${m.g}`);  // 큰 반응 하나가 g를 사전분포 위로 당긴다
 });
 
+test("같은 nth 에서 응답 둘 이상(B147) → 절편은 관측으로 갱신, 습관화는 사전분포, levels 1", () => {
+  // /interim 의 S5 개구리(채널 audio 첫 사건)·S1 우비 인물(track 첫 사건)처럼 nth 가 둘 다 0 — 예전에는 g 가 사전값 0.6 그대로 남았다
+  const small = { g: 0.25, L: 0.2, tau: 1, rho: 0.2 };
+  const m = fitViewerModel([stim(small, 0.6, 0), stim(small, 0.6, 0)]);
+  assert.equal(m.levels, 1);
+  assert.equal(m.rho, VIEWER_PRIOR.rho);
+  assert.ok(m.g < VIEWER_PRIOR.g - 0.1, `g ${m.g} 는 작은 반응 쪽으로 내려가야 한다`);
+  assert.ok(m.g > small.g, `g ${m.g} 는 사전분포로 수축해 참값보다는 크다`);
+  const big = fitViewerModel([stim({ g: 2, L: 0.2, tau: 1, rho: 0 }, 0.8, 1), stim({ g: 2, L: 0.2, tau: 1, rho: 0 }, 0.8, 1), stim({ g: 2, L: 0.2, tau: 1, rho: 0 }, 0.8, 1)]);
+  assert.ok(big.g > 1.2, `g ${big.g}`);
+  assert.ok(big.confidence <= 0.5);
+});
+
+test("levels: 응답이 걸친 nth 가짓수 — 무응답 레코드는 세지 않는다", () => {
+  const th = { g: 1, L: 0.3, tau: 1.5, rho: 0.1 };
+  assert.equal(fitViewerModel(session(th, 4)).levels, 4);
+  assert.equal(fitViewerModel([stim(th, 0.8, 0), { ...stim(th, 0.8, 3), responded: 0 }]).levels, 1);
+  assert.equal(fitViewerModel([]).levels, 0);
+});
+
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);

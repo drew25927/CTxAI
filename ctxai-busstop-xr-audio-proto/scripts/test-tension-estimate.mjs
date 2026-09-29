@@ -47,6 +47,22 @@ test("예감: preLook 이면 자극 전에 이미 조금 오른다", () => {
   assert.ok(withAnt > without, `ant ${withAnt} none ${without}`);
 });
 
+test("예감(B158 후속): preTurn 이 있으면 preLook 대신 그것 — 원래 그쪽을 보던 관객(preLook 1 · preTurn 0)은 오르지 않는다", () => {
+  const turned = tensionAt([{ ...bigStartle, preLook: 1, preTurn: 1 }], 28);
+  const staring = tensionAt([{ ...bigStartle, preLook: 1, preTurn: 0 }], 28);
+  assert.ok(turned > TENSION_PARAMS.BASE + 0.05, `turned ${turned}`);
+  assert.equal(staring, TENSION_PARAMS.BASE);
+});
+
+test("반응하지 않은 사건(B158): responded 0 이면 응시(lookSec)가 길어도 봉우리가 없다 — responded 가 없으면 예전처럼", () => {
+  // 1배속 /interim 차분형 S2 물보라: 편차 0.6° · 2.4°/s · 응시 3.92초(사건 2.5초) · preLook 1 · preTurn 0 → 예전 x̂ 0.31(카드 '가장 크게 반응')
+  const watched = { name: "truckSplash", kind: "probe", onset: 35, dur: 2.5, peakAmp: 0.6, maxVel: 2.4, lookSec: 3.92, retreat: 0, preLook: 1, preTurn: 0, atOnset: 1, responded: 0 };
+  const s = estimateTensionSeries({ windows: wins(30), stimuli: [watched] });
+  assert.ok(s.every((p) => p.fromStim === 0), `봉우리 ${Math.max(...s.map((p) => p.fromStim))}`);
+  const legacy = { ...watched, responded: undefined, preTurn: undefined };
+  assert.ok(Math.max(...estimateTensionSeries({ windows: wins(30), stimuli: [legacy] }).map((p) => p.tension)) > 0.3, "옛 레코드 모양은 예전 값(0.31)");
+});
+
 test("잔움직임이 크면 긴장 바닥이 올라간다", () => {
   const still = estimateTensionSeries({ windows: wins(4, 0), stimuli: [] }).at(-1).tension;
   const moving = estimateTensionSeries({ windows: wins(4, 60), stimuli: [] }).at(-1).tension;
