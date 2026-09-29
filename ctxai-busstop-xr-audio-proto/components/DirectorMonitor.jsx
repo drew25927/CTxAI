@@ -19,9 +19,8 @@
 // 줄바꿈 없는 공백을 넣어 "회복 / 0.848s"·"응 / 답 7/7" 처럼 갈리지 않는다. 줄은 " · " 구분자에서만 접힌다.
 
 import { curveAt, trackLabel } from "@/lib/tensionCurve";
-import { actuationText } from "@/lib/controlActuate";
 import { observedSegments, xhatReading, xhatScopeNote } from "@/lib/tensionEstimate";
-import { glueNumbers, reachText } from "@/lib/monitorText";
+import { actuateLine, glueNumbers, reachText } from "@/lib/monitorText";
 
 export const MOMENT_COLOR = { peak: "#ffffff", calm: "rgba(143,214,143,0.85)" }; // 종료 카드 범례와 같은 색(B144)
 
@@ -61,14 +60,10 @@ export function MonitorChart({ series = [], track = "H", tNow = 0, ceiling = 1, 
 }
 
 const fmt2 = (v) => (Number.isFinite(v) ? v.toFixed(2) : "-");
-const sgn = (v, d = 2) => (v > 0 ? "+" : "") + v.toFixed(d);
-const ACT_MODE = { arouse: "각성", relax: "이완", hold: "유지", settle: "자극 뒤 멈춤", off: "대기" };
 
-// 연속 액추에이터 한 줄 — 0 이 아닌 축만. 페이지가 a.base(오프셋을 얹기 전 deriveParams 값)를 주면 실제로 움직인 양을,
-// 이미 끝까지 밀린 축은 "포화" 로 적는다(B116 — 공포 트랙 가로등은 lampEarlyOn 이 1.0 으로 켜 둬서 +0.60 이 하나도 안 먹는다).
-function actuateText(a) {
-  return actuationText(a.offsets, a.base);
-}
+// 연속 액추에이터 한 줄은 lib/monitorText actuateLine — 0 이 아닌 축만. 페이지가 a.base(오프셋을 얹기 전 deriveParams 값)를 주면
+// 실제로 움직인 양을, 이미 끝까지 밀린 축은 "포화" 로 적는다(B116 — 공포 트랙 가로등은 lampEarlyOn 이 1.0 으로 켜 둔다).
+// 장면이 끝난 뒤(2:30~)는 "유지 u 0.00" 이 아니라 "장면 끝"(B135).
 
 // 슬롯 변형 확정 한 줄(B78) — 개구리·고양이가 실제로 어떤 변형으로 울렸는가. 제어 OFF 는 "고정" 으로 표시.
 function slotsText(slots, eventLabel) {
@@ -83,12 +78,15 @@ function slotsText(slots, eventLabel) {
 }
 
 // "다음" 줄의 머리 — 중립 탐침이면 변형 없음(B85), 제어 슬롯은 결정 전 "지금 정하면" 미리보기(B106)·결정 뒤 확정 변형·용량, 고정 슬롯이 끝났으면 미세 자극 차례(B66), 장면 뒤면 없음
+// 미세 자극은 "몇 번째가 다음인가" 를 적는다(B161) — 예전 "다음 미세 자극 먼 문 1/3" 의 1 은 이미 울린 횟수라 "다음 것이 첫 번째" 로 읽혔고,
+// 예산을 다 쓴 뒤에도 "다음 미세 자극 먼 문 3/3" 으로 없는 "다음" 을 적었다. 울린 횟수는 머리 줄 "실제 제어: ON · 미세 자극 N/3" 에 있다.
 function nextHeadline(next, eventLabel) {
   const label = eventLabel[next.slotId] || next.slotId;
   if (next.kind === "done") return <span style={{ opacity: 0.6 }}>다음 개입 없음</span>;
   if (next.kind === "probe") return <span>다음 <b>{label}</b> · <span style={{ opacity: 0.75 }}>중립 탐침(변형 없음)</span></span>;
   if (next.kind === "micro") {
-    return <span>다음 미세 자극 <b>{label}</b> {next.count ?? 0}/{next.max ?? 3}{next.dose != null && <> → <b>{next.variantId}</b> (용량&nbsp;{next.dose})</>}</span>;
+    if (next.spent) return <span style={{ opacity: 0.6 }}>미세 자극 예산 소진({next.count ?? 0}/{next.max ?? 3})</span>;
+    return <span>다음 미세 자극({(next.count ?? 0) + 1}번째) <b>{label}</b>{next.dose != null && <> → <b>{next.variantId}</b> (용량&nbsp;{next.dose})</>}</span>;
   }
   // 결정 전 제어 슬롯(B106) — 계획이 아니라 지금 x̂·θ̂ 으로 고른 값이라 "지금 정하면" 을 붙인다. 결정되면 확정 줄로 바뀐다
   if (next.preview) return <span>다음 <b>{label}</b> → <span style={{ opacity: 0.75 }}>지금 정하면</span> <b>{next.variantId}</b> (용량&nbsp;{next.dose})</span>;
@@ -125,9 +123,10 @@ export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTar
       {monitor.control != null && (
         <div style={{ opacity: 0.85 }}>실제 제어: {monitor.control ? <b style={{ color: "#7fd1ff" }}>ON · 미세 자극 {monitor.micro ?? 0}/3</b> : <span style={{ opacity: 0.6 }}>OFF (advisory)</span>}</div>
       )}
-      {monitor.control && monitor.actuate && (
-        <div style={{ opacity: 0.85, fontSize: 11 }}>연속 구동 <b>{ACT_MODE[monitor.actuate.mode] || monitor.actuate.mode}{monitor.actuate.mode === "settle" && Number.isFinite(monitor.actuate.settleLeft) ? ` ${monitor.actuate.settleLeft.toFixed(1)}s` : ""}</b> {glueNumbers(`u ${sgn(monitor.actuate.u || 0)} · ${actuateText(monitor.actuate)}`)}</div>
-      )}
+      {monitor.control && monitor.actuate && (() => {
+        const line = actuateLine(monitor.actuate);
+        return <div style={{ opacity: monitor.actuate.mode === "ended" ? 0.6 : 0.85, fontSize: 11 }}>연속 구동 <b>{line.head}</b> {line.body}</div>;
+      })()}
       {monitor.slots && slotsText(monitor.slots, eventLabel) && (
         <div style={{ opacity: 0.85, fontSize: 11 }}>슬롯 변형 {glueNumbers(slotsText(monitor.slots, eventLabel))}</div>
       )}

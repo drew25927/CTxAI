@@ -114,7 +114,7 @@ test("nextAdvice: 대사 때문에 미루는 동안은 \"발동 조건 충족\" 
   // 조건이 안 맞으면 대사 중이어도 원래 사유(간격 대기·곡선 안·예산 소진)가 먼저다 — "미룸" 은 조건이 맞을 때만
   assert.match(nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2, lastMicroAt: 85, microCount: 1, quiet: talk }).reason, /간격 대기/);
   assert.match(nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.6, quiet: talk }).reason, /곡선 안/);
-  assert.match(nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2, microCount: 3, quiet: talk }).reason, /예산 소진/);
+  assert.equal(nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2, microCount: 3, quiet: talk }).spent, true);
 });
 test("nextAdvice: x̂ 가 사건 사이 바닥값이면 \"사건 사이\" 로 적는다 — 판정 규칙은 같다 (B138·B149)", () => {
   const obs = nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2 });
@@ -130,7 +130,16 @@ test("nextAdvice: 간격 대기·곡선 안·상한 위·예산 소진을 구분
   assert.match(nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.6 }).reason, /곡선 안/);
   assert.match(nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.95 }).reason, /상한 위/);
   const spent = nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2, microCount: MICRO_PARAMS.max });
-  assert.match(spent.reason, /예산 소진 3\/3/); assert.equal(spent.dose, null);
+  assert.equal(spent.spent, true); assert.equal(spent.count, 3); assert.equal(spent.dose, null);
+  assert.equal(spent.reason, "남은 장면(~2:30)은 연속 구동만");
+});
+test("nextAdvice: 미세 자극 머리는 울린 횟수(count)를 주고, 예산이 남아 있으면 spent 가 없다 (B161)", () => {
+  // 모니터 머리 "다음 미세 자극(count+1번째)" — count 는 이미 울린 수. 예전 "다음 미세 자극 먼 문 1/3" 이 "다음 것이 첫 번째" 로 읽혔다
+  for (const c of [0, 1, 2]) {
+    const a = nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2, lastMicroAt: -Infinity, microCount: c });
+    assert.equal(a.kind, "micro"); assert.equal(a.count, c); assert.equal(a.spent, undefined, `count ${c}`);
+    assert.doesNotMatch(a.reason, /소진/);
+  }
 });
 test("nextAdvice: 장면 끝(2:30) 뒤는 제어 구간 끝", () => {
   const a = nextAdvice({ ...sceneArgs, tNow: 160, xhat: 0.2, microCount: 2 });

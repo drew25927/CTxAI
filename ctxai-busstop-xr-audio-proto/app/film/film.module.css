@@ -107,6 +107,7 @@
   border-radius: 18px;
   padding: 28px 30px;
   animation: fadeIn 900ms ease both;
+  word-break: keep-all; /* 반응 지문 "…유지됐습 / 니다" 처럼 한글 단어 안에서 접지 않는다 (B163) */
 }
 .endTitle { margin: 0 0 4px; font-size: 22px; font-weight: 600; }
 .endSub { margin: 0 0 18px; font-size: 13px; color: rgba(255, 255, 255, 0.6); }

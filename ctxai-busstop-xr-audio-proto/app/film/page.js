@@ -466,9 +466,13 @@ export default function FilmPage() {
             film.lastMicroAt = film.t; film.microCount = (film.microCount || 0) + 1;
           }
         }
-      } else if (adjustRef.current && adjustRef.current.u !== 0) {
-        // 장면 밖(150초 뒤 버스 도착 구간) — 구동량을 서서히 0 으로 되돌린다
-        adjustRef.current = { ...actuationFor({ xhat: null, target: 0, tol: 0, track: film.dominant, prev: adjustRef.current, dt: 0.25 * speed, active: true }), t: film.t };
+      } else if (adjustRef.current && (adjustRef.current.u !== 0 || adjustRef.current.mode !== "ended")) {
+        // 장면 밖(150초 뒤 버스 도착 구간) — 구동량을 서서히 0 으로 되돌린다. 되돌림 계산(xhat null)의 mode 는 "hold" 라
+        // 모니터가 "유지 u 0.00 · 오프셋 0" 으로 적었다(B135) — 되돌리는 동안 "return", 0 에 닿으면 "ended"(모니터 "장면 끝")
+        const a = adjustRef.current.u !== 0
+          ? actuationFor({ xhat: null, target: 0, tol: 0, track: film.dominant, prev: adjustRef.current, dt: 0.25 * speed, active: true })
+          : adjustRef.current;
+        adjustRef.current = { ...a, mode: a.u === 0 ? "ended" : "return", t: film.t };
       }
 
       setHud({ ...snap, t: film.t, params: paramsRef.current, lastEvidence: d.st.lastEvidence, camStatus, events: sensorRef.current?.report?.().events || [] });

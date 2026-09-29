@@ -130,7 +130,8 @@ const f2 = (v) => (Number.isFinite(v) ? v.toFixed(2) : "-");
  *   "발동 조건 충족" 대신 사유(label)와 "미룸" 을 적는다(B138, deferred true). 주지 않으면 조용한 것으로 본다(종전 동작).
  * observed: 지금 x̂ 가 사건 반응에 근거하는가(lib/tensionEstimate isObserved). false 면 x̂ 는 사건 사이 바닥값이라 곡선과
  *   견줄 관측이 아니다(B149) — 발동 사유를 "처졌다" 가 아니라 "사건 사이 → 먼 문으로 반응을 잰다" 로 적는다. 판정 규칙은 같다.
- * @returns {{kind:"probe"|"slot"|"micro"|"done", slotId:string|null, variantId?:string|null, dose?:number|null, preview?:boolean, deferred?:boolean, reason:string, count?:number, max?:number}}
+ * @returns {{kind:"probe"|"slot"|"micro"|"done", slotId:string|null, variantId?:string|null, dose?:number|null, preview?:boolean, deferred?:boolean, spent?:boolean, reason:string, count?:number, max?:number}}
+ *   count = 이미 울린 미세 자극 수(다음 것은 count+1 번째), spent = 예산(max)을 다 써서 더 울리지 않는다(B161).
  */
 export function nextAdvice({ entries = [], tNow, verdict = true, xhat = null, target = null, tol = 0, ceiling = null,
   lastMicroAt = -Infinity, microCount = 0, controlOn = true, sceneStart = 68, sceneEnd = 150, micro = {}, quiet = null, observed = true }) {
@@ -143,7 +144,8 @@ export function nextAdvice({ entries = [], tNow, verdict = true, xhat = null, ta
   const M = { ...MICRO_PARAMS, ...micro };
   if (tNow > sceneEnd) return { kind: "done", slotId: null, reason: `제어 구간 끝 · 미세 자극 ${microCount}/${M.max}` };
   const base = { kind: "micro", slotId: "micro-door", variantId: "shut", dose: null, count: microCount, max: M.max };
-  if (microCount >= M.max) return { ...base, reason: `예산 소진 ${microCount}/${M.max} — 남은 장면은 연속 구동만` };
+  // 예산 소진(B161) — 모니터 머리는 "다음 미세 자극" 이 아니라 "미세 자극 예산 소진(3/3)" 으로 적는다(spent). 사유 줄은 무엇이 남았는가만
+  if (microCount >= M.max) return { ...base, spent: true, reason: `남은 장면(~${mmss(sceneEnd)})은 연속 구동만` };
   // 장면 안 x̂ 는 대개 사건 사이 바닥값이라 "목표 아래" 가 거의 늘 참이다(B149) — 곡선 아래로 "처진다" 기보다 사건이 없어서 낮다
   if (!verdict || tNow < sceneStart) return { ...base, reason: `판정 뒤 장면(${mmss(sceneStart)}~${mmss(sceneEnd)})에서 x̂ 이 목표 아래면(사건 사이 포함) 먼 문으로 반응을 잰다` };
   if (xhat == null || !Number.isFinite(xhat) || !Number.isFinite(target)) return { ...base, reason: "x̂ 추정 대기" };

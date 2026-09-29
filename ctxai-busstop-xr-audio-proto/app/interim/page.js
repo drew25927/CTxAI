@@ -70,7 +70,7 @@ import { createGazeSim, isGazeProfile, GAZE_PROFILES } from "@/lib/gazeSim";
 import { fitViewerModel } from "@/lib/viewerModel";
 import { estimateTensionSeries } from "@/lib/tensionEstimate";
 import { selectTrack } from "@/lib/trackSelect";
-import { reachParts } from "@/lib/monitorText";
+import { glueNumbers, reachParts } from "@/lib/monitorText";
 import { probeFor, probeMarks, interimTrack } from "@/lib/interimProbes";
 import DirectorMonitor, { MonitorChart, MOMENT_COLOR } from "@/components/DirectorMonitor";
 import { fingerprintText, MOMENT_TEXT } from "@/lib/viewerText";
@@ -548,7 +548,7 @@ export default function InterimPage() {
               {/* 관측 축(궤적 추종 엔진) — 팀 판정과 나란히. hudMeta 는 2열 격자라 라벨/값 쌍으로 쓴다 */}
               <div className={f.hudMeta} style={{ marginTop: 8, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.12)" }}>
                 <span>관객모델 θ̂</span><b>이득 {hud.engine.theta.g} · 지연 {hud.engine.theta.L}s</b>
-                <span style={{ opacity: 0.7 }}>모델 신뢰도 {Math.round(hud.engine.theta.confidence * 100)}% · 응답 {hud.engine.theta.nResp}/{hud.engine.theta.n}</span><b>회복 {hud.engine.theta.tau}s · 습관화 {hud.engine.theta.rho}</b>
+                <span style={{ opacity: 0.7 }}>모델 신뢰도 {Math.round(hud.engine.theta.confidence * 100)}% · 응답 {hud.engine.theta.nResp}/{hud.engine.theta.n}</span><b>{glueNumbers(`회복 ${hud.engine.theta.tau}s · 습관화 ${hud.engine.theta.rho}`) /* 음수 부호 −·라벨과 붙임(B65) */}</b>
               </div>
               <div className={f.hudMeta} style={{ marginTop: 2 }}>
                 <span>자극 · 긴장 x̂</span><b>자극 {hud.engine.nStim}{hud.engine.active ? `+${hud.engine.active}` : ""} · x̂ {hud.engine.xhat == null ? "-" : hud.engine.xhat.toFixed(2)}</b>
@@ -580,7 +580,7 @@ export default function InterimPage() {
             <p className={s.introSub} style={{ marginBottom: 14 }}>체험이 끝났습니다.{savedId ? <><br /><span style={{ opacity: 0.6, fontSize: "0.85em" }}>세션 저장: {savedId}</span></> : null}</p>
             {/* 관객 반응 지문·x̂ 미니 그래프·두 순간(가장 크게 반응·가장 차분히 집중, B144) — 같은 다섯 사건에 다른 두 사람이 다른 카드를 받는다(B14a) */}
             {endEngine && (
-              <div style={{ textAlign: "left", margin: "0 auto 20px", maxWidth: 520 }}>
+              <div style={{ textAlign: "left", margin: "0 auto 20px", maxWidth: 520, wordBreak: "keep-all" /* "…유지됐습 / 니다" 처럼 단어 안에서 접지 않는다(B163) */ }}>
                 {endEngine.series.length > 0 && (
                   <>
                     <MonitorChart series={endEngine.series} track={genre || "H"} tNow={T.end} tMax={T.end} ceiling={1} showTarget={false} marks={PROBE_MARKS} width={520} height={84} moments={endEngine.moments} />

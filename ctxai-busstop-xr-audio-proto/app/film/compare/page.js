@@ -197,7 +197,7 @@ export default function ComparePage() {
         <span className={s.dim}>두 관객 비교 · 같은 정류장, 다른 하늘</span>
         <span />
       </div>
-      <div style={{ maxWidth: 960, margin: "70px auto 40px", padding: "0 20px" }}>
+      <div style={{ maxWidth: 960, margin: "70px auto 40px", padding: "0 20px", wordBreak: "keep-all" /* 한글 단어 안에서 접지 않는다(B163) */ }}>
         <h1 className={f.endTitle} style={{ fontSize: 26 }}>
           {a && b ? (same ? `둘 다 ${GENRE[a.dominant].label}였지만, 같은 밤은 아니었습니다` : `A는 ${GENRE[a.dominant]?.label}, B는 ${GENRE[b.dominant]?.label}를 만났습니다`) : "세션을 고르세요"}
         </h1>
