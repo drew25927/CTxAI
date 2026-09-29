@@ -200,7 +200,7 @@ function figB55(files) {
   const W = 1560, PW = Math.floor((W - 16 * (sessions.length + 1)) / sessions.length), PH = 400, TOP = 96;
   const svg = new Svg(W, TOP + PH + 164);
   svg.text(20, 30, "B55 — θ̂ 회귀 y = log(반응크기/용량) = log g + n·log(1−ρ) 에서 track 레코드(수십 초 추적 사건)는 probe 와 척도가 다르다", { size: 20, weight: "bold" });
-  svg.text(20, 52, "실측 세션(합성 공포형 관객, 1배속)의 engagement.stimuli 를 그대로 회귀 · ● probe/startle · ▲ track · ◆ 미세 자극(판정 뒤, /film 만) · 실선 = 전체 레코드 적합(현재 코드) · 점선 = track 제외 적합", { size: 11.5, color: "#444" });
+  svg.text(20, 52, "실측 세션(합성 공포형 관객, 1배속)의 engagement.stimuli 를 그대로 회귀 · 파랑 ● probe/startle · 주황 ▲ track · 테두리 초록 ● 미세 자극(판정 뒤, /film 만) · 실선 = 전체 레코드 적합(현재 코드) · 점선 = track 제외 적합", { size: 11.5, color: "#444" });
   svg.text(20, 70, "읽는 법 — ▲ 가 ● 의 선보다 한참 아래 있으면 track 의 반응 크기(응시 비율 위주)가 probe 의 정향 세기와 같은 자로 잰 값이 아니라는 뜻. 회귀는 이 점을 nth=0 의 '작은 반응' 으로 읽어 g 를 낮추고 ρ 를 0/음수 쪽으로 민다.", { size: 11.5, color: "#444" });
   say("== 그림 4 sim-b55-theta-scale — 실측 세션 θ̂ 적합 비교");
   const KIND_COLOR = { probe: "#2f6fd6", startle: "#2f6fd6", track: "#e67e22", micro: "#2e9e5b" };
@@ -229,7 +229,7 @@ function figB55(files) {
       `전체 적합(현재):   g ${all.g} · ρ ${all.rho} · τ ${all.tau} · n ${all.n} · 확신 ${all.confidence} → gScale ${gScale(all)} · 계획 ${planOf(all)}`,
       `track 제외 적합:   g ${probe.g} · ρ ${probe.rho} · τ ${probe.tau} · n ${probe.n} · 확신 ${probe.confidence} → gScale ${gScale(probe)} · 계획 ${planOf(probe)}`,
     ];
-    note.push(`▲ track 의 y 는 probe 회귀선보다 ${(() => { const tr = pts.find((q) => q.kind === "track"); if (!tr) return "-"; const pred = Math.log(probe.g) + tr.nth * Math.log(1 - probe.rho); return (pred - tr.y).toFixed(2); })()} 아래 · 계획·gScale 은 두 적합에서 ${planOf(all) === planOf(probe) && gScale(all) === gScale(probe) ? "같다(이 관객은 이득이 높아 최소 용량·배율 하한에서 포화)" : "다르다"}`);
+    note.push(`▲ track 의 y 는 probe 회귀선보다 ${(() => { const tr = pts.find((q) => q.kind === "track"); if (!tr) return "-"; const pred = Math.log(probe.g) + tr.nth * Math.log(1 - probe.rho); return (pred - tr.y).toFixed(2); })()} 아래 · ${planOf(all) !== planOf(probe) ? "계획이 두 적합에서 다르다" : gScale(all) !== gScale(probe) ? `계획은 같고 gScale 만 ${gScale(all)}→${gScale(probe)}` : "계획·gScale 이 두 적합에서 같다(이 관객은 이득이 높아 최소 용량·배율 하한에서 포화)"}`);
     note.push(`회색 = 수축 없는 단순 회귀(전체 ${olsAll ? `절편 ${olsAll.intercept.toFixed(2)} 기울기 ${olsAll.slope.toFixed(2)}` : "-"} / track 제외 ${olsProbe ? `절편 ${olsProbe.intercept.toFixed(2)} 기울기 ${olsProbe.slope.toFixed(2)}` : "-"})`);
     note.push(`검정 = 사전분포(g 0.6 · ρ 0.15, kG 1.5 · kRho 2.5)로 수축한 모델 선 — 합성 관객의 반응이 사전보다 커서 점 아래에 놓인다`);
     note.forEach((l, i) => svg.text(p.left, TOP + PH + 12 + i * 14, l, { size: 10, color: "#333" }));
@@ -237,7 +237,15 @@ function figB55(files) {
     say(`   ${s.file} (${s.route}) | ${note.join(" | ")}`);
   });
   legend(svg, 20, TOP + PH + 106, [{ label: "probe/startle", color: KIND_COLOR.probe, width: 4 }, { label: "track", color: KIND_COLOR.track, kind: "tri" }, { label: "미세 자극(probe, 판정 뒤)", color: KIND_COLOR.micro, width: 4 }, { label: "전체 적합(수축)", color: "#111" }, { label: "track 제외 적합(수축)", color: "#111", dash: "6 4" }, { label: "단순 회귀(수축 없음)", color: "#999", width: 1.2 }]);
-  svg.text(20, TOP + PH + 132, "후보 — (1) g·ρ 는 probe 만으로 적합하고 track 은 L·τ 와 응시 지표에만 쓴다  (2) kind 별 척도 상수(파일럿 실측으로 보정)  (3) 그대로 둔다. 실측 두 세션 모두 계획·gScale 은 바뀌지 않았고 ρ 의 부호가 바뀌었다(습관화 추정에만 영향).", { size: 11.5, color: "#444" });
+  // 결론 문장은 세션 적합값에서 만든다(세션을 바꿔 다시 그려도 캡션이 수치와 어긋나지 않게)
+  const b55 = summary.b55.slice(-sessions.length);
+  const planSame = b55.filter((r) => r.planAll === r.planProbe).length;
+  const gDiff = b55.filter((r) => r.gScaleAll !== r.gScaleProbe).map((r) => `${r.route} ${r.gScaleAll}→${r.gScaleProbe}`);
+  const rhoUp = b55.filter((r) => r.probeOnly.rho > r.all.rho).map((r) => `${r.route} ${r.all.rho}→${r.probeOnly.rho}`);
+  const verdict = `실측 ${b55.length}세션 중 계획이 같은 세션 ${planSame} · gScale 차이 ${gDiff.length ? gDiff.join(", ") : "없음"} · track 을 빼면 ρ 가 오른다 ${rhoUp.length ? rhoUp.join(", ") : "없음"}(습관화 추정에 영향)`;
+  svg.text(20, TOP + PH + 132, "후보 — (1) g·ρ 는 probe 만으로 적합하고 track 은 L·τ 와 응시 지표에만 쓴다  (2) kind 별 척도 상수(파일럿 실측으로 보정)  (3) 그대로 둔다.", { size: 11.5, color: "#444" });
+  svg.text(20, TOP + PH + 150, verdict, { size: 11.5, color: "#444" });
+  say(`   결론: ${verdict}`);
   return svg;
 }
 
