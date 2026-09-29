@@ -12,7 +12,7 @@
     "milestones": "node scripts/gen-milestones.mjs",
     "synthesize-dialogue": "node scripts/synthesize-dialogue.mjs",
     "pull-assets": "node scripts/pull-assets.mjs",
-    "test": "node scripts/test-direction.mjs && node scripts/sim-headpose.mjs && node scripts/test-interim.mjs && node scripts/sim-interim.mjs && node scripts/test-interim-probes.mjs && node scripts/test-gaze-sim.mjs && node scripts/test-engagement.mjs && node scripts/test-viewer-model.mjs && node scripts/test-tension-curve.mjs && node scripts/test-tension-estimate.mjs && node scripts/test-slot-controller.mjs && node scripts/test-sim-trajectory.mjs && node scripts/test-track-select.mjs && node scripts/test-pipeline.mjs && node scripts/test-robustness.mjs && node scripts/test-extract-features.mjs",
+    "test": "node scripts/test-direction.mjs && node scripts/sim-headpose.mjs && node scripts/test-interim.mjs && node scripts/sim-interim.mjs && node scripts/test-interim-probes.mjs && node scripts/test-gaze-sim.mjs && node scripts/test-engagement.mjs && node scripts/test-viewer-model.mjs && node scripts/test-tension-curve.mjs && node scripts/test-tension-estimate.mjs && node scripts/test-slot-controller.mjs && node scripts/test-control-actuate.mjs && node scripts/test-sim-trajectory.mjs && node scripts/test-track-select.mjs && node scripts/test-pipeline.mjs && node scripts/test-robustness.mjs && node scripts/test-extract-features.mjs",
     "gen-pool": "node scripts/gen-dialogue-pool.mjs",
     "sim": "node scripts/sim-trajectory.mjs 300 H && node scripts/sim-trajectory.mjs 300 R && node scripts/sim-trajectory.mjs 300 C",
     "export:engagement": "node scripts/export-engagement.mjs",

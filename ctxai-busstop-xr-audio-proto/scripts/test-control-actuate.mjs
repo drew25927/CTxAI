@@ -1,0 +1,175 @@
+// 연속 파라미터 액추에이터 회귀 테스트 — 범위·데드밴드·방향·슬루·관객별 이득·상한·OFF=항등
+import assert from "node:assert/strict";
+import { actuationFor, applyActuation, bgmScale, offsetsFor, AXES, RANGES, ACTUATED_KEYS, ACTUATE_PARAMS } from "../lib/controlActuate.js";
+import { deriveParams, ANCHORS } from "../lib/directionMap.js";
+import { curveAt } from "../lib/tensionCurve.js";
+
+let n = 0;
+function test(name, fn) { try { fn(); n++; console.log("ok ", name); } catch (e) { console.log("FAIL", name, "—", e.message); process.exitCode = 1; } }
+
+const PRIOR = { g: 0.6 };
+/** 같은 입력으로 steps 틱 돌린 마지막 결과 */
+function run(args, steps = 40, dt = 0.25) {
+  let prev = null;
+  for (let i = 0; i < steps; i++) prev = actuationFor({ ...args, prev, dt });
+  return prev;
+}
+// 판정 뒤 대표 상태 — 트랙이 우세하고 정착한 연출 벡터
+const STATES = {
+  H: { R: 0.1, H: 0.8, C: 0.1 },
+  R: { R: 0.8, H: 0.1, C: 0.1 },
+  C: { R: 0.1, H: 0.1, C: 0.8 },
+};
+
+test("데드밴드: 목표 ± 허용폭 안이면 hold, 오프셋 전부 0", () => {
+  for (const track of ["H", "R", "C"]) {
+    for (const xhat of [0.5, 0.45, 0.55, 0.41, 0.59]) {
+      const r = actuationFor({ xhat, target: 0.5, tol: 0.1, ceiling: 0.9, track, theta: PRIOR });
+      assert.equal(r.mode, "hold", `${track} x̂ ${xhat}`);
+      assert.equal(r.u, 0);
+      for (const k of ACTUATED_KEYS) assert.equal(r.offsets[k], 0, `${track} ${k}`);
+    }
+  }
+});
+
+test("데드밴드: 밖에 있다가 안으로 들어오면 오프셋이 0 으로 서서히 돌아간다", () => {
+  const out = run({ xhat: 0.1, target: 0.6, tol: 0.1, ceiling: 0.9, track: "H", theta: PRIOR });
+  assert.ok(out.u > 0.9, `포화 ${out.u}`);
+  let prev = out;
+  const us = [];
+  for (let i = 0; i < 30; i++) { prev = actuationFor({ xhat: 0.6, target: 0.6, tol: 0.1, ceiling: 0.9, track: "H", theta: PRIOR, prev, dt: 0.25 }); us.push(prev.u); }
+  for (let i = 1; i < us.length; i++) assert.ok(us[i] <= us[i - 1] + 1e-9, "단조 감소");
+  assert.equal(us[us.length - 1], 0);
+});
+
+test("방향(각성): 목표 아래 → 공포는 침묵↑·안개↑·가로등↑·거리↑·시선↓, BGM↑", () => {
+  const r = run({ xhat: 0.2, target: 0.7, tol: 0.1, ceiling: 0.92, track: "H", theta: PRIOR });
+  assert.equal(r.mode, "arouse");
+  const o = r.offsets;
+  assert.ok(o.npcSilence > 0 && o.fogDensity > 0 && o.lampOn > 0 && o.npcDistance > 0 && o.npcGaze < 0 && o.bgmGain > 0, JSON.stringify(o));
+});
+
+test("방향(각성): 로맨스는 침묵↓·거리↓·시선↑·BGM↑, 가로등은 그대로", () => {
+  const r = run({ xhat: 0.1, target: 0.55, tol: 0.12, ceiling: 0.75, track: "R", theta: PRIOR });
+  const o = r.offsets;
+  assert.ok(o.npcSilence < 0 && o.npcDistance < 0 && o.npcGaze > 0 && o.bgmGain > 0, JSON.stringify(o));
+  assert.equal(o.lampOn, 0);
+});
+
+test("방향(이완): 목표 위 → 각 트랙 오프셋의 부호가 각성과 정반대", () => {
+  for (const track of ["H", "R", "C"]) {
+    const up = run({ xhat: 0.1, target: 0.5, tol: 0.1, ceiling: 0.9, track, theta: PRIOR });
+    const down = run({ xhat: 0.85, target: 0.5, tol: 0.1, ceiling: 0.9, track, theta: PRIOR });
+    assert.equal(down.mode, "relax", track);
+    for (const k of ACTUATED_KEYS) {
+      if (!AXES[track][k]) continue;
+      assert.equal(Math.sign(up.offsets[k]), -Math.sign(down.offsets[k]), `${track} ${k}`);
+    }
+  }
+});
+
+test("방향표는 directionMap 앵커가 중립에서 떨어진 방향과 같은 부호다(연속 파라미터 5종)", () => {
+  for (const track of ["H", "R", "C"]) {
+    for (const k of ["npcSilence", "lampOn", "fogDensity", "npcDistance", "npcGaze"]) {
+      const a = AXES[track][k];
+      if (!a) continue;
+      const d = ANCHORS[track][k] - ANCHORS.neutral[k];
+      assert.equal(Math.sign(a), Math.sign(d), `${track} ${k}: 방향표 ${a} / 앵커 차 ${d.toFixed(3)}`);
+    }
+  }
+});
+
+test("슬루: 한 틱에 u 는 SLEW·dt 이상 바뀌지 않는다", () => {
+  let prev = null;
+  for (let i = 0; i < 25; i++) {
+    const xhat = i % 2 ? 0.0 : 1.0; // 매 틱 극단을 오가는 x̂
+    const r = actuationFor({ xhat, target: 0.5, tol: 0.1, ceiling: 0.9, track: "H", theta: PRIOR, prev, dt: 0.25 });
+    const u0 = prev ? prev.u : 0;
+    assert.ok(Math.abs(r.u - u0) <= ACTUATE_PARAMS.SLEW * 0.25 + 1e-9, `Δu ${Math.abs(r.u - u0)}`);
+    prev = r;
+  }
+});
+
+test("관객별 이득: 같은 오차에서 이득 낮은 관객이 더 세게, 높은 관객이 더 약하게 민다", () => {
+  const args = { xhat: 0.5, target: 0.7, tol: 0.1, ceiling: 0.92, track: "H" };
+  const low = actuationFor({ ...args, theta: { g: 0.3 } });
+  const mid = actuationFor({ ...args, theta: { g: 0.6 } });
+  const high = actuationFor({ ...args, theta: { g: 1.6 } });
+  assert.ok(low.uTarget > mid.uTarget && mid.uTarget > high.uTarget, `${low.uTarget} ${mid.uTarget} ${high.uTarget}`);
+  assert.equal(mid.gScale, 1);
+  assert.ok(low.gScale <= ACTUATE_PARAMS.G_SCALE_MAX && high.gScale >= ACTUATE_PARAMS.G_SCALE_MIN);
+});
+
+test("상한: x̂ 이 상한을 넘으면 같은 초과폭이라도 이완이 더 세다", () => {
+  // 목표 0.5·허용 0.1 → 위쪽 경계 0.6. 상한 0.7 이면 x̂ 0.75 는 상한을 0.05 넘는다.
+  const capped = actuationFor({ xhat: 0.75, target: 0.5, tol: 0.1, ceiling: 0.7, track: "C", theta: { g: 2 } });
+  const loose = actuationFor({ xhat: 0.75, target: 0.5, tol: 0.1, ceiling: 1.0, track: "C", theta: { g: 2 } });
+  assert.ok(capped.uTarget < loose.uTarget, `${capped.uTarget} vs ${loose.uTarget}`);
+});
+
+test("범위: 어떤 입력·어떤 상태에서도 적용 결과가 요청서 §2.7 범위 안", () => {
+  const tracks = ["H", "R", "C"];
+  for (const track of tracks) {
+    for (const settled of [0, 0.5, 1]) {
+      for (const st of Object.values(STATES)) {
+        const base = deriveParams(st, settled);
+        for (const xhat of [0, 0.3, 0.6, 1]) {
+          for (const g of [0.1, 0.6, 3]) {
+            const r = run({ xhat, target: 0.5, tol: 0.1, ceiling: 0.8, track, theta: { g } });
+            const p = applyActuation(base, r.offsets);
+            for (const k of ACTUATED_KEYS) {
+              if (k === "bgmGain") continue;
+              const [lo, hi] = RANGES[k];
+              const okLo = p[k] >= Math.min(lo, base[k]) - 1e-9, okHi = p[k] <= Math.max(hi, base[k]) + 1e-9;
+              assert.ok(okLo && okHi, `${track} ${k}=${p[k]} base ${base[k]}`);
+            }
+            const s = bgmScale(r.offsets);
+            assert.ok(s >= RANGES.bgmGain[0] && s <= RANGES.bgmGain[1]);
+          }
+        }
+      }
+    }
+  }
+});
+
+test("OFF=항등: active=false 면 오프셋이 정확히 0 이고 적용 결과가 원래 값과 같다", () => {
+  const warm = run({ xhat: 0.1, target: 0.7, tol: 0.1, ceiling: 0.92, track: "H", theta: PRIOR });
+  const off = actuationFor({ xhat: 0.1, target: 0.7, tol: 0.1, ceiling: 0.92, track: "H", theta: PRIOR, prev: warm, active: false });
+  assert.equal(off.mode, "off");
+  assert.equal(off.u, 0, "비활성이면 슬루 없이 즉시 0");
+  const base = deriveParams(STATES.H, 1);
+  assert.deepEqual(applyActuation(base, off.offsets), base);
+  assert.equal(bgmScale(off.offsets), 1);
+});
+
+test("OFF=항등: 트랙이 없거나(판정 전) x̂ 이 없으면 구동하지 않는다", () => {
+  assert.equal(actuationFor({ xhat: 0.1, target: 0.7, tol: 0.1, track: null }).mode, "off");
+  const r = actuationFor({ xhat: null, target: 0.7, tol: 0.1, track: "H", theta: PRIOR });
+  assert.equal(r.mode, "hold");
+  assert.equal(r.u, 0);
+});
+
+test("applyActuation 은 입력을 바꾸지 않고, 연속 6종 밖의 키(triggers 등)는 그대로 둔다", () => {
+  const base = deriveParams(STATES.H, 1);
+  const snapshot = JSON.stringify(base);
+  const p = applyActuation(base, offsetsFor("H", -1));
+  assert.equal(JSON.stringify(base), snapshot);
+  assert.equal(p.triggers, base.triggers);
+  assert.deepEqual(p.skyTop, base.skyTop);
+  assert.ok(p.fogDensity < base.fogDensity && p.lampOn < base.lampOn);
+});
+
+test("실제 곡선 위에서: 공포 트랙 90초, 차분한 관객(x̂ 0.2)은 각성, 과민한 관객(x̂ 0.95)은 이완", () => {
+  const tgt = curveAt("H", 90);
+  const calm = run({ xhat: 0.2, ...tgt, track: "H", theta: { g: 0.35 } });
+  const jumpy = run({ xhat: 0.95, ...tgt, track: "H", theta: { g: 1.5 } });
+  assert.equal(calm.mode, "arouse");
+  assert.equal(jumpy.mode, "relax");
+  const base = deriveParams(STATES.H, 1);
+  const pc = applyActuation(base, calm.offsets), pj = applyActuation(base, jumpy.offsets);
+  assert.ok(pc.fogDensity > pj.fogDensity && pc.npcSilence > pj.npcSilence && pc.npcDistance > pj.npcDistance, "두 관객의 무대가 다르다");
+  console.log(`    공포 90s 목표 ${tgt.target.toFixed(2)} — 차분 u=${calm.u} 안개 ${pc.fogDensity.toFixed(3)} 침묵 ${pc.npcSilence.toFixed(2)}s 거리 ${pc.npcDistance.toFixed(2)}m BGM×${bgmScale(calm.offsets).toFixed(2)}`);
+  console.log(`                        과민 u=${jumpy.u} 안개 ${pj.fogDensity.toFixed(3)} 침묵 ${pj.npcSilence.toFixed(2)}s 거리 ${pj.npcDistance.toFixed(2)}m BGM×${bgmScale(jumpy.offsets).toFixed(2)} 가로등 ${pj.lampOn.toFixed(2)}`);
+});
+
+console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);
