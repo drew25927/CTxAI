@@ -85,6 +85,16 @@ export const GAZE_PROFILE_NAMES = Object.freeze(Object.keys(GAZE_PROFILES));
 // (/film 은 모든 사건에 효과음이 있어 전부 audio) 믿을 수 없으므로 기하로 가른다.
 export const BEHIND_DEG = 100;
 
+// 용량 배율 — 슬롯 변형(lib/slotActuate.js)이 용량 d 를 주면 정향 각·후퇴를 d/DOSE_REF 배로 낸다(관객 응답 모델 r = g·d 와 같은 선형 가정).
+// DOSE_REF 는 /film 도입부 큐의 볼륨(0.8, 제어 OFF 의 값)이라 용량을 안 주거나 0.8 이면 지금까지의 궤적과 같다. 배율 범위는 사람 고개의 범위 안(잠정치).
+export const DOSE_REF = 0.8;
+export const DOSE_SCALE = Object.freeze({ min: 0.5, max: 1.25 });
+/** 용량 → 반응 배율. null/undefined 면 1. */
+export function doseFactor(dose) {
+  if (dose == null || !Number.isFinite(dose)) return 1;
+  return Math.max(DOSE_SCALE.min, Math.min(DOSE_SCALE.max, dose / DOSE_REF));
+}
+
 /** ?viewer= 값이 합성 관객 프로필인가. */
 export function isGazeProfile(name) { return typeof name === "string" && Object.prototype.hasOwnProperty.call(GAZE_PROFILES, name); }
 
@@ -133,17 +143,19 @@ export function createGazeSim(profile, { seed = 1, probes = [], speed = 1 } = {}
   const log = [];                      // trigger 기록(테스트·세션용)
   let last = { yaw: 0, pitch: 0, roll: 0, x: 0, y: SEAT_Y, z: 0 };
 
-  /** 사건 발동. dur 는 실제 초(페이지가 센서에 넘기는 값과 같다) — 안에서 영화 시간으로 되돌린다. */
-  function trigger({ name, azimuth = 0, dur = 2, kind = "probe", channel = "av" } = {}) {
+  /** 사건 발동. dur 는 실제 초(페이지가 센서에 넘기는 값과 같다) — 안에서 영화 시간으로 되돌린다.
+   *  dose 는 슬롯 변형의 용량(있으면 정향 각·후퇴를 doseFactor 배로, 없으면 1 — 도입부 탐침·미세 자극은 주지 않는다). */
+  function trigger({ name, azimuth = 0, dur = 2, kind = "probe", channel = "av", dose = null } = {}) {
     const k = kind === "track" ? "track" : kind === "startle" ? "startle" : "probe";
     const untilSim = tSim + Math.max(0.2, (Number(dur) || 2) * sp);
+    const amp = doseFactor(dose);
     active.push({ name, azimuth, kind: k, channel, at: tSim, until: untilSim });
-    log.push({ name, azimuth, kind: k, channel, at: Math.round(tSim * 100) / 100 });
+    log.push({ name, azimuth, kind: k, channel, dose: dose ?? null, amp, at: Math.round(tSim * 100) / 100 });
     const behind = k !== "track" && Math.abs(azimuth) >= BEHIND_DEG;
-    targetYaw = clampDeg(azimuth * pick(P.orient, k, false));
+    targetYaw = clampDeg(azimuth * pick(P.orient, k, false) * amp);
     rate = P.rate;
     holdUntil = tSim + pick(P.hold, k, behind);
-    targetZ = pick(P.retreat, k, behind);
+    targetZ = pick(P.retreat, k, behind) * amp;
     const up = P.standUp ? pick(P.standUp, k, behind) : 0;
     if (up > 0) { targetY = SEAT_Y + up; standUntil = holdUntil + 1.2; }
     return { targetYaw, holdUntil };

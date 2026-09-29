@@ -11,7 +11,8 @@
 //   { track, theta:{g,L,tau,rho,confidence,nResp}, xhat, target?, tol?, ceiling?, series:[{t,tension}],
 //     nStim, sel?:{track,reach}, control?:bool, micro?:number, note?,
 //     next?:{kind:"slot"|"micro"|"done", slotId, variantId?, dose?, reason, count?, max?}   ← lib/slotController nextAdvice
-//     actuate?:{u,mode,offsets} }   ← /film 연속 액추에이터(lib/controlActuate.js)의 현재 구동량·오프셋
+//     actuate?:{u,mode,offsets},     ← /film 연속 액추에이터(lib/controlActuate.js)의 현재 구동량·오프셋
+//     slots?:{frog?:{variantId,dose,actuation:{volume,plays}}, cat?:{…}} }   ← /film 슬롯 변형 확정값(lib/slotActuate.js, B78). variantId null = 고정 연출
 
 import { curveAt } from "@/lib/tensionCurve";
 
@@ -59,6 +60,18 @@ function actuateText(a) {
   return parts.length ? parts.join(" · ") : "오프셋 0";
 }
 
+// 슬롯 변형 확정 한 줄(B78) — 개구리·고양이가 실제로 어떤 변형으로 울렸는가. 제어 OFF 는 "고정" 으로 표시.
+function slotsText(slots, eventLabel) {
+  const ids = Object.keys(slots || {});
+  if (!ids.length) return null;
+  return ids.map((id) => {
+    const c = slots[id]; const a = c.actuation || {};
+    const label = eventLabel[id] || id;
+    if (!c.variantId) return `${label} 고정(${a.volume ?? "-"})`;
+    return `${label} → ${c.variantId}(용량 ${c.dose}${a.plays > 1 ? ` · ${a.plays}회` : ""} · 볼륨 ${a.volume})`;
+  }).join(" · ");
+}
+
 // "다음" 줄의 머리 — 고정 슬롯이면 계획 변형·용량, 고정 슬롯이 끝났으면 미세 자극 차례(B66), 장면 뒤면 없음
 function nextHeadline(next, eventLabel) {
   const label = eventLabel[next.slotId] || next.slotId;
@@ -95,6 +108,9 @@ export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTar
       )}
       {monitor.control && monitor.actuate && (
         <div style={{ opacity: 0.85, fontSize: 11 }}>연속 구동 <b>{ACT_MODE[monitor.actuate.mode] || monitor.actuate.mode}</b> u {sgn(monitor.actuate.u || 0)} · {actuateText(monitor.actuate)}</div>
+      )}
+      {monitor.slots && slotsText(monitor.slots, eventLabel) && (
+        <div style={{ opacity: 0.85, fontSize: 11 }}>슬롯 변형 {slotsText(monitor.slots, eventLabel)}</div>
       )}
       {monitor.note && <div style={{ opacity: 0.7 }}>{monitor.note}</div>}
       {monitor.next && (

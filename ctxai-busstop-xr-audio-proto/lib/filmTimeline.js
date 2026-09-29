@@ -51,7 +51,7 @@ function seg(t, a, b) { return smooth((t - a) / (b - a)); }
 function heading(dx, dz) { return Math.atan2(dx, dz); } // 모델 정면(+z)이 진행 방향을 보게 하는 yaw
 const BUS_STOP_X = -1.2; // 정차 시 차체 중심. 앞문은 +2.4 → x≈1.2
 
-export function evalActors(t, { dominant = null, npcDistance = 0.9, busAt = null, leaveAt = null } = {}) {
+export function evalActors(t, { dominant = null, npcDistance = 0.9, busAt = null, leaveAt = null, cat = null } = {}) {
   const a = {};
 
   // 우비 인물 — 카페 문(-18,-24.4)에서 나와 횡단보도 건너편 끝(-5,-17.6)까지 걷고, 트럭이 지나가길
@@ -78,11 +78,14 @@ export function evalActors(t, { dominant = null, npcDistance = 0.9, busAt = null
   } else { a.truck = { visible: false }; a.splash = null; }
 
   // 고양이 — 오른쪽 공원 진입로(9,-2.6)에서 뛰어들어 벤치 앞(0.9,-1.5)에 멈춰 관객을 보고, 왼쪽(-9,-2.2)으로 달아난다.
-  if (t >= T.catIn && t <= T.catGone) {
+  // 동선의 시각은 기본 T.* 이고, 슬롯 제어기(lib/slotActuate.js catSchedule)가 변형에 맞춰 {catStop, catOut, catGone} 을 줄 수 있다 —
+  // 들어오는 시각(T.catIn)은 고정, 뛰어드는 속도·노려보는 길이·달아나는 속도만 달라진다. 없으면 지금까지의 동선 그대로.
+  const catStop = cat?.catStop ?? T.catStop, catOut = cat?.catOut ?? T.catOut, catGone = cat?.catGone ?? T.catGone;
+  if (t >= T.catIn && t <= catGone) {
     let x, z, running = true, facingBench = false;
-    if (t < T.catStop) { const p = seg(t, T.catIn, T.catStop); x = lerp(9, 0.9, p); z = lerp(-2.6, -1.5, p); }
-    else if (t < T.catOut) { x = 0.9; z = -1.5; running = false; facingBench = true; }
-    else { const p = seg(t, T.catOut, T.catGone); x = lerp(0.9, -9, p); z = lerp(-1.5, -2.2, p); }
+    if (t < catStop) { const p = seg(t, T.catIn, catStop); x = lerp(9, 0.9, p); z = lerp(-2.6, -1.5, p); }
+    else if (t < catOut) { x = 0.9; z = -1.5; running = false; facingBench = true; }
+    else { const p = seg(t, catOut, catGone); x = lerp(0.9, -9, p); z = lerp(-1.5, -2.2, p); }
     a.cat = { visible: true, x, z, running, facingBench, bob: t };
   } else a.cat = { visible: false };
 

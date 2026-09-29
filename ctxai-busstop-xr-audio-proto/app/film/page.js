@@ -43,6 +43,7 @@ import { estimateTensionSeries } from "@/lib/tensionEstimate";
 import DirectorMonitor from "@/components/DirectorMonitor";
 import { curveAt } from "@/lib/tensionCurve";
 import { runController, microDecision, nextAdvice } from "@/lib/slotController";
+import { decideSlot, CONTROLLED_SLOTS, DECIDE_AT } from "@/lib/slotActuate";
 import { actuationFor, bgmScale } from "@/lib/controlActuate";
 import { selectTrack } from "@/lib/trackSelect";
 import { deriveBgmGains, TRIGGERS } from "@/lib/directionMap";
@@ -85,7 +86,7 @@ function useQuery() {
 }
 
 // 캔버스 안에서 도는 디렉터 — 카메라 포즈를 센서에 넣고, 상태를 tick 하고, 타임라인을 밀고, 큐를 쏜다.
-function FilmDirector({ directionRef, sensorRef, engagementRef, actorsRef, filmRef, onCue, speed, debugBus = false, debugTruck = false, viewerSimRef, controlsRef }) {
+function FilmDirector({ directionRef, sensorRef, engagementRef, actorsRef, filmRef, onCue, onDecide, speed, debugBus = false, debugTruck = false, viewerSimRef, controlsRef }) {
   const session = useXR((xr) => xr.session);
   const euler = useMemo(() => new Euler(), []);
   const dir = useMemo(() => new Vector3(), []);
@@ -126,6 +127,9 @@ function FilmDirector({ directionRef, sensorRef, engagementRef, actorsRef, filmR
 
     // 영화 시간
     film.t += clamped * speed;
+    // 슬롯 변형 결정(B78) — 개구리·고양이는 첫 자극(소리·동선)보다 조금 앞(DECIDE_AT)에서 그 순간의 θ̂·x̂ 으로 변형을 정한다.
+    // 큐보다 먼저 돌아야 고양이 동선(43s)이 소리(43.6s)보다 앞서 정해진 타이밍을 쓴다. 제어 OFF 면 고정 연출로 정해진다.
+    if (onDecide) for (const id of CONTROLLED_SLOTS) if (film.t >= DECIDE_AT[id] && !film.slotChoice?.[id]) onDecide(id);
     for (const cue of CUES) {
       if (film.t >= cue.t && !film.fired.has(cue.name)) {
         film.fired.add(cue.name);
@@ -133,7 +137,7 @@ function FilmDirector({ directionRef, sensorRef, engagementRef, actorsRef, filmR
       }
     }
 
-    const actors = evalActors(film.t, { dominant: film.dominant, npcDistance: film.npcDistance, busAt: film.busAt, leaveAt: film.leaveAt });
+    const actors = evalActors(film.t, { dominant: film.dominant, npcDistance: film.npcDistance, busAt: film.busAt, leaveAt: film.leaveAt, cat: film.slotChoice?.cat?.schedule || null });
     if (debugBus) actors.bus = { visible: true, x: -1.2, z: -4.75, stopped: true, doorOpen: true, headlight: 0.6 }; // ?bus=1 — 정차한 버스를 바로 본다 (디자인 점검용)
     if (debugTruck) actors.truck = { visible: true, x: 1.0, z: -4.6 }; // ?truck=1 — 트럭을 물웅덩이 앞에 세운다
     actorsRef.current = actors;
@@ -318,6 +322,8 @@ export default function FilmPage() {
     const a = audio(`sfx_${key}.mp3`);
     a.loop = loop; a.volume = volume; a.currentTime = 0;
     a.play().catch(() => {});
+    // 재생 기록(점검용) — 헤드리스에서는 소리를 들을 수 없으므로 window.__sfxLog 로 볼륨·횟수를 확인한다
+    if (typeof window !== "undefined") (window.__sfxLog = window.__sfxLog || []).push({ t: Math.round((filmRef.current?.t || 0) * 100) / 100, key, volume: Math.round(volume * 1000) / 1000, loop });
     return a;
   }
   function playFile(name, volume = 1) {
@@ -371,11 +377,13 @@ export default function FilmPage() {
           const last = series[series.length - 1];
           const tgt = curveAt(track, film.t);
           const rec = runController(track, theta);
+          // 이미 확정된 슬롯(개구리·고양이, B78)은 계획 대신 실제로 고른 변형을 보인다 — 계획은 틱마다 다시 세워져 확정값과 어긋날 수 있다
+          const entries = rec.entries.map((e) => { const c = film.slotChoice?.[e.slotId]; return c ? { ...e, variantId: c.variantId ?? "중립", dose: c.dose, reason: `확정 · ${c.reason}` } : e; });
           // 다음 개입 — 남은 고정 슬롯이 없으면(고양이 0:45 뒤) 미세 자극의 발동 조건·대기 사유를 보인다(B66)
-          const next = nextAdvice({ entries: rec.entries, tNow: film.t, verdict: !!film.dominant, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling,
+          const next = nextAdvice({ entries, tNow: film.t, verdict: !!film.dominant, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling,
             lastMicroAt: film.lastMicroAt ?? -Infinity, microCount: film.microCount || 0, controlOn: q.control === "1", sceneStart: T.npcSeated, sceneEnd: 150 });
           const sel = theta.nResp >= 1 ? selectTrack(theta, { genrePrior: snap.current, priorWeight: 0.3 }) : null;
-          setMonitor({ track, theta, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, series, next, nStim: eng.stimuli.length, sel, control: q.control === "1", micro: film.microCount || 0, actuate: adjustRef.current });
+          setMonitor({ track, theta, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, series, next, nStim: eng.stimuli.length, sel, control: q.control === "1", micro: film.microCount || 0, actuate: adjustRef.current, slots: film.slotChoice || null });
         }
       }
       // 실제 제어(?control=1) — 판정 뒤 장면에서만. 도입부 다섯 사건은 관객을 공정히 읽기 위한
@@ -454,7 +462,8 @@ export default function FilmPage() {
     if (viewerSimRef.current) d.markEvent("viewer:synthetic", { profile: viewerSim, seed: viewerSeed });
     paramsRef.current = null;
     adjustRef.current = null;
-    filmRef.current = { running: true, t: 0, dominant: null, npcDistance: 0.9, busAt: null, onFrame: null, lastMicroAt: -999, microCount: 0, lastActuateLogAt: null, actuateLogCount: 0 };
+    filmRef.current = { running: true, t: 0, dominant: null, npcDistance: 0.9, busAt: null, onFrame: null, lastMicroAt: -999, microCount: 0, lastActuateLogAt: null, actuateLogCount: 0, slotChoice: {} };
+    if (typeof window !== "undefined") window.__sfxLog = [];
     setDominant(null); setLine(null); setCaption(""); setAskStatus(null);
     if (bias) d.pushEvidence({ [bias.g]: 1 }, bias.w, "bias", `?bias=${bias.g}`);
     d.setPhase("intro");
@@ -480,18 +489,53 @@ export default function FilmPage() {
     }
   }
 
+  // 슬롯 변형 결정(B78) — 개구리·고양이 슬롯을 지금 시점의 θ̂(앞 탐침 응답)·x̂·잠정 우세 장르로 정한다. 한 번 정하면 바꾸지 않는다.
+  // 제어 OFF 면 고정 연출(볼륨 0.8 한 번, 기본 동선)로 정해져 지금까지의 /film 과 같다. 세션에는 control:slot 이벤트로 남는다.
+  function decideSlotNow(slotId) {
+    const d = directionRef.current;
+    const film = filmRef.current;
+    if (!d || !film.running) return null;
+    if (film.slotChoice?.[slotId]) return film.slotChoice[slotId];
+    const controlOn = q.control === "1";
+    const eng = engagementRef.current?.data?.();
+    const theta = eng && eng.stimuli.length ? fitViewerModel(eng.stimuli) : null;
+    const series = eng && eng.stimuli.length ? estimateTensionSeries(eng) : [];
+    const xhat = series.length ? series[series.length - 1].tension : null;
+    const snap = d.snapshot();
+    const track = (q.track || film.dominant || snap.dominant || "H").toUpperCase();
+    const choice = { ...decideSlot({ slotId, controlOn, track, theta, xhat }), t: Math.round(film.t * 10) / 10, track };
+    film.slotChoice = { ...(film.slotChoice || {}), [slotId]: choice };
+    const r3 = (v) => (Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null);
+    d.markEvent("control:slot", {
+      t: choice.t, active: controlOn, slotId, variantId: choice.variantId, dose: choice.dose, reason: choice.reason, track,
+      xhat: r3(xhat), target: r3(choice.target), predTension: r3(choice.predTension), theta: theta ? { g: theta.g, rho: theta.rho, nResp: theta.nResp, n: theta.n } : null,
+      actuation: { sfx: choice.actuation.sfx, volume: choice.actuation.volume, plays: choice.actuation.plays, gap: choice.actuation.gap }, schedule: choice.schedule || null,
+    });
+    return choice;
+  }
+
   function onCue(cue) {
     const d = directionRef.current;
     const film = filmRef.current;
     if (!d) return;
-    if (cue.sfx) playSfx(cue.sfx, { volume: cue.volume ?? 0.8, loop: !!cue.loop });
+    // 제어 슬롯(개구리·고양이)은 정해진 변형의 볼륨·반복·동선을 쓴다. 결정이 아직 없으면(배속이 커서 틱을 건너뛴 경우) 지금 정한다.
+    const choice = CONTROLLED_SLOTS.includes(cue.name) ? (film.slotChoice?.[cue.name] || decideSlotNow(cue.name)) : null;
+    const act = choice?.actuation || null;
+    const volume = act ? act.volume : (cue.volume ?? 0.8);
+    const dose = choice ? choice.dose : (cue.volume ?? null);
+    const senseDur = cue.sense ? (choice?.schedule ? Math.max(0.5, choice.schedule.catGone - cue.t) : cue.sense.dur) : 0;
+    if (cue.sfx) {
+      playSfx(cue.sfx, { volume, loop: !!cue.loop });
+      // 반복 변형(개구리 twice) — 간격은 영화 초, 실제 초로 환산. 체험이 끝났으면 울리지 않는다.
+      for (let i = 1; i < (act?.plays || 1); i++) setTimeout(() => { if (film.running) playSfx(cue.sfx, { volume }); }, (act.gap * i / speed) * 1000);
+    }
     if (cue.slot) playFile(`${cue.slot}.mp3`, cue.volume ?? 1);
     if (cue.sense) {
-      sensorRef.current?.beginEvent(cue.name, cue.sense.azimuth, cue.sense.dur / speed, { kind: cue.sense.kind, tail: 4 / speed });
-      // 탐침 반응 기록 — 채널·용량은 잠정(오디오 큐는 소리, 그 밖은 시청각). 궤적 추종 기획에서 정식화한다.
-      engagementRef.current?.beginStimulus({ name: cue.name, azimuth: cue.sense.azimuth, dur: cue.sense.dur / speed, kind: cue.sense.kind, channel: cue.sfx ? "audio" : "av", dose: cue.volume ?? null, tail: 4 / speed });
-      // 합성 관객도 같은 사건을 듣는다 — 방위·종류로 반응한다(채널은 기록용)
-      viewerSimRef.current?.trigger({ name: cue.name, azimuth: cue.sense.azimuth, dur: cue.sense.dur / speed, kind: cue.sense.kind, channel: cue.sfx ? "audio" : "av" });
+      sensorRef.current?.beginEvent(cue.name, cue.sense.azimuth, senseDur / speed, { kind: cue.sense.kind, tail: 4 / speed });
+      // 탐침 반응 기록 — 채널·용량은 잠정(오디오 큐는 소리, 그 밖은 시청각). 제어 슬롯은 변형의 설계 용량을 그대로 적어 θ̂ 회귀가 이득을 바로 읽게 한다.
+      engagementRef.current?.beginStimulus({ name: cue.name, azimuth: cue.sense.azimuth, dur: senseDur / speed, kind: cue.sense.kind, channel: cue.sfx ? "audio" : "av", dose, tail: 4 / speed });
+      // 합성 관객도 같은 사건을 듣는다 — 방위·종류로 반응한다(채널은 기록용). 제어 슬롯은 용량 배율(gazeSim doseFactor)도 받는다.
+      viewerSimRef.current?.trigger({ name: cue.name, azimuth: cue.sense.azimuth, dur: senseDur / speed, kind: cue.sense.kind, channel: cue.sfx ? "audio" : "av", dose: choice ? dose : null });
     }
     d.markEvent("cue", cue.name);
 
@@ -707,8 +751,8 @@ export default function FilmPage() {
   function sessionData(extra = {}) {
     const d = directionRef.current;
     if (!d) return null;
-    // 궤적 추종 로그 — 관객모델 θ̂와 제어기 추천 계획(슬롯 계획은 advisory), 연속 액추에이션 요약.
-    // 실제로 움직인 것은 ?control=1 일 때의 미세 자극(control:micro)과 연속 파라미터(control:actuate 이벤트).
+    // 궤적 추종 로그 — 관객모델 θ̂와 제어기의 사후 계획(plan: 종료 시점 θ̂ 로 다시 세운 참고값), 실제 구동 요약.
+    // 실제로 움직인 것은 ?control=1 일 때의 슬롯 변형(slots · control:slot 이벤트, B78)·미세 자극(control:micro)·연속 파라미터(control:actuate 이벤트).
     let control;
     try {
       const eng = engagementRef.current?.data?.();
@@ -716,7 +760,9 @@ export default function FilmPage() {
         const track = (q.track || filmRef.current.dominant || "H").toUpperCase();
         const theta = fitViewerModel(eng.stimuli);
         const a = adjustRef.current;
-        control = { track, theta, plan: runController(track, theta).entries,
+        const slots = {};
+        for (const [id, c] of Object.entries(filmRef.current.slotChoice || {})) slots[id] = { t: c.t, track: c.track, variantId: c.variantId, dose: c.dose, reason: c.reason, target: c.target ?? null, predTension: c.predTension ?? null, actuation: { sfx: c.actuation.sfx, volume: c.actuation.volume, plays: c.actuation.plays, gap: c.actuation.gap }, schedule: c.schedule || null };
+        control = { track, theta, mode: q.control === "1" ? "full" : "off", plan: runController(track, theta).entries, slots,
           actuation: { on: q.control === "1", ticks: filmRef.current.actuateLogCount || 0, micro: filmRef.current.microCount || 0, last: a ? { t: a.t, u: a.u, mode: a.mode, offsets: a.offsets } : null } };
       }
     } catch { /* 로그 실패는 무시 */ }
@@ -776,7 +822,7 @@ export default function FilmPage() {
             <ReactiveStage directionRef={directionRef} actorsRef={actorsRef} dominant={dominant} paramsOut={paramsRef} adjustRef={adjustRef} cueRef={filmRef} useRig={useRig} rigTest={q.rigtest === "1"} signText={signText} reflect={fx && !xrActive} benchYaw={Number(q.benchyaw) || 0} />
             <XRProbe onChange={setXrActive} />
             <Effects enabled={fx} />
-            <FilmDirector directionRef={directionRef} sensorRef={sensorRef} engagementRef={engagementRef} actorsRef={actorsRef} filmRef={filmRef} onCue={onCue} speed={speed} debugBus={q.bus === "1"} debugTruck={q.truck === "1"} viewerSimRef={viewerSimRef} controlsRef={controlsRef} />
+            <FilmDirector directionRef={directionRef} sensorRef={sensorRef} engagementRef={engagementRef} actorsRef={actorsRef} filmRef={filmRef} onCue={onCue} onDecide={decideSlotNow} speed={speed} debugBus={q.bus === "1"} debugTruck={q.truck === "1"} viewerSimRef={viewerSimRef} controlsRef={controlsRef} />
             {q.gaze !== "0" && !viewerSim && <DesktopGaze controlsRef={controlsRef} actorsRef={actorsRef} filmRef={filmRef} />}
           </XR>
           {/* 드래그 = 제자리에서 고개 돌리기. 타깃을 카메라 바로 앞 1cm 에 두면 궤도 회전이 머리 회전처럼 된다

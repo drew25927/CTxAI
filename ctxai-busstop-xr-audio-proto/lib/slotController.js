@@ -144,6 +144,28 @@ export function nextAdvice({ entries = [], tNow, verdict = true, xhat = null, ta
   return { ...base, reason: `간격 대기 ${Math.ceil(wait)}s (직전 ${mmss(Math.max(0, lastMicroAt))})${advisory}` };
 }
 
+/**
+ * 슬롯 하나를 지금 시점에서 고른다(실시간 구동용, /film ?control=1 full 모드).
+ * runController 와 같은 규약(후보 목록·채널 셈·직전 슬롯)을 쓰되, 시작 긴장 x0 만 예측값이 아니라 현재 추정 x̂ 을 받는다 —
+ * 앞 슬롯들이 실제로 어떻게 울렸고 관객이 어떻게 반응했는지가 이미 x̂ 에 들어 있으므로 계획을 다시 세우지 않고 이 슬롯만 결정한다.
+ * @param {string} track  "H"|"R"|"C"(판정 전이면 잠정 우세 장르)
+ * @param {string} slotId 시각 고정 슬롯 id(frog·cat …)
+ * @param {number|null} x0 현재 긴장 추정(없으면 바닥값)
+ * @param {object} theta  관객 모델 θ̂(fitViewerModel)
+ * @returns {{slotId, t, channel, variantId, dose, predTension, target, cost, nth, reason}|null}  모르는 슬롯이면 null
+ */
+export function chooseSlotNow(track, slotId, x0, theta, params = CONTROL_PARAMS) {
+  const cands = candidateSlots();
+  const idx = cands.findIndex((s) => s.id === slotId);
+  if (idx < 0) return null;
+  const channelCounts = {};
+  for (let i = 0; i < idx; i++) channelCounts[cands[i].channel] = (channelCounts[cands[i].channel] || 0) + 1;
+  const prev = idx > 0 ? { t: cands[idx - 1].t, channel: cands[idx - 1].channel } : null;
+  const start = Number.isFinite(x0) ? clamp01(x0) : TENSION_PARAMS.BASE;
+  const choice = chooseVariant(track, cands, idx, start, theta, channelCounts, prev, params);
+  return { slotId, t: cands[idx].t, channel: cands[idx].channel, ...choice };
+}
+
 /** 후보 슬롯 목록 — 시각 고정 슬롯을 시각 순으로. (미세 슬롯은 t 를 주면 포함) */
 export function candidateSlots(extra = []) {
   const fixed = SLOTS.filter((s) => s.t != null).map((s) => ({ ...s }));
