@@ -11,6 +11,8 @@
 //
 // 사건 창은 탐침 반응이, 사이는 감쇠와 잔움직임이 채운다. 값은 0~1. τ_k 로 "회복이 느린 관객은
 // 봉우리가 오래 남는다"가 자연히 나온다. 가중치는 잠정치 — 파일럿 자기보고로 보정한다.
+// 계열(estimateTensionSeries)은 2초 창마다 그 창 안의 최댓값을 창 끝 시각에 찍는다(B150) — 창 끝 한 점만 재면
+// 회복이 빠른 관객의 봉우리가 창과 봉우리의 위상에 따라 보였다 안 보였다 했다.
 
 import { responseMagnitude } from "./viewerModel.js";
 
@@ -56,18 +58,47 @@ export function tensionAt(stimuli, t, win = null, params = TENSION_PARAMS) {
 }
 
 /**
- * 창 시각마다 긴장 궤적을 만든다.
+ * 창 [t0,t1] 안에서 사건 기여 합의 최댓값과 그 시각(B150).
+ * 창 끝 t1 한 점만 재면 회복이 빠른 큰 반응(recoverySec 0.1 · 107° 고개 돌림)이 창 끝에서 A·e^-14 ≈ 0 이 되어
+ * 봉우리가 사라진다 — 1배속 공포형 재완주에서 미세 자극 3회 중 1회만 x̂ 에 보였다(턴 32). 커널 조각(예감 선형 상승 ·
+ * 상승 선형 · 지수 감쇠) 안에서 합은 볼록이라 최댓값은 조각 경계(자극 직전·봉우리 onset+RISE)나 창 끝에 있다 —
+ * 그 후보만 재면 정확하다. 창이 이미 지난 시각만 보므로 인과는 그대로다.
+ */
+function stimMaxInWindow(stimuli, t0, t1, P) {
+  const cands = [t1];
+  if (Number.isFinite(t0) && t0 < t1) {
+    cands.push(t0);
+    for (const st of stimuli) {
+      const onset = st.onset ?? st.t ?? 0;
+      const pk = onset + P.RISE_SEC;                       // 반응 봉우리 꼭대기
+      if (pk > t0 && pk < t1) cands.push(pk);
+      if (st.preLook && onset > t0 && onset <= t1) cands.push(onset - 1e-6); // 예감 꼭대기(자극 직전)
+    }
+  }
+  let best = -Infinity, bestT = t1;
+  for (const t of cands) {
+    let s = 0;
+    for (const st of stimuli) s += stimContribution(st, t, P);
+    if (s > best + 1e-12) { best = s; bestT = t; }
+  }
+  return { s: best, at: bestT };
+}
+
+/**
+ * 창마다 긴장 궤적을 만든다. 점은 창 끝 시각 t1 에 찍고, 값은 그 창 안 사건 기여의 최댓값(B150)이다.
+ * 창 사이 틈(한 표본)도 놓치지 않게 앞 창의 t1 부터 잰다. t0 가 없는 창은 t1 한 점만 잰다(예전 동작).
  * @param {{windows:Array, stimuli:Array}} report  engagementSense report()
- * @returns {Array<{t, tension, fromStim, fidget}>}
+ * @returns {Array<{t, tension, fromStim, fidget, tPeak}>}  tPeak — 창 안에서 사건 기여가 가장 컸던 시각
  */
 export function estimateTensionSeries({ windows = [], stimuli = [] } = {}, params = TENSION_PARAMS) {
   const P = params;
-  return windows.map((w) => {
+  return windows.map((w, i) => {
     const t = w.t1;
-    let s = 0;
-    for (const st of stimuli) s += stimContribution(st, t, P);
+    const prevT1 = i > 0 ? windows[i - 1].t1 : null;
+    const t0 = Number.isFinite(w.t0) ? (Number.isFinite(prevT1) ? Math.min(w.t0, prevT1) : w.t0) : null;
+    const { s, at } = stimMaxInWindow(stimuli, t0, t, P);
     const fid = P.FID * clamp01((w.angVelRms || 0) / P.FID_REF);
-    return { t, tension: r3(clamp01(P.BASE + s + fid)), fromStim: r3(s), fidget: r3(fid) };
+    return { t, tension: r3(clamp01(P.BASE + s + fid)), fromStim: r3(s), fidget: r3(fid), tPeak: Math.round(at * 100) / 100 };
   });
 }
 
