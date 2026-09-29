@@ -130,6 +130,37 @@ test("탐침 진행 중 창의 정향 움직임은 억제 값을 깎지 않는�
   assert.equal(s.current().calm, calmBefore);
 });
 
+test("track 탐침 위에 겹친 probe: probe 를 향한 각속도·편차·후퇴는 track 레코드에 새지 않고, 응시는 계속 센다", () => {
+  const s = createEngagementSensor();
+  feed(s, 5, still);
+  s.beginStimulus({ name: "figure", azimuth: -35, dur: 20, kind: "track", channel: "visual", tail: 1 });
+  feed(s, 3, still);                                                                                  // t=5~8 track 만 진행
+  s.beginStimulus({ name: "frog", azimuth: 135, dur: 3, kind: "probe", channel: "audio", tail: 2 });  // t=8, 관찰 종료 t=13
+  // t=8~: 0.3초에 135° 로 홱 돌리며(≈450°/s) 9cm 물러서 2초 응시, 0.5초에 복귀. probe 가 닫힌 뒤(t≥13.5)
+  // 0.5초에 걸쳐 인물 쪽 -35° 로 돌려 4초 응시하고 0.5초에 복귀 — 이 느린 정향(70°/s)만 track 의 몫이다.
+  feed(s, 12, (t) => {
+    if (t < 0.3) return { yaw: 135 * (t / 0.3), z: 0.09 * (t / 0.3) };
+    if (t < 2.3) return { yaw: 135, z: 0.09 };
+    if (t < 2.8) return { yaw: 135 * (1 - (t - 2.3) / 0.5), z: 0.09 * (1 - (t - 2.3) / 0.5) };
+    if (t < 5.5) return {};
+    if (t < 6) return { yaw: -35 * ((t - 5.5) / 0.5) };
+    if (t < 10) return { yaw: -35 };
+    if (t < 10.5) return { yaw: -35 * (1 - (t - 10) / 0.5) };
+    return {};
+  });
+  feed(s, 8, still);                                                                                  // track 종료(t=26)
+  const r = s.report();
+  const track = r.stimuli.find((x) => x.name === "figure"), frog = r.stimuli.find((x) => x.name === "frog");
+  assert.ok(frog.maxVel > 300 && frog.retreat >= 0.08, `frog vel ${frog.maxVel} retreat ${frog.retreat}`);
+  assert.ok(track.maxVel < 100, `track maxVel ${track.maxVel} — probe 의 450°/s 가 새면 안 된다`);
+  assert.ok(track.peakAmp < 45, `track peakAmp ${track.peakAmp} — probe 의 135° 가 새면 안 된다`);
+  assert.ok(track.retreat < 0.01, `track retreat ${track.retreat}`);
+  assert.ok(track.lookSec >= 3.5, `track lookSec ${track.lookSec}`);
+  assert.ok(track.maskedSec > 4 && track.maskedSec < 6, `maskedSec ${track.maskedSec} (probe 관찰 5초)`);
+  assert.equal(track.responded, 1);
+  assert.equal(frog.maskedSec, 0);
+});
+
 test("원시 CSV: 헤더 + 먹인 표본 수만큼 행, intent_az·stim 열이 채워진다", () => {
   const s = createEngagementSensor();
   feed(s, 3, still);

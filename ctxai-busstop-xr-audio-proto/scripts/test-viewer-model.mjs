@@ -20,6 +20,12 @@ test("responseMagnitude: peakAmp 90° = 0.5, maxVel 200 = 0.3, retreat 10cm = 0.
   assert.ok(Math.abs(responseMagnitude({ retreat: 0.1, dur: 1 }) - 0.3) < 1e-9);
 });
 
+test("responseMagnitude: track 은 응시 비율 중심 — 같은 편차·각속도면 probe 의 절반 이하, 오래 볼수록 커진다", () => {
+  const base = { peakAmp: 60, maxVel: 300, lookSec: 0, retreat: 0, dur: 60 };
+  assert.ok(responseMagnitude({ ...base, kind: "track" }) <= responseMagnitude({ ...base, kind: "probe" }) * 0.5 + 1e-9);
+  assert.ok(responseMagnitude({ ...base, kind: "track", lookSec: 30 }) > responseMagnitude({ ...base, kind: "track", lookSec: 3 }) + 0.2);
+});
+
 test("빠른 회복 vs 느린 회복: 추정 τ가 갈린다", () => {
   const fast = fitViewerModel(session({ g: 0.8, L: 0.4, tau: 1.0, rho: 0.05 }));
   const slow = fitViewerModel(session({ g: 0.8, L: 0.4, tau: 3.5, rho: 0.05 }));

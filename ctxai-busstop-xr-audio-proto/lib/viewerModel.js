@@ -27,9 +27,17 @@ export const VIEWER_PRIOR = Object.freeze({
 function clamp(x, lo, hi) { return Number.isFinite(x) ? Math.max(lo, Math.min(hi, x)) : lo; }
 const r3 = (x) => Math.round(x * 1000) / 1000;
 
+// 반응 크기 가중치(잠정치). probe(순간 사건)는 정향 세기(편차·각속도·후퇴)가 본체이고, track(수십 초
+// 추적 사건)은 얼마나 오래 봤는가(응시 비율)가 본체라 편차·각속도 가중을 절반으로 줄인다. track 의
+// 순간 지표는 engagementSense 가 겹친 탐침 구간을 가려도 자기 정향 한 번은 남기 때문이다.
+export const MAG_WEIGHTS = Object.freeze({
+  probe: { peak: 0.5, vel: 0.3, dwell: 0.2, retreat: 0.3 },
+  track: { peak: 0.25, vel: 0.15, dwell: 0.6, retreat: 0.15 },
+});
+
 /**
- * 탐침 레코드 하나의 관측 반응 크기(무차원, 0 이상). 종류에 무관한 정향 세기 위주.
- * track(장시간 추적)은 응시를 지속시간으로 정규화해 과대평가를 막는다.
+ * 탐침 레코드 하나의 관측 반응 크기(무차원, 0 이상). probe 는 정향 세기 위주, track 은 응시 비율 위주.
+ * track 의 응시는 지속시간으로 정규화해 긴 사건이 과대평가되지 않게 한다.
  */
 export function responseMagnitude(st) {
   if (!st) return 0;
@@ -38,7 +46,8 @@ export function responseMagnitude(st) {
   const vel = (st.maxVel || 0) / 200;                       // 200°/s = 1
   const dwell = Math.min(st.lookSec || 0, dur) / dur;       // 지속시간 대비 응시 비율
   const retreat = (st.retreat || 0) / 0.1;                  // 10cm 후퇴 = 1
-  return Math.max(0, 0.5 * peak + 0.3 * vel + 0.2 * dwell + 0.3 * retreat);
+  const W = st.kind === "track" ? MAG_WEIGHTS.track : MAG_WEIGHTS.probe;
+  return Math.max(0, W.peak * peak + W.vel * vel + W.dwell * dwell + W.retreat * retreat);
 }
 
 /** 응답으로 볼 수 있는(반응이 있었던) 레코드만. responded 플래그가 있으면 그것도 존중. */

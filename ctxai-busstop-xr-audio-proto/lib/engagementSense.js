@@ -20,6 +20,12 @@
 // 콘텐츠 동기 제외: 탐침이 진행 중인 창과 웃음 후보 창에서는 잔움직임을 "산만함"으로 세지 않는다.
 // 그 움직임은 자극에 대한 정향이거나 웃음이지 이탈이 아니다.
 //
+// track 탐침 마스킹: 판초 인물처럼 수십 초 동안 추적하는 사건(kind "track") 위에 다른 탐침(트럭·포스터·
+// 고양이·개구리)이 겹치면, 그 탐침을 향한 정향 움직임(최대 각속도·최대 편차·후퇴·움직임 지연)은 track
+// 레코드에 넣지 않는다. 그 표본은 겹친 탐침의 반응이지 추적 대상에 대한 반응이 아니다 — 안 가리면
+// 개구리에 놀란 각속도가 인물 추적의 반응 크기로 둔갑해 θ̂·x̂ 를 오염시킨다. 응시(lookSec)와 시선 지연은
+// 방위로 가르므로 계속 세고, 가린 시간은 maskedSec 로 남긴다.
+//
 // 좌표 규약은 headPoseSense 와 같다 — yaw 정면 0·오른쪽 +, pitch 는 카메라 euler.x(위가 +), roll 은
 // euler.z, 위치는 미터. 시각은 체험 시작 기준 실제 경과 초(배속과 무관).
 
@@ -243,7 +249,7 @@ export function createEngagementSensor({ mark, params } = {}) {
       observeUntil: onset + dur + tail, respWindow: kind === "track" ? dur : P.RESPONSE_SEC,
       preLook, preMove: r1(preMove), yawAtOnset: prev?.yaw ?? baseline?.yaw ?? 0,
       looked: 0, lookLatency: null, moveLatency: null, lookSec: 0, peakAmp: 0, maxVel: 0, retreat: 0,
-      leftAt: null, everLeft: false, recoverySec: null, recheck: 0,
+      leftAt: null, everLeft: false, recoverySec: null, recheck: 0, maskedSec: 0,
     });
     mark?.("stim:start", { name, azimuth, channel, dose, nth });
   }
@@ -256,6 +262,7 @@ export function createEngagementSensor({ mark, params } = {}) {
       name: st.name, kind: st.kind, channel: st.channel, dose: st.dose, nth: st.nth, onset: st.onset, dur: st.dur, azimuth: st.azimuth,
       preLook: st.preLook, preMove: st.preMove, responded, looked: st.looked, lookLatency: st.lookLatency, moveLatency: st.moveLatency,
       lookSec: r2(st.lookSec), peakAmp: r1(st.peakAmp), maxVel: r1(st.maxVel), retreat: r3(st.retreat), recoverySec: st.recoverySec, recheck: st.recheck,
+      maskedSec: r2(st.maskedSec),
     };
     done.push(rec);
     probeResp += P.PROBE_ALPHA * (responded - probeResp);
@@ -297,16 +304,21 @@ export function createEngagementSensor({ mark, params } = {}) {
     const v = prev ? Math.hypot(wrap180(yaw - prev.yaw), pitch - prev.pitch, wrap180(roll - prev.roll)) / dt : 0;
     const retreat = Math.max(0, z - baseline.z);
 
-    // 진행 중 탐침
+    // 진행 중 탐침 — track 위에 다른 탐침이 겹친 표본에서는 track 의 정향 지표를 갱신하지 않는다(머리말 참조)
     let latest = null;
+    let probeActive = false;
+    for (const st of active.values()) if (st.kind !== "track") { probeActive = true; break; }
     for (const st of active.values()) {
       if (!latest || st.onset > latest.onset) latest = st;
       const since = t - st.onset;
       const lookingAt = angDiff(yaw, st.azimuth) <= P.LOOK_TOL_DEG;
-      st.maxVel = Math.max(st.maxVel, v);
-      st.retreat = Math.max(st.retreat, retreat);
-      st.peakAmp = Math.max(st.peakAmp, angDiff(yaw, st.yawAtOnset));
-      if (st.moveLatency == null && v >= P.MOVE_RESP_DEG_S && since <= st.respWindow) st.moveLatency = r2(since);
+      if (st.kind === "track" && probeActive) st.maskedSec += dt;
+      else {
+        st.maxVel = Math.max(st.maxVel, v);
+        st.retreat = Math.max(st.retreat, retreat);
+        st.peakAmp = Math.max(st.peakAmp, angDiff(yaw, st.yawAtOnset));
+        if (st.moveLatency == null && v >= P.MOVE_RESP_DEG_S && since <= st.respWindow) st.moveLatency = r2(since);
+      }
       if (t <= st.onset + st.dur + 1.5) {
         if (lookingAt) { if (!st.looked) { st.looked = 1; st.lookLatency = r2(since); } st.lookSec += dt; st.leftAt = null; }
         else if (st.looked && st.leftAt == null) { st.leftAt = t; st.everLeft = true; }
