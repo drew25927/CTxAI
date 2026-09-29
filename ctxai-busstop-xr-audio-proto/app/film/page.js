@@ -44,7 +44,7 @@ import { estimateTensionSeries } from "@/lib/tensionEstimate";
 import DirectorMonitor from "@/components/DirectorMonitor";
 import { curveAt } from "@/lib/tensionCurve";
 import { runController, microDecision, nextAdvice } from "@/lib/slotController";
-import { decideSlot, CONTROLLED_SLOTS, DECIDE_AT, PROBE_DOSE } from "@/lib/slotActuate";
+import { decideSlot, CONTROLLED_SLOTS, DECIDE_AT, PROBE_DOSE, previewSlotEntries } from "@/lib/slotActuate";
 import { actuationFor, bgmScale, ACTUATE_PARAMS } from "@/lib/controlActuate";
 import { selectTrack } from "@/lib/trackSelect";
 import { deriveBgmGains, TRIGGERS } from "@/lib/directionMap";
@@ -390,7 +390,10 @@ export default function FilmPage() {
           const tgt = curveAt(track, film.t);
           const rec = runController(track, theta, { fixed: PROBE_DOSE }); // 도입부 탐침은 중립 — 변형을 적지 않는다(B85)
           // 이미 확정된 슬롯(개구리·고양이, B78)은 계획 대신 실제로 고른 변형을 보인다 — 계획은 틱마다 다시 세워져 확정값과 어긋날 수 있다
-          const entries = rec.entries.map((e) => { const c = film.slotChoice?.[e.slotId]; return c ? { ...e, variantId: c.variantId ?? "중립", dose: c.dose, reason: `확정 · ${c.reason}`, confirmed: true } : e; });
+          const confirmedEntries = rec.entries.map((e) => { const c = film.slotChoice?.[e.slotId]; return c ? { ...e, variantId: c.variantId ?? "중립", dose: c.dose, reason: `확정 · ${c.reason}`, confirmed: true } : e; });
+          // 아직 정하지 않은 제어 슬롯은 계획 대신 "지금 정하면" 미리보기(B106) — decideSlotNow 와 같은 입력(그 순간의 θ̂·x̂)으로 같은
+          // 함수(decideSlot)가 고르므로 결정 순간에 "mid 라더니 playful" 로 뒤집히지 않는다. 계획(rec.entries)은 세션 plan 에만 남는다.
+          const entries = previewSlotEntries(confirmedEntries, { track, theta: eng.stimuli.length ? theta : null, xhat: last?.tension ?? null });
           // 다음 개입 — 남은 고정 슬롯이 없으면(고양이 0:45 뒤) 미세 자극의 발동 조건·대기 사유를 보인다(B66)
           const next = nextAdvice({ entries, tNow: film.t, verdict: !!film.dominant, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling,
             lastMicroAt: film.lastMicroAt ?? -Infinity, microCount: film.microCount || 0, controlOn: q.control === "1", sceneStart: T.npcSeated, sceneEnd: 150 });

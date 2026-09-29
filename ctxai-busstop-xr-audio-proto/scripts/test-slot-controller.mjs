@@ -165,6 +165,14 @@ test("B85 nextAdvice: 제어 OFF 면 슬롯 계획에 \"권고만\" 이 붙고(�
   // 페이지가 확정 슬롯을 confirmed 로 바꿔 넘기면(고정 연출로 이미 정해짐) "권고만" 을 덧붙이지 않는다
   const confirmed = planF.map((e) => (e.slotId === "cat" ? { ...e, variantId: "중립", dose: 0.8, reason: "확정 · 제어 OFF — 고정 연출(중립)", confirmed: true } : e));
   assert.equal(nextAdvice({ ...sceneArgs, entries: confirmed, tNow: 44, controlOn: false }).reason, "확정 · 제어 OFF — 고정 연출(중립)");
+  // B106 미리보기 줄(preview) — kind slot 에 preview true 가 붙어 모니터가 "지금 정하면" 을 그린다. 제어 OFF 면 "권고만" 도 붙는다
+  const previewed = planF.map((e) => (e.slotId === "cat" ? { ...e, variantId: "playful", dose: 0.4, reason: "x̂ 0.27 기준 · 목표 0.549 / 예측 0.559 · 채널 av 2번째", preview: true } : e));
+  const on = nextAdvice({ ...sceneArgs, entries: previewed, tNow: 44 });
+  assert.equal(on.kind, "slot"); assert.equal(on.preview, true); assert.equal(on.variantId, "playful"); assert.equal(on.dose, 0.4);
+  assert.equal(on.reason, "x̂ 0.27 기준 · 목표 0.549 / 예측 0.559 · 채널 av 2번째");
+  assert.match(nextAdvice({ ...sceneArgs, entries: previewed, tNow: 44, controlOn: false }).reason, /^x̂ 0\.27 기준 .* \(제어 OFF — 권고만\)$/);
+  assert.equal(nextAdvice({ ...sceneArgs, entries: planF, tNow: 44 }).preview, false, "계획 줄(미리보기 아님)은 preview false");
+  assert.equal(nextAdvice({ ...sceneArgs, entries: confirmed, tNow: 44, controlOn: false }).preview, false, "확정 줄은 preview false");
 });
 
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);

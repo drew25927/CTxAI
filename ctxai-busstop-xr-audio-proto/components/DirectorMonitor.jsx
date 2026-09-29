@@ -72,7 +72,7 @@ function slotsText(slots, eventLabel) {
   }).join(" · ");
 }
 
-// "다음" 줄의 머리 — 중립 탐침이면 변형 없음(B85), 고정 슬롯이면 계획 변형·용량, 고정 슬롯이 끝났으면 미세 자극 차례(B66), 장면 뒤면 없음
+// "다음" 줄의 머리 — 중립 탐침이면 변형 없음(B85), 제어 슬롯은 결정 전 "지금 정하면" 미리보기(B106)·결정 뒤 확정 변형·용량, 고정 슬롯이 끝났으면 미세 자극 차례(B66), 장면 뒤면 없음
 function nextHeadline(next, eventLabel) {
   const label = eventLabel[next.slotId] || next.slotId;
   if (next.kind === "done") return <span style={{ opacity: 0.6 }}>다음 개입 없음</span>;
@@ -80,6 +80,8 @@ function nextHeadline(next, eventLabel) {
   if (next.kind === "micro") {
     return <span>다음 미세 자극 <b>{label}</b> {next.count ?? 0}/{next.max ?? 3}{next.dose != null && <> → <b>{next.variantId}</b> (용량 {next.dose})</>}</span>;
   }
+  // 결정 전 제어 슬롯(B106) — 계획이 아니라 지금 x̂·θ̂ 으로 고른 값이라 "지금 정하면" 을 붙인다. 결정되면 확정 줄로 바뀐다
+  if (next.preview) return <span>다음 <b>{label}</b> → <span style={{ opacity: 0.75 }}>지금 정하면</span> <b>{next.variantId}</b> (용량 {next.dose})</span>;
   return <span>다음 <b>{label}</b> → <b>{next.variantId}</b> (용량 {next.dose})</span>;
 }
 

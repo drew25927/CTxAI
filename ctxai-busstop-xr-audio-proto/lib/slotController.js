@@ -120,11 +120,12 @@ const f2 = (v) => (Number.isFinite(v) ? v.toFixed(2) : "-");
  * 디렉터 모니터의 "다음" 줄 — 지금 시각 뒤에 올 개입 하나를 고른다.
  *   (1) 남은 시각 고정 슬롯이 있으면 그 슬롯의 계획(runController entries 한 줄). 중립 탐침이면 kind "probe"(변형 없음, B85),
  *       제어 OFF 면 계획 변형에 "권고만" 을 붙인다(OFF 는 고정 연출이라 그 변형으로 울리지 않는다).
+ *       결정 전 제어 슬롯은 페이지가 previewSlotEntries(slotActuate)로 "지금 정하면" 값을 넣어 준다(preview true, B106).
  *   (2) 고정 슬롯이 끝났으면 미세 자극(먼 문 — /film 이 실제로 울리는 방위 −60° 기척) 상태를 microDecision 과
  *       같은 조건으로 알린다: 판정·장면 전이면 대기, 장면 안이면 발동 조건 충족·곡선 안·상한 위·간격 대기·예산 소진,
  *       장면 뒤면 제어 구간 끝.
  * 예전에는 (1) 이 없으면 마지막 고정 슬롯(고양이 0:45)을 영화 끝까지 보여줬다(B66).
- * @returns {{kind:"probe"|"slot"|"micro"|"done", slotId:string|null, variantId?:string|null, dose?:number|null, reason:string, count?:number, max?:number}}
+ * @returns {{kind:"probe"|"slot"|"micro"|"done", slotId:string|null, variantId?:string|null, dose?:number|null, preview?:boolean, reason:string, count?:number, max?:number}}
  */
 export function nextAdvice({ entries = [], tNow, verdict = true, xhat = null, target = null, tol = 0, ceiling = null,
   lastMicroAt = -Infinity, microCount = 0, controlOn = true, sceneStart = 68, sceneEnd = 150, micro = {} }) {
@@ -132,7 +133,8 @@ export function nextAdvice({ entries = [], tNow, verdict = true, xhat = null, ta
   const slot = entries.find((e) => e.t > tNow);
   // 중립 탐침(runController fixed, B85)은 변형을 추천하지 않는다 — 모니터를 보는 사람이 "제어기가 물보라를 줄였다" 고 읽지 않게
   if (slot?.neutral) return { kind: "probe", slotId: slot.slotId, variantId: null, dose: slot.dose, reason: slot.reason };
-  if (slot) return { kind: "slot", slotId: slot.slotId, variantId: slot.variantId, dose: slot.dose, reason: slot.confirmed ? slot.reason : `${slot.reason}${advisory}` }; // 확정(confirmed)이면 사유에 이미 실제 연출이 적혀 있다
+  // 확정(confirmed)이면 사유에 이미 실제 연출이 적혀 있다. 미리보기(preview, B106)는 지금 x̂·θ̂ 으로 고른 값 — 머리에 "지금 정하면" 이 붙는다
+  if (slot) return { kind: "slot", slotId: slot.slotId, variantId: slot.variantId, dose: slot.dose, preview: !!slot.preview, reason: slot.confirmed ? slot.reason : `${slot.reason}${advisory}` };
   const M = { ...MICRO_PARAMS, ...micro };
   if (tNow > sceneEnd) return { kind: "done", slotId: null, reason: `제어 구간 끝 · 미세 자극 ${microCount}/${M.max}` };
   const base = { kind: "micro", slotId: "micro-door", variantId: "shut", dose: null, count: microCount, max: M.max };

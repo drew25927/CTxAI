@@ -1,6 +1,6 @@
 // 슬롯 변형 액추에이터 회귀 테스트(B78) — 변형표 완결성·OFF=고정 연출·관객별로 다른 변형·고양이 동선·chooseSlotNow 규약
 import assert from "node:assert/strict";
-import { decideSlot, catSchedule, missingActuations, SLOT_ACTUATION, NEUTRAL_ACTUATION, NEUTRAL_DOSE, CONTROLLED_SLOTS, DECIDE_AT, CAT_TIMING_NEUTRAL, PROBE_DOSE } from "../lib/slotActuate.js";
+import { decideSlot, catSchedule, missingActuations, SLOT_ACTUATION, NEUTRAL_ACTUATION, NEUTRAL_DOSE, CONTROLLED_SLOTS, DECIDE_AT, CAT_TIMING_NEUTRAL, PROBE_DOSE, previewSlotEntries } from "../lib/slotActuate.js";
 import { SIM_PARAMS } from "../lib/tensionSim.js";
 import { chooseSlotNow, runController, candidateSlots } from "../lib/slotController.js";
 import { slotById, variantOf } from "../lib/tensionCurve.js";
@@ -143,6 +143,37 @@ test("B85 /film 계획(runController fixed: PROBE_DOSE)의 개구리·고양이 
       else { assert.equal(e.variantId, null, e.slotId); assert.equal(e.neutral, true, e.slotId); }
     }
   }
+});
+
+// B106 — 결정 전 모니터 줄은 계획(바닥값 x0 에서 다시 세운 값)이 아니라 지금 x̂·θ̂ 으로 고른 미리보기. 결정 시각의 미리보기 == decideSlot
+test("B106 previewSlotEntries: seed 1 녹화의 θ̂(g 1.156·ρ 0.171)·x̂ 0.273 — 계획은 고양이 mid 인데 지금 정하면 playful. 미리보기는 decideSlot 과 같다", () => {
+  const th = { g: 1.156, L: 0.2, tau: 2.0, rho: 0.171, n: 2, nResp: 2, confidence: 0.4 };
+  const plan = runController("H", th, { fixed: PROBE_DOSE }).entries;
+  assert.equal(plan.find((e) => e.slotId === "cat").variantId, "mid", "재현 전제: 계획(바닥값 x0)은 mid");
+  const pv = previewSlotEntries(plan, { track: "H", theta: th, xhat: 0.273 });
+  for (const id of CONTROLLED_SLOTS) {
+    const e = pv.find((p) => p.slotId === id), d = decideSlot({ slotId: id, controlOn: true, track: "H", theta: th, xhat: 0.273 });
+    assert.equal(e.variantId, d.variantId, id); assert.equal(e.dose, d.dose, id); assert.equal(e.preview, true, id);
+    assert.ok(e.reason.endsWith(d.reason), `${id}: ${e.reason}`); assert.match(e.reason, /^x̂ 0\.27 기준 · /);
+    assert.equal(e.t, plan.find((p) => p.slotId === id).t, `${id} 슬롯 시각은 계획 그대로`);
+  }
+  assert.equal(pv.find((e) => e.slotId === "cat").variantId, "playful");
+  // 결정 순간의 입력이 같으면 어떤 x̂·θ̂ 에서도 미리보기 == 결정
+  for (const x of [0.05, 0.2, 0.45, 0.7]) for (const t2 of [th, SENSITIVE, BLUNT]) for (const id of CONTROLLED_SLOTS)
+    assert.equal(previewSlotEntries(plan, { track: "H", theta: t2, xhat: x }).find((e) => e.slotId === id).variantId, decideSlot({ slotId: id, controlOn: true, track: "H", theta: t2, xhat: x }).variantId, `${id} x̂ ${x} g ${t2.g}`);
+});
+test("B106 previewSlotEntries: 확정 줄·중립 탐침 줄은 그대로, θ̂ 이 없으면 미리보기도 중립(decideSlot 과 같이), 제어 OFF 여도 권고를 보인다", () => {
+  const plan = runController("H", SENSITIVE, { fixed: PROBE_DOSE }).entries;
+  const withConfirmed = plan.map((e) => (e.slotId === "frog" ? { ...e, variantId: "loud", dose: 0.7, reason: "확정 · 목표 x", confirmed: true } : e));
+  const pv = previewSlotEntries(withConfirmed, { track: "H", theta: SENSITIVE, xhat: 0.9 });
+  assert.deepEqual(pv.find((e) => e.slotId === "frog"), withConfirmed.find((e) => e.slotId === "frog"), "확정 줄은 그대로");
+  for (const id of Object.keys(PROBE_DOSE)) assert.deepEqual(pv.find((e) => e.slotId === id), plan.find((e) => e.slotId === id), `${id} 탐침 줄은 그대로`);
+  assert.equal(pv.find((e) => e.slotId === "cat").preview, true);
+  assert.equal(pv.length, plan.length);
+  const none = previewSlotEntries(plan, { track: "H", theta: null, xhat: null });
+  for (const id of CONTROLLED_SLOTS) { const e = none.find((p) => p.slotId === id); assert.equal(e.variantId, "중립"); assert.equal(e.dose, NEUTRAL_DOSE); assert.match(e.reason, /θ̂ 없음/); assert.ok(!/x̂/.test(e.reason)); }
+  const zero = previewSlotEntries(plan, { track: "H", theta: { ...SENSITIVE, n: 0 }, xhat: 0.3 });
+  assert.equal(zero.find((e) => e.slotId === "cat").variantId, "중립");
 });
 
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);

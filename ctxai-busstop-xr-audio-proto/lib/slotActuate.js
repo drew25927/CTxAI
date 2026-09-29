@@ -100,6 +100,26 @@ export function decideSlot({ slotId, controlOn, track, theta, xhat }) {
   return withSchedule({ slotId, variantId: c.variantId, dose: c.dose, reason: c.reason, target: c.target, predTension: c.predTension, nth: c.nth, actuation: act }, act);
 }
 
+const f2 = (v) => (Number.isFinite(v) ? v.toFixed(2) : "-");
+
+/**
+ * 모니터 계획 줄의 결정 전 미리보기(B106) — 아직 정하지 않은 제어 슬롯(개구리·고양이) 줄을 "지금 정하면" 무엇이 되는지로 바꾼다.
+ * runController 계획은 바닥값 x0 에서 전체를 다시 세운 값이라 실제 결정(decideSlot: 그 순간의 x̂)과 어긋날 수 있었다 —
+ * seed 1 녹화에서 "다음 고양이 → mid" 였다가 결정 순간 "확정 · playful" 로 뒤집혔다. 미리보기는 decideSlot 과 같은 입력·같은
+ * 함수로 고르므로 결정 시각의 미리보기 == 결정이다. 제어 OFF 여도 권고(ON 이면 고를 것)를 보인다 — "권고만" 은 nextAdvice 가 붙인다.
+ * 확정된(confirmed) 줄과 중립 탐침(neutral) 줄은 그대로 둔다.
+ * @param {Array} entries  runController(...).entries (+페이지가 붙인 confirmed)
+ * @param {{track:string, theta:object|null, xhat:number|null}} now  decideSlotNow 와 같은 그 순간의 입력
+ */
+export function previewSlotEntries(entries, { track, theta, xhat }) {
+  return entries.map((e) => {
+    if (!CONTROLLED_SLOTS.includes(e.slotId) || e.confirmed || e.neutral) return e;
+    const p = decideSlot({ slotId: e.slotId, controlOn: true, track, theta, xhat });
+    const reason = p.variantId ? `x̂ ${f2(xhat)} 기준 · ${p.reason}` : p.reason;
+    return { ...e, variantId: p.variantId ?? "중립", dose: p.dose, predTension: p.predTension ?? null, target: p.target ?? null, reason, preview: true };
+  });
+}
+
 /** 모든 제어 슬롯의 모든 변형에 실제 값이 있는가(테스트·기동 점검용). 빠진 것의 "slot/variant" 목록을 돌려준다. */
 export function missingActuations() {
   const out = [];
