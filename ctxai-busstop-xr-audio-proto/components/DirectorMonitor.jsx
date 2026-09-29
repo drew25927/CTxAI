@@ -10,14 +10,18 @@
 // monitor 객체 모양(페이지가 250ms/200ms 틱마다 만든다):
 //   { track, theta:{g,L,tau,rho,confidence,nResp}, xhat, target?, tol?, ceiling?, series:[{t,tension,fromStim?}], scene?:bool(판정 뒤 장면 구간, B149),
 //     (track = "H"|"R"|"C" 또는 판정 전 배합 {R,H,C} — 점선은 배합 가중 기대 곡선, 머리글은 "잠정 R44 H34 C21", B92)
-//     nStim, sel?:{track,reach}, control?:bool, micro?:number, note?,
+//     nStim, sel?:{track,reach}, decided?:bool(track 이 판정된 트랙인가 — /interim 은 판정 전 선두 장르를 track 에 주므로 false, B154), control?:bool, micro?:number, note?,
 //     next?:{kind:"probe"|"slot"|"micro"|"done", slotId, variantId?, dose?, reason, count?, max?}   ← lib/slotController nextAdvice
 //     actuate?:{u,mode,offsets,base?}, ← /film 연속 액추에이터(lib/controlActuate.js)의 현재 구동량·오프셋. base = 오프셋을 얹기 전 값(B116)
 //     slots?:{frog?:{variantId,dose,actuation:{volume,plays}}, cat?:{…}} }   ← /film 슬롯 변형 확정값(lib/slotActuate.js, B78). variantId null = 고정 연출
+//
+// 줄바꿈(B65): 패널은 word-break: keep-all 이라 한글 단어 안에서 끊기지 않고, 라벨과 숫자 사이는 lib/monitorText glueNumbers 로
+// 줄바꿈 없는 공백을 넣어 "회복 / 0.848s"·"응 / 답 7/7" 처럼 갈리지 않는다. 줄은 " · " 구분자에서만 접힌다.
 
 import { curveAt, trackLabel } from "@/lib/tensionCurve";
 import { actuationText } from "@/lib/controlActuate";
 import { observedSegments, xhatReading, xhatScopeNote } from "@/lib/tensionEstimate";
+import { glueNumbers, reachText } from "@/lib/monitorText";
 
 // 작은 그래프 — 작가 목표 곡선(점선)과 관객 긴장 추정 x̂(실선), 현재 시각 표시, 사건 눈금.
 // x̂ 는 사건 반응이 있는 구간만 진한 실선, 사건 사이(바닥 긴장 + 잔움직임뿐)는 흐린 가는 선(B149) — 사건 사이가 목표 아래에
@@ -76,11 +80,11 @@ function nextHeadline(next, eventLabel) {
   if (next.kind === "done") return <span style={{ opacity: 0.6 }}>다음 개입 없음</span>;
   if (next.kind === "probe") return <span>다음 <b>{label}</b> · <span style={{ opacity: 0.75 }}>중립 탐침(변형 없음)</span></span>;
   if (next.kind === "micro") {
-    return <span>다음 미세 자극 <b>{label}</b> {next.count ?? 0}/{next.max ?? 3}{next.dose != null && <> → <b>{next.variantId}</b> (용량 {next.dose})</>}</span>;
+    return <span>다음 미세 자극 <b>{label}</b> {next.count ?? 0}/{next.max ?? 3}{next.dose != null && <> → <b>{next.variantId}</b> (용량&nbsp;{next.dose})</>}</span>;
   }
   // 결정 전 제어 슬롯(B106) — 계획이 아니라 지금 x̂·θ̂ 으로 고른 값이라 "지금 정하면" 을 붙인다. 결정되면 확정 줄로 바뀐다
-  if (next.preview) return <span>다음 <b>{label}</b> → <span style={{ opacity: 0.75 }}>지금 정하면</span> <b>{next.variantId}</b> (용량 {next.dose})</span>;
-  return <span>다음 <b>{label}</b> → <b>{next.variantId}</b> (용량 {next.dose})</span>;
+  if (next.preview) return <span>다음 <b>{label}</b> → <span style={{ opacity: 0.75 }}>지금 정하면</span> <b>{next.variantId}</b> (용량&nbsp;{next.dose})</span>;
+  return <span>다음 <b>{label}</b> → <b>{next.variantId}</b> (용량&nbsp;{next.dose})</span>;
 }
 
 export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTarget = true, marks = [], eventLabel = {}, title = "디렉터 모니터" }) {
@@ -94,34 +98,36 @@ export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTar
   const xhatColor = XHAT_COLOR[reading.state] || "#7fd1ff";
   const scopeNote = showTarget ? xhatScopeNote({ scene: !!monitor.scene, control: !!monitor.control }) : null;
   return (
-    <div style={{ position: "fixed", top: 12, left: 12, zIndex: 40, width: 320, padding: "12px 14px", borderRadius: 10, background: "rgba(12,14,20,0.82)", color: "#e6e9f0", font: "12px/1.5 ui-monospace, monospace", border: "1px solid rgba(255,255,255,0.12)" }}>
+    <div style={{ position: "fixed", top: 12, left: 12, zIndex: 40, width: 320, padding: "12px 14px", borderRadius: 10, background: "rgba(12,14,20,0.82)", color: "#e6e9f0", font: "12px/1.5 ui-monospace, monospace", border: "1px solid rgba(255,255,255,0.12)", wordBreak: "keep-all" }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
         <b>{title}</b><span style={{ opacity: 0.6 }}>트랙 {trackLabel(monitor.track)} · 자극 {monitor.nStim}</span>
       </div>
       <MonitorChart series={monitor.series} track={monitor.track || "H"} tNow={tNow} ceiling={monitor.ceiling ?? 1} tMax={tMax} showTarget={showTarget} marks={marks} />
       <div style={{ display: "flex", justifyContent: "space-between", margin: "6px 0" }}>
-        {hasTarget ? <span>목표 <b>{fmt2(monitor.target)}</b></span> : <span style={{ opacity: 0.6 }}>목표 곡선 없음(중립 탐침)</span>}
+        {/* "지금 목표" — 현재 시각의 곡선값. "다음" 줄의 "슬롯 시각 목표" 는 슬롯 시각(예: 고양이 0:45+RISE)의 곡선값이라 값이 다르다(B109) */}
+        {hasTarget ? <span>지금 목표 <b>{fmt2(monitor.target)}</b></span> : <span style={{ opacity: 0.6 }}>목표 곡선 없음(중립 탐침)</span>}
         <span>추정 x̂ <b style={{ color: xhatColor }}>{fmt2(monitor.xhat)}</b>{reading.label && <span style={{ opacity: 0.6 }}> · {reading.label}</span>}</span>
       </div>
       {scopeNote && <div style={{ opacity: 0.6, fontSize: 11, marginTop: -4, marginBottom: 4, wordBreak: "keep-all" }}>{scopeNote}</div>}
       {theta && (
-        <div style={{ opacity: 0.85 }}>관객모델 θ̂: 이득 {theta.g} · 지연 {theta.L}s · 회복 {theta.tau}s · 습관화 {theta.rho} <span style={{ opacity: 0.5 }}>(모델 신뢰도 {Math.round((theta.confidence || 0) * 100)}% · 응답 {theta.nResp}/{theta.n})</span></div>
+        <div style={{ opacity: 0.85 }}>관객모델 θ̂: {glueNumbers(`이득 ${theta.g} · 지연 ${theta.L}s · 회복 ${theta.tau}s · 습관화 ${theta.rho}`)} <span style={{ opacity: 0.5 }}>({glueNumbers(`모델 신뢰도 ${Math.round((theta.confidence || 0) * 100)}% · 응답 ${theta.nResp}/${theta.n}`)})</span></div>
       )}
-      {monitor.sel && <div style={{ opacity: 0.85 }}>도달가능 트랙: R {monitor.sel.reach.R} · H {monitor.sel.reach.H} · C {monitor.sel.reach.C} → <b>{monitor.sel.track}</b></div>}
+      {/* 도달 점수(B154) — 점수 최고 트랙은 참고값이고 판정 트랙을 바꾸지 않는다. 화살표 대신 "최고 H(참고 · 현재 R 유지)" */}
+      {monitor.sel && <div style={{ opacity: 0.85 }}>{glueNumbers(reachText(monitor.sel, monitor.decided === false ? null : monitor.track))}</div>}
       {monitor.control != null && (
         <div style={{ opacity: 0.85 }}>실제 제어: {monitor.control ? <b style={{ color: "#7fd1ff" }}>ON · 미세 자극 {monitor.micro ?? 0}/3</b> : <span style={{ opacity: 0.6 }}>OFF (advisory)</span>}</div>
       )}
       {monitor.control && monitor.actuate && (
-        <div style={{ opacity: 0.85, fontSize: 11 }}>연속 구동 <b>{ACT_MODE[monitor.actuate.mode] || monitor.actuate.mode}{monitor.actuate.mode === "settle" && Number.isFinite(monitor.actuate.settleLeft) ? ` ${monitor.actuate.settleLeft.toFixed(1)}s` : ""}</b> u {sgn(monitor.actuate.u || 0)} · {actuateText(monitor.actuate)}</div>
+        <div style={{ opacity: 0.85, fontSize: 11 }}>연속 구동 <b>{ACT_MODE[monitor.actuate.mode] || monitor.actuate.mode}{monitor.actuate.mode === "settle" && Number.isFinite(monitor.actuate.settleLeft) ? ` ${monitor.actuate.settleLeft.toFixed(1)}s` : ""}</b> {glueNumbers(`u ${sgn(monitor.actuate.u || 0)} · ${actuateText(monitor.actuate)}`)}</div>
       )}
       {monitor.slots && slotsText(monitor.slots, eventLabel) && (
-        <div style={{ opacity: 0.85, fontSize: 11 }}>슬롯 변형 {slotsText(monitor.slots, eventLabel)}</div>
+        <div style={{ opacity: 0.85, fontSize: 11 }}>슬롯 변형 {glueNumbers(slotsText(monitor.slots, eventLabel))}</div>
       )}
       {monitor.note && <div style={{ opacity: 0.7 }}>{monitor.note}</div>}
       {monitor.next && (
         <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.1)" }}>
           {nextHeadline(monitor.next, eventLabel)}
-          <div style={{ opacity: 0.7, fontSize: 11 }}>{monitor.next.reason}</div>
+          <div style={{ opacity: 0.7, fontSize: 11 }}>{glueNumbers(monitor.next.reason)}</div>
         </div>
       )}
     </div>

@@ -47,6 +47,7 @@ test("reason 문자열에 목표·예측이 들어간다", () => {
   const cands = candidateSlots();
   const c = chooseVariant("H", cands, 2, 0.3, { g: 0.2, L: 0.5, tau: 2, rho: 0.1 }, {}, null);
   assert.ok(/목표/.test(c.reason) && /예측/.test(c.reason), c.reason);
+  assert.match(c.reason, /^슬롯 시각 목표 /, "B109 — 모니터 머리의 \"지금 목표\"(현재 시각) 와 이름을 나눈다"); // 슬롯 시각(t+RISE)의 곡선값
   assert.ok(/도달 한계/.test(c.reason), c.reason); // 이득 낮으니 도달 한계 표시
 });
 

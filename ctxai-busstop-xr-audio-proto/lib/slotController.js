@@ -89,7 +89,8 @@ export function chooseVariant(track, cands, idx, x0, theta, channelCounts, prev,
     if (!best || total < best.total) best = { variantId: v.id, dose: v.dose, predTension: r3(r.peak), target: r3(r.target), cost: r3(total), nth: r.nth, total };
   }
   const gap = best.predTension - best.target;
-  const reason = `목표 ${best.target} / 예측 ${best.predTension}${gap < -0.08 ? " (도달 한계 — 최대 자극)" : gap > 0.08 ? " (상한 눌림)" : ""}${best.nth > 0 ? ` · 채널 ${slot.channel} ${best.nth}번째` : ""}`;
+  // "슬롯 시각 목표" — 슬롯 시각(t+RISE)의 곡선값. 모니터 머리의 "지금 목표"(현재 시각 곡선값)와 이름을 나눈다(B109)
+  const reason = `슬롯 시각 목표 ${best.target} / 예측 ${best.predTension}${gap < -0.08 ? " (도달 한계 — 최대 자극)" : gap > 0.08 ? " (상한 눌림)" : ""}${best.nth > 0 ? ` · 채널 ${slot.channel} ${best.nth}번째` : ""}`;
   delete best.total;
   return { ...best, reason };
 }

@@ -48,7 +48,10 @@
   grid-template-columns: 1fr 1fr;
   gap: 2px 8px;
   color: rgba(255, 255, 255, 0.55);
+  word-break: keep-all; /* 한글 단어 안에서 접지 않는다 (B65) */
 }
+/* 질문·응답 줄 — 문구가 길어 두 칸을 다 쓴다 (B65) */
+.askSpan { grid-column: 1 / -1; }
 .hudMeta b { color: rgba(255, 255, 255, 0.85); font-weight: 600; }
 .hudTrig {
   margin-top: 6px;
@@ -139,7 +142,7 @@
 
 /* 세계가 읽은 것 — 사건별 채점 */
 .evList { margin-top: 8px; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 6px; }
-.evRow { display: grid; grid-template-columns: 52px 1fr auto; gap: 6px; font-size: 10.5px; line-height: 1.6; }
+.evRow { display: grid; grid-template-columns: 52px 1fr auto; gap: 6px; font-size: 10.5px; line-height: 1.6; word-break: keep-all; }
 
 /* 합성 관객 배지 — ?viewer= 로 켠 동안 항상 보인다(?hud=0 에서도). 지어낸 관객임을 화면이 스스로 밝힌다 */
 .synthBadge {

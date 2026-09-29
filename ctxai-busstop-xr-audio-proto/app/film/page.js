@@ -47,6 +47,7 @@ import { runController, microDecision, nextAdvice } from "@/lib/slotController";
 import { decideSlot, CONTROLLED_SLOTS, DECIDE_AT, PROBE_DOSE, previewSlotEntries } from "@/lib/slotActuate";
 import { actuationFor, actuationEffect, bgmScale, ACTUATE_PARAMS, ACTUATED_KEYS } from "@/lib/controlActuate";
 import { selectTrack } from "@/lib/trackSelect";
+import { glueNumbers } from "@/lib/monitorText";
 import { deriveBgmGains, deriveParams, TRIGGERS } from "@/lib/directionMap";
 import { CUES, evalActors, T } from "@/lib/filmTimeline";
 import { DIALOGUE_V2_LINES, DIALOGUE_V2_GENRE_LABEL } from "@/lib/dialogueV2Lines";
@@ -720,7 +721,9 @@ export default function FilmPage() {
       setPhase("bus");
       setAskStatus(null); // 질문 표기는 버스 장면부터 지운다 (B110)
       playSfx("07", { volume: 0.7 });
-      setCaption("272");
+      // 효과음 자막 — 버스가 커브를 돌아 화면에 들어오기 전 약 7초 동안 저주파만 들리므로 소리의 정체를 적는다.
+      // 숫자 "272" 만 띄우면 디버그 라벨처럼 보였다(B139). 안내방송 자막("272번 버스는 5분 후 …")과 같은 자리·모양.
+      setCaption("[272번 버스가 들어오는 소리]");
       const [busRest, busLead] = lead ? splitLead(7.2) : [7.2, 0];
       await waitFilm(busRest); if (token.aborted) return;
       if (busLead > 0) { film.lookAhead = true; await waitFilm(busLead); if (token.aborted) return; }
@@ -975,7 +978,8 @@ export default function FilmPage() {
             <span>장르 확신 <b>{Math.round(snap.confidence * 100)}%</b></span>
             <span>웹캠 <b>{camStatus}</b></span>
             {useVoice && <span>음성 <b>{voiceStatus}</b></span>}
-            {askStatus && <span className={askStatus.stale ? f.stale : undefined}>질문 {askStatus.seq} · <b>{askStatus.listening ? "응답 기다리는 중" : askStatus.answered ? `응답 ${{ nod: "끄덕임", turn: "돌림", shake: "가로젓기", forced: "강제" }[askStatus.how] || "있음"}` : "응답 없음"}</b></span>}
+            {/* 질문 줄은 두 칸을 다 써서 "응답 기다 / 리는 중" 처럼 단어 안에서 접히지 않게 한다(B65) */}
+            {askStatus && <span className={`${f.askSpan}${askStatus.stale ? ` ${f.stale}` : ""}`}>질문 {askStatus.seq} · <b>{askStatus.listening ? "응답 기다리는 중" : askStatus.answered ? `응답 ${{ nod: "끄덕임", turn: "돌림", shake: "가로젓기", forced: "강제" }[askStatus.how] || "있음"}` : "응답 없음"}</b></span>}
             {signText && <span>표지판 <b>{signText}</b></span>}
             <span>거리 <b>{snap.params ? snap.params.npcDistance.toFixed(2) : "-"}m</b></span>
             <span>시선 <b>{snap.params ? Math.round(snap.params.npcGaze * 100) : "-"}%</b></span>
@@ -1000,11 +1004,14 @@ export default function FilmPage() {
                   <div key={e.name} className={f.evRow}>
                     <span>{EVENT_LABEL[e.name] || e.name}</span>
                     <span className={s.dim} title="임계값: LOOK_TOLERANCE_DEG=28 · STARTLE_YAW_VEL=140 · RETREAT_M=0.07 · SUSTAIN_SEC=2.0 (lib/headPoseSense.js)">
-                      {e.feats.looked ? `봤음 ${e.feats.lookSec.toFixed(1)}s` : "안 봄"}
-                      {e.feats.recheck ? " · 재확인" : ""}
-                      {` · 속도${e.feats.maxVel.toFixed(0)}°/s`}
-                      {` · 후퇴${e.feats.retreat.toFixed(2)}m`}
-                      {e.feats.recoverySec != null ? ` · 회복${e.feats.recoverySec.toFixed(1)}s` : ""}
+                      {/* 라벨과 값 사이 띄어쓰기를 "봤음 1.2s" 와 맞추고(B120), 좁은 칸에서 "속도 / 492°/s" 로 갈리지 않게 붙인다(B65) */}
+                      {glueNumbers([
+                        e.feats.looked ? `봤음 ${e.feats.lookSec.toFixed(1)}s` : "안 봄",
+                        e.feats.recheck ? " · 재확인" : "",
+                        ` · 속도 ${e.feats.maxVel.toFixed(0)}°/s`,
+                        ` · 후퇴 ${e.feats.retreat.toFixed(2)}m`,
+                        e.feats.recoverySec != null ? ` · 회복 ${e.feats.recoverySec.toFixed(1)}s` : "",
+                      ].join(""))}
                     </span>
                     <span style={{ color: GENRE_META[top].accent }}>{GENRE_META[top].label} {Math.round(e[top] * 100)}</span>
                   </div>
