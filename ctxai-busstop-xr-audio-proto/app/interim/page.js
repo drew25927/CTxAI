@@ -531,7 +531,7 @@ export default function InterimPage() {
               {/* 관측 축(궤적 추종 엔진) — 팀 판정과 나란히. hudMeta 는 2열 격자라 라벨/값 쌍으로 쓴다 */}
               <div className={f.hudMeta} style={{ marginTop: 8, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.12)" }}>
                 <span>관객모델 θ̂</span><b>이득 {hud.engine.theta.g} · 지연 {hud.engine.theta.L}s</b>
-                <span style={{ opacity: 0.7 }}>확신 {Math.round(hud.engine.theta.confidence * 100)}% · 응답 {hud.engine.theta.nResp}/{hud.engine.theta.n}</span><b>회복 {hud.engine.theta.tau}s · 습관화 {hud.engine.theta.rho}</b>
+                <span style={{ opacity: 0.7 }}>모델 신뢰도 {Math.round(hud.engine.theta.confidence * 100)}% · 응답 {hud.engine.theta.nResp}/{hud.engine.theta.n}</span><b>회복 {hud.engine.theta.tau}s · 습관화 {hud.engine.theta.rho}</b>
               </div>
               <div className={f.hudMeta} style={{ marginTop: 2 }}>
                 <span>자극 · 긴장 x̂</span><b>자극 {hud.engine.nStim}{hud.engine.active ? `+${hud.engine.active}` : ""} · x̂ {hud.engine.xhat == null ? "-" : hud.engine.xhat.toFixed(2)}</b>

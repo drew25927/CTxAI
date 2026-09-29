@@ -703,7 +703,8 @@ export default function FilmPage() {
           insertedCallback = true;
           d.markEvent("callback", { genre: secondary, weight: secondaryWeight });
           film.lineGaze = 0.5;
-          setLine({ ...cb, flavor: true, index: played, total });
+          // 콜백은 줄 수(total)에 들어가지 않는다 — 진행 막대는 직전 줄에 머물고 자막 줄에는 번호 대신 "배합 콜백" 만 적는다 (B91)
+          setLine({ ...cb, flavor: true, index: Math.max(0, played - 1), total });
           talkBegin(`${cb.genre}-${cb.seq}`);
           await playFile(cb.file, Math.min(1, (p.npcVolume ?? 1) * 0.9));
           talkEnd();
@@ -746,10 +747,13 @@ export default function FilmPage() {
     if (token.aborted) return;
     if (!busStarted) await arriveBus();
     if (token.aborted) return;
-    setLine(null);
     film.lineGaze = null;
     // 마지막 말이 끝난 뒤 → 버스 출발(기본 busAt+16, 말이 더 길었으면 1초 뒤) → 암전(출발 +3~+7). 인물 퇴장은 busAt+8 부터 (filmTimeline)
     film.leaveAt = Math.max(film.t + 1.0, film.busAt + 16);
+    // 마지막 자막("먼저 가세요." 는 오디오가 1초)은 버스가 떠날 때까지 둔다 — 재생 직후 지우면 "13 / 13줄" 이 한 프레임도 안 보인다 (B91)
+    await waitFilm(Math.max(0, film.leaveAt - film.t));
+    if (token.aborted) return;
+    setLine(null);
     await waitFilm(Math.max(2, film.leaveAt + 7.2 - film.t));
     if (token.aborted) return;
     d.setPhase("end");
@@ -896,10 +900,11 @@ export default function FilmPage() {
           ))}
           <div className={f.hudMeta}>
             <span>정착 <b>{Math.round(snap.settled * 100)}%</b></span>
-            <span>확신 <b>{Math.round(snap.confidence * 100)}%</b></span>
+            {/* "장르 확신" — 장르 배합의 확신도. 디렉터 모니터의 "모델 신뢰도"(θ̂ 응답 수)와는 다른 값이라 이름을 나눈다 (B94) */}
+            <span>장르 확신 <b>{Math.round(snap.confidence * 100)}%</b></span>
             <span>웹캠 <b>{camStatus}</b></span>
             {useVoice && <span>음성 <b>{voiceStatus}</b></span>}
-            {askStatus && <span>응답 <b>{askStatus.listening ? "기다리는 중" : askStatus.answered ? ({ nod: "끄덕임", turn: "돌림", shake: "가로젓기", forced: "강제" }[askStatus.how] || "있음") : "없음"}</b> <span className={s.dim}>{askStatus.seq}</span></span>}
+            {askStatus && <span>질문 {askStatus.seq} · <b>{askStatus.listening ? "응답 기다리는 중" : askStatus.answered ? `응답 ${{ nod: "끄덕임", turn: "돌림", shake: "가로젓기", forced: "강제" }[askStatus.how] || "있음"}` : "응답 없음"}</b></span>}
             {signText && <span>표지판 <b>{signText}</b></span>}
             <span>거리 <b>{snap.params ? snap.params.npcDistance.toFixed(2) : "-"}m</b></span>
             <span>시선 <b>{snap.params ? Math.round(snap.params.npcGaze * 100) : "-"}%</b></span>
@@ -973,8 +978,9 @@ export default function FilmPage() {
             {showHud && (
               <div className={s.seqRow}>
                 <span className={s.seqBadge}>{line.genre}-{line.seq}</span>
-                <span>{line.index + 1} / {line.total}줄</span>
-                {line.flavor && <span className={s.dim}>· 배합 콜백 ({DIALOGUE_V2_GENRE_LABEL[line.genre]})</span>}
+                {line.flavor
+                  ? <span className={s.dim}>배합 콜백 ({DIALOGUE_V2_GENRE_LABEL[line.genre]}) · {line.total}줄에 넣지 않음</span>
+                  : <span>{line.index + 1} / {line.total}줄</span>}
                 {line.tinted && <span className={s.dim}>· {DIALOGUE_V2_GENRE_LABEL[line.tinted]} 변주</span>}
               </div>
             )}

@@ -103,7 +103,7 @@ export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTar
         <span>추정 x̂ <b style={{ color: xhatColor }}>{fmt2(monitor.xhat)}</b></span>
       </div>
       {theta && (
-        <div style={{ opacity: 0.85 }}>관객모델 θ̂: 이득 {theta.g} · 지연 {theta.L}s · 회복 {theta.tau}s · 습관화 {theta.rho} <span style={{ opacity: 0.5 }}>(확신 {Math.round((theta.confidence || 0) * 100)}% · 응답 {theta.nResp}/{theta.n})</span></div>
+        <div style={{ opacity: 0.85 }}>관객모델 θ̂: 이득 {theta.g} · 지연 {theta.L}s · 회복 {theta.tau}s · 습관화 {theta.rho} <span style={{ opacity: 0.5 }}>(모델 신뢰도 {Math.round((theta.confidence || 0) * 100)}% · 응답 {theta.nResp}/{theta.n})</span></div>
       )}
       {monitor.sel && <div style={{ opacity: 0.85 }}>도달가능 트랙: R {monitor.sel.reach.R} · H {monitor.sel.reach.H} · C {monitor.sel.reach.C} → <b>{monitor.sel.track}</b></div>}
       {monitor.control != null && (

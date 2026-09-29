@@ -109,6 +109,10 @@ test("대사 비트 — 답함/안답함 쌍은 한 회차에 하나만 재생�
       assert.equal(played.length, playedCount(lines), `${g} answered=${answered} 재생 수`);
       const branches = played.filter((l) => beatOf(l).branch).map((l) => beatOf(l).branch);
       assert.ok(branches.every((b) => b === (answered ? "answered" : "silent")), `${g} 갈래 혼합`);
+      // 마지막 말(atBus)의 표시 번호 == 전체 — 자막이 "13 / 13줄" 로 끝난다. 갈래를 둘 다 세면 12/13 에서 끝난다 (B91)
+      const lastIdx = played.findIndex((l) => beatOf(l).atBus);
+      assert.equal(lastIdx + 1, playedCount(lines), `${g} answered=${answered} 마지막 말 번호 ${lastIdx + 1} ≠ 전체 ${playedCount(lines)}`);
+      assert.equal(lastIdx, played.length - 1, `${g} answered=${answered} 마지막 말 뒤에 줄이 더 있다`);
     }
     // 갈래 줄 바로 앞에는 질문(ask)이 있다
     lines.forEach((l, i) => { const b = beatOf(l); if (b.branch === "answered") assert.equal(beatOf(lines[i - 1]).to, "ask", `${g}.${l.seq} 앞이 질문이 아님`); });
