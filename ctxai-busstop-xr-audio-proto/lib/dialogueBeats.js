@@ -141,10 +141,29 @@ export function silenceAfter(beat, nextBeat, gapSec = 0, lead = SUBTITLE_TIMING.
 
 /** 지금(t) 연출 소리를 내도 대사를 밟지 않는가. s = { talking, lookAhead, lookUntil, quietUntil } (페이지의 filmRef 모양). */
 export function dialogueQuiet(s, t, need = QUIET_NEED_SEC) {
-  if (!s) return true;
-  if (s.talking || s.lookAhead) return false;
-  if (t < (s.lookUntil ?? -Infinity)) return false;
-  return (s.quietUntil ?? Infinity) - t >= need;
+  return quietState(s, t, need).quiet;
+}
+
+/**
+ * dialogueQuiet 의 사유판(B138) — 조용하지 않으면 왜인지와 모니터에 적을 한 마디를 돌려준다. 판정 규칙은 dialogueQuiet 와 같다.
+ * 디렉터 모니터가 대사 때문에 미룬 미세 자극을 "발동 조건 충족" 으로 적어, 보는 사람이 "조건이 됐는데 왜 안 울리나" 로 읽던 문제.
+ *   why "ask"  질문 뒤 관객의 고개 응답을 기다리는 중(talking 이면서 listen)
+ *       "talk" 옆사람이 말하는 중
+ *       "look" 다음 줄 직전 — 합성 관객이 화자 쪽으로 도는 중(lookAhead)
+ *       "sub"  말은 끝났고 자막이 남아 있음(lookUntil 까지) — left = 자막이 지워질 때까지 초
+ *       "gap"  조용하지만 다음 줄까지 need 초가 안 남음 — left = 남은 조용한 초
+ * @returns {{quiet:boolean, why:string|null, left?:number, label:string, need:number}}
+ */
+export function quietState(s, t, need = QUIET_NEED_SEC) {
+  const r = (quiet, why, label, left) => ({ quiet, why, label, need, ...(left != null ? { left } : {}) });
+  if (!s) return r(true, null, "");
+  if (s.talking) return s.listen ? r(false, "ask", "질문 뒤 응답 대기 중") : r(false, "talk", "대사 중");
+  if (s.lookAhead) return r(false, "look", "다음 줄 직전");
+  const lu = s.lookUntil ?? -Infinity;
+  if (t < lu) return r(false, "sub", "자막 표시 중", lu - t);
+  const left = (s.quietUntil ?? Infinity) - t;
+  if (left < need) return r(false, "gap", `다음 줄까지 ${Math.max(0, left).toFixed(1)}s`, Math.max(0, left));
+  return r(true, null, "");
 }
 
 // ─── 비언어 응답 감시 — 질문 뒤 wait 초 동안 머리 자세만 본다 ───────────────────────────

@@ -98,6 +98,32 @@ test("nextAdvice: 장면 안에서 곡선 아래면 microDecision 과 같은 용
   assert.equal(a.dose, d.dose); assert.ok(/발동 조건 충족/.test(a.reason), a.reason);
   assert.ok(/권고만/.test(nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2, controlOn: false }).reason));
 });
+test("nextAdvice: 대사 때문에 미루는 동안은 \"발동 조건 충족\" 이 아니라 사유와 \"미룸\" 을 적는다 (B138)", () => {
+  const talk = { quiet: false, why: "talk", label: "대사 중", need: 3 };
+  const a = nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2, quiet: talk });
+  const d = microDecision({ xhat: 0.2, target: 0.65, tol: 0.1, tNow: 90, lastAt: -Infinity, count: 0 });
+  assert.equal(a.kind, "micro"); assert.equal(a.deferred, true); assert.equal(a.dose, d.dose, "미뤄도 용량은 지금 조건 그대로");
+  assert.doesNotMatch(a.reason, /발동 조건 충족/); assert.match(a.reason, /대사 중 → 조용한 틈\(3초 이상\)까지 미룸/);
+  assert.match(nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2, quiet: { quiet: false, why: "gap", label: "다음 줄까지 1.2s", need: 3 } }).reason, /다음 줄까지 1\.2s → 조용한 틈/);
+  assert.match(nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2, quiet: talk, controlOn: false }).reason, /미룸 \(제어 OFF — 권고만\)/);
+  // 조용하면 종전 문구 — quiet 를 안 줘도 같다
+  const calm = nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2, quiet: { quiet: true, why: null, label: "", need: 3 } });
+  assert.match(calm.reason, /발동 조건 충족/); assert.equal(calm.deferred, undefined);
+  assert.equal(calm.reason, nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2 }).reason);
+  // 조건이 안 맞으면 대사 중이어도 원래 사유(간격 대기·곡선 안·예산 소진)가 먼저다 — "미룸" 은 조건이 맞을 때만
+  assert.match(nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2, lastMicroAt: 85, microCount: 1, quiet: talk }).reason, /간격 대기/);
+  assert.match(nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.6, quiet: talk }).reason, /곡선 안/);
+  assert.match(nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2, microCount: 3, quiet: talk }).reason, /예산 소진/);
+});
+test("nextAdvice: x̂ 가 사건 사이 바닥값이면 \"사건 사이\" 로 적는다 — 판정 규칙은 같다 (B138·B149)", () => {
+  const obs = nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2 });
+  const between = nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2, observed: false });
+  assert.equal(between.dose, obs.dose);
+  assert.match(between.reason, /^사건 사이\(x̂ 0\.20\) < 목표 0\.65−0\.10 → 발동 조건 충족/);
+  assert.match(obs.reason, /^x̂ 0\.20 < 목표/);
+  // 장면 전 안내도 "처지면" 이 아니라 사건 사이를 포함한다고 밝힌다
+  assert.match(nextAdvice({ ...sceneArgs, tNow: 50, xhat: 0.2 }).reason, /목표 아래면\(사건 사이 포함\) 먼 문으로 반응을 잰다/);
+});
 test("nextAdvice: 간격 대기·곡선 안·상한 위·예산 소진을 구분한다", () => {
   assert.match(nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2, lastMicroAt: 85, microCount: 1 }).reason, /간격 대기 7s \(직전 1:25\)/);
   assert.match(nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.6 }).reason, /곡선 안/);

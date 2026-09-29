@@ -122,13 +122,17 @@ const f2 = (v) => (Number.isFinite(v) ? v.toFixed(2) : "-");
  *       제어 OFF 면 계획 변형에 "권고만" 을 붙인다(OFF 는 고정 연출이라 그 변형으로 울리지 않는다).
  *       결정 전 제어 슬롯은 페이지가 previewSlotEntries(slotActuate)로 "지금 정하면" 값을 넣어 준다(preview true, B106).
  *   (2) 고정 슬롯이 끝났으면 미세 자극(먼 문 — /film 이 실제로 울리는 방위 −60° 기척) 상태를 microDecision 과
- *       같은 조건으로 알린다: 판정·장면 전이면 대기, 장면 안이면 발동 조건 충족·곡선 안·상한 위·간격 대기·예산 소진,
- *       장면 뒤면 제어 구간 끝.
+ *       같은 조건으로 알린다: 판정·장면 전이면 대기, 장면 안이면 발동 조건 충족·대사 때문에 미룸·곡선 안·상한 위·간격 대기·
+ *       예산 소진, 장면 뒤면 제어 구간 끝.
  * 예전에는 (1) 이 없으면 마지막 고정 슬롯(고양이 0:45)을 영화 끝까지 보여줬다(B66).
- * @returns {{kind:"probe"|"slot"|"micro"|"done", slotId:string|null, variantId?:string|null, dose?:number|null, preview?:boolean, reason:string, count?:number, max?:number}}
+ * quiet: 페이지의 대사 상태(lib/dialogueBeats quietState). 조용하지 않으면(quiet false) 조건이 맞아도 페이지는 울리지 않으므로
+ *   "발동 조건 충족" 대신 사유(label)와 "미룸" 을 적는다(B138, deferred true). 주지 않으면 조용한 것으로 본다(종전 동작).
+ * observed: 지금 x̂ 가 사건 반응에 근거하는가(lib/tensionEstimate isObserved). false 면 x̂ 는 사건 사이 바닥값이라 곡선과
+ *   견줄 관측이 아니다(B149) — 발동 사유를 "처졌다" 가 아니라 "사건 사이 → 먼 문으로 반응을 잰다" 로 적는다. 판정 규칙은 같다.
+ * @returns {{kind:"probe"|"slot"|"micro"|"done", slotId:string|null, variantId?:string|null, dose?:number|null, preview?:boolean, deferred?:boolean, reason:string, count?:number, max?:number}}
  */
 export function nextAdvice({ entries = [], tNow, verdict = true, xhat = null, target = null, tol = 0, ceiling = null,
-  lastMicroAt = -Infinity, microCount = 0, controlOn = true, sceneStart = 68, sceneEnd = 150, micro = {} }) {
+  lastMicroAt = -Infinity, microCount = 0, controlOn = true, sceneStart = 68, sceneEnd = 150, micro = {}, quiet = null, observed = true }) {
   const advisory = controlOn ? "" : " (제어 OFF — 권고만)";
   const slot = entries.find((e) => e.t > tNow);
   // 중립 탐침(runController fixed, B85)은 변형을 추천하지 않는다 — 모니터를 보는 사람이 "제어기가 물보라를 줄였다" 고 읽지 않게
@@ -139,10 +143,15 @@ export function nextAdvice({ entries = [], tNow, verdict = true, xhat = null, ta
   if (tNow > sceneEnd) return { kind: "done", slotId: null, reason: `제어 구간 끝 · 미세 자극 ${microCount}/${M.max}` };
   const base = { kind: "micro", slotId: "micro-door", variantId: "shut", dose: null, count: microCount, max: M.max };
   if (microCount >= M.max) return { ...base, reason: `예산 소진 ${microCount}/${M.max} — 남은 장면은 연속 구동만` };
-  if (!verdict || tNow < sceneStart) return { ...base, reason: `판정 뒤 장면(${mmss(sceneStart)}~${mmss(sceneEnd)})에서 x̂ 이 곡선 아래로 처지면` };
+  // 장면 안 x̂ 는 대개 사건 사이 바닥값이라 "목표 아래" 가 거의 늘 참이다(B149) — 곡선 아래로 "처진다" 기보다 사건이 없어서 낮다
+  if (!verdict || tNow < sceneStart) return { ...base, reason: `판정 뒤 장면(${mmss(sceneStart)}~${mmss(sceneEnd)})에서 x̂ 이 목표 아래면(사건 사이 포함) 먼 문으로 반응을 잰다` };
   if (xhat == null || !Number.isFinite(xhat) || !Number.isFinite(target)) return { ...base, reason: "x̂ 추정 대기" };
   const d = microDecision({ xhat, target, tol, tNow, lastAt: lastMicroAt, count: microCount }, M);
-  if (d.fire) return { ...base, dose: d.dose, reason: `x̂ ${f2(xhat)} < 목표 ${f2(target)}−${f2(tol)} → 발동 조건 충족${advisory}` };
+  if (d.fire) {
+    const cmp = observed ? `x̂ ${f2(xhat)} < 목표 ${f2(target)}−${f2(tol)}` : `사건 사이(x̂ ${f2(xhat)}) < 목표 ${f2(target)}−${f2(tol)}`;
+    if (quiet && quiet.quiet === false) return { ...base, dose: d.dose, deferred: true, reason: `${cmp} · ${quiet.label || "대사 중"} → 조용한 틈(${quiet.need ?? 3}초 이상)까지 미룸${advisory}` };
+    return { ...base, dose: d.dose, reason: `${cmp} → 발동 조건 충족${advisory}` };
+  }
   if (Number.isFinite(ceiling) && xhat > ceiling) return { ...base, reason: `상한 위(x̂ ${f2(xhat)} > ${f2(ceiling)}) — 자극 없음, 연속 구동이 이완` };
   if (xhat >= target - tol) return { ...base, reason: `곡선 안(x̂ ${f2(xhat)} ≥ ${f2(target - tol)}) — 대기` };
   const wait = Math.max(0, M.gap - (tNow - lastMicroAt));

@@ -40,7 +40,7 @@ import { createHeadPoseSensor } from "@/lib/headPoseSense";
 import { createEngagementSensor } from "@/lib/engagementSense";
 import { createGazeSim, isGazeProfile, GAZE_PROFILES } from "@/lib/gazeSim";
 import { fitViewerModel } from "@/lib/viewerModel";
-import { estimateTensionSeries, trackingStats, OBS_EPS } from "@/lib/tensionEstimate";
+import { estimateTensionSeries, trackingStats, isObserved, OBS_EPS } from "@/lib/tensionEstimate";
 import DirectorMonitor from "@/components/DirectorMonitor";
 import { curveAt, controlTrack, isMixTrack } from "@/lib/tensionCurve";
 import { runController, microDecision, nextAdvice } from "@/lib/slotController";
@@ -52,7 +52,7 @@ import { CUES, evalActors, T } from "@/lib/filmTimeline";
 import { DIALOGUE_V2_LINES, DIALOGUE_V2_GENRE_LABEL } from "@/lib/dialogueV2Lines";
 import { observe, judgeFromBehavior } from "@/lib/behaviorSense";
 import { loadDialoguePool, pickPoolLine, poolCoverage } from "@/lib/dialoguePool";
-import { beatOf, gazeFor, playsLine, playedCount, beatsTotalSec, nextPlayedBeat, subtitleHoldSec, splitLead, silenceAfter, dialogueQuiet, answerWatchStart, answerWatchUpdate, answerWatchResult } from "@/lib/dialogueBeats";
+import { beatOf, gazeFor, playsLine, playedCount, beatsTotalSec, nextPlayedBeat, subtitleHoldSec, splitLead, silenceAfter, dialogueQuiet, quietState, answerWatchStart, answerWatchUpdate, answerWatchResult } from "@/lib/dialogueBeats";
 import { scoresFromMoodApi } from "@/lib/textKeywords";
 import { analyzeProsody } from "@/lib/voiceProsody";
 import { mixLines, mmss, fingerprintText, focusText, filmTimeEvents, STIMULUS_LABEL } from "@/lib/viewerText";
@@ -406,8 +406,11 @@ export default function FilmPage() {
           // 함수(decideSlot)가 고르므로 결정 순간에 "mid 라더니 playful" 로 뒤집히지 않는다. 계획(rec.entries)은 세션 plan 에만 남는다.
           const entries = previewSlotEntries(confirmedEntries, { track, theta: eng.stimuli.length ? theta : null, xhat: last?.tension ?? null });
           // 다음 개입 — 남은 고정 슬롯이 없으면(고양이 0:45 뒤) 미세 자극의 발동 조건·대기 사유를 보인다(B66)
+          // 대사 중(B118 dialogueQuiet)이면 조건이 맞아도 울리지 않으므로 "발동 조건 충족" 대신 미루는 사유를 적는다(B138).
+          // x̂ 가 사건 사이 바닥값이면(B149) "처졌다" 가 아니라 "사건 사이" 로 적는다
           const next = nextAdvice({ entries, tNow: film.t, verdict: !!film.dominant, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling,
-            lastMicroAt: film.lastMicroAt ?? -Infinity, microCount: film.microCount || 0, controlOn: q.control === "1", sceneStart: T.npcSeated, sceneEnd: 150 });
+            lastMicroAt: film.lastMicroAt ?? -Infinity, microCount: film.microCount || 0, controlOn: q.control === "1", sceneStart: T.npcSeated, sceneEnd: 150,
+            quiet: quietState(film, film.t), observed: last ? isObserved(last) : true });
           const sel = theta.nResp >= 1 ? selectTrack(theta, { genrePrior: snap.current, priorWeight: 0.3 }) : null;
           setMonitor({ track, theta, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, series, next, nStim: eng.stimuli.length, sel, scene: inScene, control: q.control === "1", micro: film.microCount || 0, actuate: adjustRef.current ? { ...adjustRef.current, base: actBase(snap) } : null, slots: film.slotChoice || null });
         }

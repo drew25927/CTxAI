@@ -7,7 +7,7 @@ import { ANCHORS, TRIGGERS, deriveParams, deriveBgmGains } from "../lib/directio
 import { pickPoolLine, TINT_THRESHOLD } from "../lib/dialoguePool.js";
 import { evalActors, T } from "../lib/filmTimeline.js";
 import { DIALOGUE_V2_LINES } from "../lib/dialogueV2Lines.js";
-import { DIALOGUE_V2_BEATS, beatOf, playsLine, playedCount, gazeFor, nextPlayedBeat, subtitleHoldSec, splitLead, SUBTITLE_TIMING, silenceAfter, dialogueQuiet, QUIET_NEED_SEC, answerWatchStart, answerWatchUpdate, answerWatchResult } from "../lib/dialogueBeats.js";
+import { DIALOGUE_V2_BEATS, beatOf, playsLine, playedCount, gazeFor, nextPlayedBeat, subtitleHoldSec, splitLead, SUBTITLE_TIMING, silenceAfter, dialogueQuiet, quietState, QUIET_NEED_SEC, answerWatchStart, answerWatchUpdate, answerWatchResult } from "../lib/dialogueBeats.js";
 
 let n = 0;
 function test(name, fn) { try { fn(); n++; console.log("ok ", name); } catch (e) { console.log("FAIL", name, "—", e.message); process.exitCode = 1; } }
@@ -191,6 +191,23 @@ test("B118 대사를 밟지 않는다 — 줄 뒤 조용한 시간과 연출 소
   assert.equal(dialogueQuiet({ ...q, lookAhead: true }, 12), false, "다음 줄 보러 도는 중");
   assert.equal(dialogueQuiet({ talking: false, lookAhead: false, lookUntil: -1, quietUntil: Infinity }, 68), true, "대사 장면 밖(판정 직후 등)은 허용");
   assert.equal(dialogueQuiet(null, 0), true);
+});
+
+test("quietState: 사유판은 dialogueQuiet 와 같은 판정이고, 조용하지 않으면 왜인지 적는다 (B138)", () => {
+  const q = { talking: false, lookAhead: false, lookUntil: 10, quietUntil: 20 };
+  // 같은 판정 — 상태 네 가지 × 시각 격자
+  const states = [q, { ...q, talking: true }, { ...q, talking: true, listen: true }, { ...q, lookAhead: true }, { talking: false, lookAhead: false, lookUntil: -1, quietUntil: Infinity }, null];
+  for (const s of states) for (let t = 8; t <= 21; t += 0.25) assert.equal(quietState(s, t).quiet, dialogueQuiet(s, t), `${JSON.stringify(s)} t=${t}`);
+  // 사유 — 질문 기다림 > 말하는 중 > 다음 줄 직전 > 자막 > 짧은 틈
+  const w = (s, t) => { const r = quietState(s, t); return [r.why, r.label]; };
+  assert.deepEqual(w({ ...q, talking: true, listen: true }, 12), ["ask", "질문 뒤 응답 대기 중"]);
+  assert.deepEqual(w({ ...q, talking: true }, 12), ["talk", "대사 중"]);
+  assert.deepEqual(w({ ...q, lookAhead: true }, 12), ["look", "다음 줄 직전"]);
+  assert.deepEqual(w(q, 9.5), ["sub", "자막 표시 중"]);
+  assert.ok(Math.abs(quietState(q, 9.5).left - 0.5) < 1e-9);
+  assert.deepEqual(w(q, 18.8), ["gap", "다음 줄까지 1.2s"]);
+  assert.deepEqual(w(q, 12), [null, ""]);
+  assert.equal(quietState(q, 12).need, QUIET_NEED_SEC);
 });
 
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);
