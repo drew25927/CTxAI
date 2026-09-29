@@ -2,7 +2,8 @@
 // 세 프로필을 /interim·/film 타임라인 위에서 돌려 센서 → 관객 응답 모델 θ̂ 가 의도한 순서로 갈리는지,
 // 같은 시드가 같은 궤적을 재현하는지, 자세값이 물리적으로 말이 되는 범위인지 본다.
 import assert from "node:assert/strict";
-import { createGazeSim, GAZE_PROFILE_NAMES, GAZE_PROFILES, isGazeProfile, SEAT_Y } from "../lib/gazeSim.js";
+import { createGazeSim, GAZE_PROFILE_NAMES, GAZE_PROFILES, isGazeProfile, SEAT_Y, TALK } from "../lib/gazeSim.js";
+import { answerWatchStart, answerWatchUpdate, answerWatchResult } from "../lib/dialogueBeats.js";
 import { createEngagementSensor } from "../lib/engagementSense.js";
 import { fitViewerModel } from "../lib/viewerModel.js";
 import { CUES as INTERIM_CUES, T as IT } from "../lib/interimTimeline.js";
@@ -143,6 +144,59 @@ test("setRest: 옆사람 방위를 주면 쉴 때 그쪽(× restFactor)을 본�
   }
   assert.ok(mean.curious > mean.calm && mean.calm > mean.fearful, JSON.stringify(mean));
   assert.ok(Math.abs(mean.calm - 60 * GAZE_PROFILES.calm.restFactor) < 3, `calm 평균 ${mean.calm}`);
+});
+
+// B67 — 옆사람이 말하는 동안은 화자를 본다. /film 의 옆사람은 방위 ≈ 87°(벤치 같은 줄)이고 쉬는 방위는 63° 상한이다.
+const NPC_AZ = 87, REST_CAP = 63;
+test("B67 말하는 동안: 세 프로필 모두 방위의 max(restFactor, TALK.factor) 를 본다 — 공포형 22° → 57°, 화자가 가로 시야(±46°) 안에 든다", () => {
+  const HALF_HFOV = 45.8; // 1600×900, 세로 fov 60°
+  for (const p of GAZE_PROFILE_NAMES) {
+    const sim = createGazeSim(p, { seed: 4 });
+    let restSum = 0, restN = 0, talkSum = 0, talkN = 0, talkMaxErr = 0;
+    const talkTarget = REST_CAP * Math.max(GAZE_PROFILES[p].restFactor, TALK.factor);
+    for (let t = 0; t < 20; t += DT) {
+      sim.setRest(REST_CAP, { talk: t >= 10 });
+      const q = sim.step(t, DT);
+      if (t > 6 && t < 10) { restSum += q.yaw; restN++; }
+      if (t > 11.5) { talkSum += q.yaw; talkN++; talkMaxErr = Math.max(talkMaxErr, Math.abs(q.yaw - talkTarget)); }
+    }
+    const rest = restSum / restN, talk = talkSum / talkN;
+    assert.ok(Math.abs(talk - talkTarget) < 3, `${p} 말하는 동안 평균 ${talk.toFixed(1)}° (목표 ${talkTarget.toFixed(1)}°)`);
+    assert.ok(talkMaxErr < 6, `${p} 말하는 동안 목표에서 ${talkMaxErr.toFixed(1)}° 까지 벗어남 — 호기심형 두리번(±25°)은 멈춰야 한다`);
+    assert.ok(NPC_AZ - talk < HALF_HFOV - 10, `${p} 화자가 화면 가장자리에서 10° 이상 안쪽 (${(NPC_AZ - talk).toFixed(1)}°)`);
+    if (p === "fearful") {
+      assert.ok(Math.abs(rest - REST_CAP * GAZE_PROFILES.fearful.restFactor) < 3, `공포형 쉴 때 ${rest.toFixed(1)}°`);
+      assert.ok(NPC_AZ - rest > HALF_HFOV, `공포형 쉴 때는 화자가 화면 밖 (${(NPC_AZ - rest).toFixed(1)}°) — 고치기 전 상태`);
+    }
+  }
+});
+
+test("B67 talk 을 주지 않으면 종전 궤적과 같다 (setRest(az) == setRest(az, {talk:false}))", () => {
+  for (const p of GAZE_PROFILE_NAMES) {
+    const a = createGazeSim(p, { seed: 9 }), b = createGazeSim(p, { seed: 9 });
+    let maxDiff = 0;
+    for (let t = 0; t < 15; t += DT) { a.setRest(REST_CAP); b.setRest(REST_CAP, { talk: false }); maxDiff = Math.max(maxDiff, Math.abs(a.step(t, DT).yaw - b.step(t, DT).yaw)); }
+    assert.equal(maxDiff, 0, p);
+    assert.equal(b.talking, false);
+  }
+});
+
+test("B67 가짜 응답 없음: 줄 시작에 화자 쪽으로 돌아도 질문 뒤 기다림(answerWatch)이 끄덕임·돌림·가로젓기로 읽지 않는다 — 3 프로필 × 시드 1~8 × 줄 길이 0.8~4s", () => {
+  // talk 없음(B67 이전)도 같이 돌려 센다 — 호기심형의 두리번(±25°)이 화자 50° 안에서 12° 넘게 움직이면 "가로젓기" 로 읽혀
+  // 가짜 응답이 났다. 말하는 동안 두리번을 멈추는 것이 그것도 막는다.
+  const fake = { true: [], false: [] };
+  for (const p of GAZE_PROFILE_NAMES) for (let seed = 1; seed <= 8; seed++) for (const lineSec of [0.8, 1.5, 2.5, 4]) for (const talkOn of [true, false]) {
+    const sim = createGazeSim(p, { seed });
+    let t = 0, q = null;
+    for (; t < 8; t += DT) { sim.setRest(REST_CAP); q = sim.step(t, DT); }                        // 쉬는 중(곁눈질)
+    for (const end = t + lineSec; t < end; t += DT) { sim.setRest(REST_CAP, { talk: talkOn }); q = sim.step(t, DT); } // 줄 재생
+    const w = answerWatchStart(q.yaw, q.pitch, NPC_AZ);
+    for (const end = t + 3; t < end; t += DT) { sim.setRest(REST_CAP, { talk: talkOn }); q = sim.step(t, DT); answerWatchUpdate(w, q.yaw, q.pitch); } // 질문 뒤 기다림 3초
+    const r = answerWatchResult(w);
+    if (r.answered) fake[talkOn].push(`${p}/s${seed}/${lineSec}s:${r.how}(yaw 폭 ${(w.yawMax - w.yawMin).toFixed(1)}°)`);
+  }
+  console.log(`    가짜 응답 — talk 켬 ${fake.true.length}/96 · talk 끔(B67 이전) ${fake.false.length}/96 ${fake.false.slice(0, 4).join(" ")}`);
+  assert.equal(fake.true.length, 0, fake.true.join(" "));
 });
 
 test("/film 도입부(t=60s 까지): 공포형 θ̂ 확신 ≥ 60%, 세 프로필 이득 순서 유지", () => {

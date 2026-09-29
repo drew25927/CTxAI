@@ -95,6 +95,15 @@ export function doseFactor(dose) {
   return Math.max(DOSE_SCALE.min, Math.min(DOSE_SCALE.max, dose / DOSE_REF));
 }
 
+// 말하는 사람을 본다(B67) — 옆사람이 대사를 하는 동안(질문 뒤 기다리는 시간 포함)은 쉬는 방위를 옆사람 쪽으로 이만큼
+// (프로필 restFactor 보다 작으면 이 값)까지 돌리고, 돌아보는 속도도 rate 이상으로 올린다. 호기심형의 두리번은 멈춘다.
+// 까닭: 공포형 restFactor 0.35 는 옆사람 방위(63° 상한)의 22° 만 돌아, 가로 시야 ±46°(1600×900, fov 60) 밖에 있는
+// 옆사람(방위 ≈ 87°)이 대사 내내 프레임에 들어오지 않았다(시연 영상에 화자가 안 나옴). 사람은 옆에서 누가 말하면
+// 대개 그쪽을 본다 — 창작값이지만 프로필과 무관한 한 값으로 둔다. 카메라와 센서는 계속 같은 자세를 쓴다.
+// rate 는 질문 뒤 기다림(answerWatch)이 시작되기 전에 수렴하도록 빠르게 둔다 — 느리면 기다리는 동안 남은 회전이
+// "가로젓기"(폭 12°)로 읽혀 가짜 응답이 된다(scripts/test-gaze-sim.mjs 가 확인).
+export const TALK = Object.freeze({ factor: 0.9, rate: 2.5 });
+
 /** ?viewer= 값이 합성 관객 프로필인가. */
 export function isGazeProfile(name) { return typeof name === "string" && Object.prototype.hasOwnProperty.call(GAZE_PROFILES, name); }
 
@@ -136,6 +145,7 @@ export function createGazeSim(profile, { seed = 1, probes = [], speed = 1 } = {}
   let yaw = 0, pitch = 0, z = 0, y = SEAT_Y;
   let targetYaw = 0, targetZ = 0, targetY = SEAT_Y, rate = P.returnRate, holdUntil = -Infinity, standUntil = -Infinity;
   let restAz = 0;                      // 쉴 때 보는 곳(옆사람 방향 × restFactor 등). 페이지가 setRest 로 준다
+  let talking = false;                 // 옆사람이 말하는 중(B67) — setRest(az, {talk}) 로 페이지가 준다
   let wanderOff = 0, nextWanderAt = P.wander ? between(rng, P.wander.every) : Infinity;
   let nextGlanceAt = P.glance ? 3 : Infinity;
   const active = [];                   // 진행 중 사건 {name, azimuth, kind, channel, at(실제 초), until(실제 초)}
@@ -161,8 +171,12 @@ export function createGazeSim(profile, { seed = 1, probes = [], speed = 1 } = {}
     return { targetYaw, holdUntil };
   }
 
-  /** 쉴 때 보는 방위(도). 옆사람이 앉으면 페이지가 그 방위를 넣는다. null 이면 정면. */
-  function setRest(az) { restAz = Number.isFinite(az) ? az * P.restFactor : 0; }
+  /** 쉴 때 보는 방위(도). 옆사람이 앉으면 페이지가 그 방위를 넣는다. null 이면 정면.
+   *  talk: 그 사람이 지금 말하는 중이면 true — 방위의 max(restFactor, TALK.factor) 만큼 본다(B67). */
+  function setRest(az, { talk = false } = {}) {
+    talking = !!talk && Number.isFinite(az);
+    restAz = Number.isFinite(az) ? az * (talking ? Math.max(P.restFactor, TALK.factor) : P.restFactor) : 0;
+  }
 
   /**
    * 한 프레임. t 는 영화 시간(예정 탐침 발동용), dt 는 실제 경과 초(안에서 speed 를 곱해 영화 시간으로 민다).
@@ -186,8 +200,9 @@ export function createGazeSim(profile, { seed = 1, probes = [], speed = 1 } = {}
     if (!holding) {
       // 쉬는 자세 — 옆사람 쪽(rest) 또는 두리번(wander)
       if (P.wander && tSim >= nextWanderAt) { wanderOff = (rng() * 2 - 1) * P.wander.amp; nextWanderAt = tSim + between(rng, P.wander.every); }
-      targetYaw = clampDeg(restAz + (P.wander ? wanderOff : 0));
+      targetYaw = clampDeg(restAz + (P.wander && !talking ? wanderOff : 0));
       rate = P.wander ? P.wander.rate : P.returnRate;
+      if (talking) rate = Math.max(rate, TALK.rate);
       targetZ = 0;
       if (tSim > standUntil) targetY = SEAT_Y;
       // 공포형의 불안한 재확인 — 추적 사건(인물)이 진행 중이면 몇 초마다 그쪽을 짧게 힐끗
@@ -222,6 +237,7 @@ export function createGazeSim(profile, { seed = 1, probes = [], speed = 1 } = {}
     step, trigger, setRest,
     get last() { return last; },
     get elapsed() { return tSim; },   // 영화 시간
+    get talking() { return talking; },
     get triggered() { return log.slice(); },
   };
 }

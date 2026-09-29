@@ -25,6 +25,7 @@
 //                     답에서 뽑은 명사를 정류장 이름 표지판에 쓴다. 요청서 v5.0 §2.6) · ?voicefake=romance (마이크 대신 샘플 파일)
 //           ?viewer=fearful|curious|calm (합성 관객, lib/gazeSim.js — 헤드셋·드래그 없이 지어낸 관객의 고개 움직임을 센서에 넣고
 //                     카메라도 그쪽으로 돌린다. 시연·증거용이며 화면에 배지를 항상 띄운다) · ?seed=N (합성 관객 난수 시드, 기본 1)
+//           ?talk=0 (합성 관객이 옆사람의 대사 중에 화자 쪽을 보지 않게 — B67 이전 동작, 비교용)
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
@@ -145,7 +146,8 @@ function FilmDirector({ directionRef, sensorRef, engagementRef, actorsRef, filmR
     // 합성 관객이 쉴 때 보는 곳 — 버스가 오면 정면 약간 오른쪽, 옆사람이 앉아 있으면 그쪽(얼굴이 화면을 채우지 않게 DesktopGaze 와 같은 63° 상한)
     if (simOn) {
       if (film.busAt != null) sim.setRest(MathUtils.radToDeg(AUTO_GAZE_BUS));
-      else if (actors.npc?.visible && actors.npc.seated) sim.setRest(Math.min(MathUtils.radToDeg(AUTO_GAZE_NPC), MathUtils.radToDeg(Math.atan2(actors.npc.x - cp.x, -(actors.npc.z - cp.z)))));
+      // 옆사람이 말하는 동안(질문 뒤 기다림 포함)은 화자 쪽을 본다(B67, gazeSim TALK) — 공포형의 곁눈질(0.35)로는 화자가 화면 밖이었다
+      else if (actors.npc?.visible && actors.npc.seated) sim.setRest(Math.min(MathUtils.radToDeg(AUTO_GAZE_NPC), MathUtils.radToDeg(Math.atan2(actors.npc.x - cp.x, -(actors.npc.z - cp.z)))), { talk: film.talkLook && film.talking });
       else sim.setRest(0);
     }
 
@@ -466,7 +468,7 @@ export default function FilmPage() {
     if (viewerSimRef.current) d.markEvent("viewer:synthetic", { profile: viewerSim, seed: viewerSeed });
     paramsRef.current = null;
     adjustRef.current = null;
-    filmRef.current = { running: true, t: 0, dominant: null, npcDistance: 0.9, busAt: null, onFrame: null, lastMicroAt: -999, microCount: 0, lastActuateLogAt: null, actuateLogCount: 0, slotChoice: {} };
+    filmRef.current = { running: true, t: 0, dominant: null, npcDistance: 0.9, busAt: null, onFrame: null, lastMicroAt: -999, microCount: 0, lastActuateLogAt: null, actuateLogCount: 0, slotChoice: {}, talking: false, talkLook: q.talk !== "0" };
     if (typeof window !== "undefined") window.__sfxLog = [];
     setDominant(null); setLine(null); setCaption(""); setAskStatus(null);
     if (bias) d.pushEvidence({ [bias.g]: 1 }, bias.w, "bias", `?bias=${bias.g}`);
@@ -649,6 +651,10 @@ export default function FilmPage() {
     const waitFilm = async (s) => { const t0 = film.t; while (!token.aborted && film.t - t0 < s) await wait(40); };
     const total = playedCount(base);
     let answered = false, played = 0, busStarted = false;
+    // 말하는 구간(B67) — 줄 재생 시작부터 재생 끝(질문이면 기다림 끝)까지. 합성 관객은 이 동안 화자를 보고(FilmDirector),
+    // 세션에는 구간마다 "talk" 이벤트(from = 시작 영화 초, t = 끝)를 남겨 화자가 화면에 들어왔는지 raw 자세로 따질 수 있게 한다.
+    const talkBegin = (seq) => { film.talking = true; film.talkFrom = film.t; film.talkSeq = seq; };
+    const talkEnd = () => { if (!film.talking) return; film.talking = false; d.markEvent("talk", { seq: film.talkSeq, from: Math.round(film.talkFrom * 10) / 10 }); };
 
     // 272 도착 — 버스가 커브를 돌아 들어와 정면(앞문 x≈1.2)에 서기까지 7.2초, 그 다음 문
     const arriveBus = async () => {
@@ -682,7 +688,9 @@ export default function FilmPage() {
           d.markEvent("callback", { genre: secondary, weight: secondaryWeight });
           film.lineGaze = 0.5;
           setLine({ ...cb, flavor: true, index: played, total });
+          talkBegin(`${cb.genre}-${cb.seq}`);
           await playFile(cb.file, Math.min(1, (p.npcVolume ?? 1) * 0.9));
+          talkEnd();
           await wait(gapMs(p));
         }
       }
@@ -699,6 +707,7 @@ export default function FilmPage() {
       film.lineGaze = gazeFor(b);
       setLine({ ...l, text, tinted, to: b.to, index: played, total });
       played++;
+      talkBegin(l.seq);
       await playFile(file, Math.min(1, (p.npcVolume ?? 1) * (b.vol ?? 1)));
       if (token.aborted) return;
 
@@ -714,6 +723,7 @@ export default function FilmPage() {
         setAskStatus({ seq: l.seq, listening: false, answered, how });
         d.markEvent("ask", { seq: l.seq, answered, how });
       }
+      talkEnd(); // 질문이면 기다림까지 — 기다리는 동안 시선을 돌려 버리면 그 회전이 가로젓기로 읽힐 수 있다
       if (b.after) await sec(b.after);
       if (!b.atBus) await wait(gapMs(paramsRef.current));
     }
