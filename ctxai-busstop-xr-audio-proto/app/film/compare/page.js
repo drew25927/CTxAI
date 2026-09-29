@@ -15,11 +15,11 @@
 import { useEffect, useMemo, useState } from "react";
 import s from "../../story/story.module.css";
 import f from "../film.module.css";
-import { mixLines, verdictOf, mmss, fingerprintText, focusText, STIMULUS_LABEL } from "@/lib/viewerText";
-import { sessionRoute, sessionBadges, directionChangeText, xhatSeries, eventMarks, judgeTime, judgeLine, probeResponses, xhatPeak, xhatGap, pairWarning, biasOf, movieEvents, movieTrajectory, markBefore } from "@/lib/sessionCompare";
+import { mixLines, verdictOf, mmss, fingerprintText, MOMENT_TEXT, MOMENT_BASIS } from "@/lib/viewerText";
+import { sessionRoute, sessionBadges, directionChangeText, xhatSeries, eventMarks, judgeTime, judgeLine, lookResponses, lookText, momentsOf, peakText, xhatGap, pairWarning, biasOf, movieTrajectory, markBefore } from "@/lib/sessionCompare";
+import { observedSegments } from "@/lib/tensionEstimate";
 
 const GENRE = { R: { label: "로맨스", accent: "#f2a7c0" }, H: { label: "공포", accent: "#8fae95" }, C: { label: "블랙코미디", accent: "#e0a86a" } };
-const EVENT_LABEL = STIMULUS_LABEL; // 사건 이름표는 종료 카드와 한 표(lib/viewerText.js)
 const XHAT_COLOR = { a: "#7fd1ff", b: "#ffcf7a" }; // x̂ 곡선 — A 하늘색 실선, B 호박색 점선
 
 function useQuery() {
@@ -75,57 +75,65 @@ function describe(sess) {
   if (sessionRoute(sess) === "interim") return describeInterim(sess);
   // 배합은 판정 때 것이 주 문장, 끝 배합은 "판정 뒤 흐름" — 종료 카드와 같은 규칙(lib/viewerText.js, B86).
   // B86 이전 세션은 verdict 가 없어 judge 큐 시각의 궤적 표본으로 되살린다.
+  // 사건별 반응은 "돌아본·움찔만·반응 없던" 세 갈래(B128) — 옛 "본 것/안 본 것" 은 기준을 밝히지 않아 "안 본 개구리가 x̂ 최고" 가 모순으로 읽혔다
   const mix = mixLines({ verdict: verdictOf(sess), final: sess.final });
-  const ev = (sess.headPose?.events || []);
-  const looked = ev.filter((e) => e.feats?.looked).map((e) => EVENT_LABEL[e.name] || e.name);
-  const notLooked = ev.filter((e) => !e.feats?.looked).map((e) => EVENT_LABEL[e.name] || e.name);
+  const look = lookText(lookResponses(sess));
   return `옆에 앉은 사람 ${GENRE[sess.dominant]?.label || "-"} · ${mix.main}` + (mix.after ? ` · ${mix.after}` : "")
-    + (looked.length ? ` · 본 것: ${looked.join(", ")}` : "") + (notLooked.length ? ` · 안 본 것: ${notLooked.join(", ")}` : "")
+    + (look ? ` · ${look}` : "")
     + (sess.selfReport ? ` · 본인 느낌: ${GENRE[sess.selfReport]?.label}` : "");
 }
 
 // 긴장 추정 x̂ 두 곡선(B14b) — 두 라우트 모두 engagement 리포트에서 같은 함수로 다시 계산한 값(영화 시간).
 // /interim 두 세션이면 "같은 다섯 사건, 다른 두 사람" 이 이 그림 하나로 보인다.
-function XhatChart({ a, b, sa, sb }) {
+// 사건 사이(사건 반응 몫 없음)는 흐린 가는 선 — 모니터·종료 카드와 같은 규칙(B151, observedSegments). 두 순간(B144)은 세션 색으로:
+// 가장 크게 반응(x̂ 최고)은 점, 가장 차분히 집중(집중도 최고 2초)은 바닥 막대(A 아래 줄 · B 위 줄).
+function XhatChart({ a, b, sa, sb, ma, mb }) {
   const W = 900, H = 160, PAD = 10;
   const tMax = Math.max(sa.at(-1)?.t || 1, sb.at(-1)?.t || 1, movieTrajectory(a).at(-1)?.t || 1, movieTrajectory(b).at(-1)?.t || 1);
   const x = (t) => PAD + (t / tMax) * (W - PAD * 2);
   const y = (v) => H - PAD - v * (H - PAD * 2);
-  const path = (sr) => sr.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.tension).toFixed(1)}`).join(" ");
+  const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.tension).toFixed(1)}`).join(" ");
   const ref = a || b;
+  const curve = (sr, color, dash) => observedSegments(sr).map((g, i) => (
+    <path key={i} d={path(g.points)} fill="none" stroke={color} strokeWidth={g.observed ? 2.2 : 1.2} strokeOpacity={g.observed ? 1 : 0.4} strokeDasharray={dash} />
+  ));
+  const calmBar = (m, color, row) => m?.calm && (
+    <rect x={x(m.calm.t0)} y={H - PAD - 5 - row * 7} width={Math.max(4, x(m.calm.t1) - x(m.calm.t0))} height={5} rx={1.5} fill={color} opacity={0.85} />
+  );
+  const peakDot = (m, color) => m?.peak && <circle cx={x(m.peak.t)} cy={y(m.peak.tension)} r={5} fill={color} stroke="#0b0f14" strokeWidth={1.5} />;
   return (
     <svg className={f.chart} style={{ height: 160 }} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
       {[0.5, 1].map((v) => <line key={v} x1={PAD} x2={W - PAD} y1={y(v)} y2={y(v)} stroke="rgba(255,255,255,0.07)" />)}
       <Marks marks={eventMarks(ref)} judgeT={judgeTime(ref)} x={x} H={H} PAD={PAD} />
-      {sa.length > 0 && <path d={path(sa)} fill="none" stroke={XHAT_COLOR.a} strokeWidth="2.2" />}
-      {sb.length > 0 && <path d={path(sb)} fill="none" stroke={XHAT_COLOR.b} strokeWidth="2.2" strokeDasharray="6 4" />}
+      {calmBar(ma, XHAT_COLOR.a, 0)}
+      {calmBar(mb, XHAT_COLOR.b, 1)}
+      {sa.length > 0 && curve(sa, XHAT_COLOR.a)}
+      {sb.length > 0 && curve(sb, XHAT_COLOR.b, "6 4")}
+      {peakDot(ma, XHAT_COLOR.a)}
+      {peakDot(mb, XHAT_COLOR.b)}
     </svg>
   );
 }
 
-// /interim 세션의 판정·반응 줄 — 팀 5신호 판정(등급·점수 그대로)과 우리 관측 축의 반응한 사건.
+// /interim 세션의 판정·반응 줄 — 팀 5신호 판정(등급·점수 그대로)과 우리 관측 축의 사건별 반응(돌아본·움찔만·반응 없던, B128).
 function describeInterim(sess) {
   const parts = [`옆에 앉은 사람 ${GENRE[sess.dominant]?.label || "-"}`];
   const jl = judgeLine(sess);
   if (jl) parts.push(jl);
-  const pr = probeResponses(sess);
-  if (pr) {
-    if (pr.responded.length) parts.push(`반응한 사건: ${pr.responded.join(", ")}`);
-    if (pr.missed.length) parts.push(`반응 없던 사건: ${pr.missed.join(", ")}`);
-  }
+  const look = lookText(lookResponses(sess));
+  if (look) parts.push(look);
   return parts.join(" · ");
 }
 
-// 집중·긴장 한 줄 — engagement.summary 로. 반응 지문(fingerprintText)·집중한 순간(focusText)은 종료 카드와 같은 함수(lib/viewerText.js, B84·B108).
-// 세션의 집중도 시각은 실제 경과 초라 배속 회차(sess.speed)는 영화 시간으로 곱해 적는다(/film 세션은 이벤트도 실제 초라 movieEvents 가 맞춘다).
+// 반응률·웃음·집중 풀림·반응 지문 한 줄 — engagement.summary 로. 반응 지문(fingerprintText)은 종료 카드와 같은 함수(lib/viewerText.js, B84·B108).
+// 두 순간(가장 크게 반응·가장 차분히 집중)은 카드 맨 아래 줄로 옮겼다(B144, momentsOf).
+// 세션의 집중도 시각은 실제 경과 초라 배속 회차(sess.speed)는 영화 시간으로 곱해 적는다.
 function engageLine(sess) {
   const s = sess?.engagement?.summary;
   if (!s) return null;
   const sp = sess?.speed || 1;
   const parts = [];
   if (s.probeResponseRate != null) parts.push(`사건 반응 ${Math.round(s.probeResponseRate * 100)}%`);
-  const focus = focusText(s, { events: movieEvents(sess), speed: sp });
-  if (focus) parts.push(`가장 집중 ${focus}`);
   if (s.laughEpisodes?.length) parts.push(`웃음 ${s.laughEpisodes.length}회`);
   if (s.dropPoint) parts.push(`집중 풀림 ${mmss(s.dropPoint.t * sp)}`);
   const fp = fingerprintText(sess?.control?.theta);
@@ -170,6 +178,8 @@ export default function ComparePage() {
   const same = a && b && a.dominant === b.dominant;
   const sa = useMemo(() => xhatSeries(a), [a]);
   const sb = useMemo(() => xhatSeries(b), [b]);
+  const ma = useMemo(() => momentsOf(a), [a]); // 두 순간(B144) — 종료 카드와 같은 함수
+  const mb = useMemo(() => momentsOf(b), [b]);
   // 라우트가 다르면(/interim vs /film) 사건 시각표가 달라 같은 시각끼리의 차이는 뜻이 없다 — 경고만 보이고 차이 줄은 뺀다
   const gap = useMemo(() => (a && b && sessionRoute(a) !== sessionRoute(b) ? null : xhatGap(sa, sb)), [a, b, sa, sb]);
   const warn = pairWarning(a, b);
@@ -208,10 +218,11 @@ export default function ComparePage() {
             <p style={{ margin: "0 0 4px", fontSize: 14, color: "rgba(255,255,255,0.88)" }}>
               긴장 추정 x̂ — {bothInterim ? "같은 다섯 사건, 다른 두 사람" : "두 관객의 반응"}
             </p>
-            <XhatChart a={a} b={b} sa={sa} sb={sb} />
+            <XhatChart a={a} b={b} sa={sa} sb={sb} ma={ma} mb={mb} />
             <div className={f.legend}>
               <span><i style={{ background: XHAT_COLOR.a }} />A 실선</span>
               <span><i style={{ background: XHAT_COLOR.b }} />B 점선</span>
+              <span className={s.dim}>● 가장 크게 반응 · ▬ 가장 차분히 집중 · 흐린 선 = 사건 사이(측정 밖)</span>
               {gap && <span className={s.dim}>평균 차이 |Δx̂| {gap.meanAbs.toFixed(2)} · 가장 벌어진 순간 {gapAt ? `${gapAt.label} 뒤 ` : ""}{mmss(gap.maxGap.t)} (A {gap.maxGap.a.toFixed(2)} · B {gap.maxGap.b.toFixed(2)})</span>}
             </div>
           </div>
@@ -234,11 +245,17 @@ export default function ComparePage() {
               </p>
             ) : null; })()}
             {sess && <p style={{ margin: "6px 0 0", fontSize: 12.5, color: "rgba(255,255,255,0.6)" }}>{directionChangeText(sess)}</p>}
-            {(() => { const sr = key === "a" ? sa : sb; const pk = xhatPeak(sr, eventMarks(sess)); return pk ? (
-              <p style={{ margin: "4px 0 0", fontSize: 12, color: XHAT_COLOR[key] }}>x̂ 최고 {pk.tension.toFixed(2)} ({pk.label ? `${pk.label}, ` : ""}{mmss(pk.t)})</p>
+            {(() => { const m = key === "a" ? ma : mb; return m.peak || m.calm ? (
+              <p style={{ margin: "4px 0 0", fontSize: 12, color: XHAT_COLOR[key] }}>
+                {m.peak && <>● {MOMENT_TEXT.peak} {peakText(m.peak)}</>}
+                {m.peak && m.calm && " · "}
+                {m.calm && <>▬ {MOMENT_TEXT.calm} {m.calm.text}</>}
+              </p>
             ) : null; })()}
           </div>
         ))}
+        {/* 세 기준(B128·B144) — 한 카드의 "돌아본 사건"·"가장 크게 반응"·"가장 차분히 집중" 은 서로 다른 것을 잰다 */}
+        <p className={s.dim} style={{ fontSize: 12, margin: "0 0 6px" }}>읽는 법: {MOMENT_BASIS.join(" · ")}. 시선(돌아봤나)·반응의 크기(x̂)·집중도는 서로 다른 것을 재므로 다른 사건·순간을 가리킬 수 있습니다.</p>
         <p className={s.dim} style={{ fontSize: 12 }}>세션은 /film·/interim 종료 시 data/sessions/ 에 자동 저장됩니다. 전시에서는 두 사람이 이 화면을 나란히 보는 자리를 체험 자리와 떨어뜨려 두세요 (요청서 v5.0 §3.3 마이크 오염).</p>
       </div>
     </div>

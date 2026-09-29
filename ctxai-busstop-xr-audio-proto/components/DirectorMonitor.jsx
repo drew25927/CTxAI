@@ -23,10 +23,14 @@ import { actuationText } from "@/lib/controlActuate";
 import { observedSegments, xhatReading, xhatScopeNote } from "@/lib/tensionEstimate";
 import { glueNumbers, reachText } from "@/lib/monitorText";
 
+export const MOMENT_COLOR = { peak: "#ffffff", calm: "rgba(143,214,143,0.85)" }; // 종료 카드 범례와 같은 색(B144)
+
 // 작은 그래프 — 작가 목표 곡선(점선)과 관객 긴장 추정 x̂(실선), 현재 시각 표시, 사건 눈금.
 // x̂ 는 사건 반응이 있는 구간만 진한 실선, 사건 사이(바닥 긴장 + 잔움직임뿐)는 흐린 가는 선(B149) — 사건 사이가 목표 아래에
 // 붙어 있는 것은 추종 실패가 아니라 측정 밖이다. fromStim 이 없는 계열은 전부 진한 선(lib/tensionEstimate isObserved).
-export function MonitorChart({ series = [], track = "H", tNow = 0, ceiling = 1, tMax: tMaxProp = 180, showTarget = true, marks = [], width = 292, height = 60 }) {
+// moments(B144, 종료 카드용) — {peak:{t,tension}, calm:{t0,t1}}: 가장 크게 반응한 순간(x̂ 최고)은 흰 점, 가장 차분히 집중한 순간(집중도 최고 2초)은
+// 바닥 띠. 두 순간은 다른 것을 재서 거의 늘 다른 때라, 곡선 위에 따로 찍어 "집중한 순간이 왜 봉우리가 아니냐" 를 그림으로 답한다.
+export function MonitorChart({ series = [], track = "H", tNow = 0, ceiling = 1, tMax: tMaxProp = 180, showTarget = true, marks = [], width = 292, height = 60, moments = null }) {
   const W = width, H = height, PAD = 4; // 기본 292×60 은 모니터 패널 폭. /interim 종료 카드는 더 넓게 그린다(B14a)
   const tMax = Math.max(tMaxProp, tNow, series.length ? series[series.length - 1].t : 0);
   const x = (t) => PAD + (t / tMax) * (W - PAD * 2);
@@ -46,7 +50,11 @@ export function MonitorChart({ series = [], track = "H", tNow = 0, ceiling = 1, 
         </g>
       ))}
       {target.length > 0 && <path d={target.join(" ")} fill="none" stroke="rgba(255,255,255,0.45)" strokeDasharray="4 3" strokeWidth="1.5" />}
+      {moments?.calm && (
+        <rect x={x(moments.calm.t0)} y={H - PAD - 5} width={Math.max(3, x(moments.calm.t1) - x(moments.calm.t0))} height={5} rx={1.5} fill={MOMENT_COLOR.calm} />
+      )}
       {segs.map((g, i) => <path key={i} d={g.d} fill="none" stroke={g.observed ? "#7fd1ff" : "rgba(127,209,255,0.38)"} strokeWidth={g.observed ? 2 : 1.2} />)}
+      {moments?.peak && <circle cx={x(moments.peak.t)} cy={y(moments.peak.tension)} r={3.5} fill={MOMENT_COLOR.peak} stroke="#0b0f14" strokeWidth={1} />}
       <line x1={x(tNow)} x2={x(tNow)} y1={PAD} y2={H - PAD} stroke="rgba(255,255,255,0.3)" />
     </svg>
   );

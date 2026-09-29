@@ -159,15 +159,47 @@ export function filmTimeEvents(events, speed = 1) {
  * @param {{events?:Array, speed?:number}} ctx
  */
 export function focusText(summary, ctx = {}) {
-  const seg = summary?.topSegments?.[0];
-  if (!seg) return null;
-  const sp = ctx.speed || 1;
-  const t0 = seg.t0 * sp, t1 = (seg.t1 ?? seg.t0) * sp;
+  const span = focusSpan(summary, ctx.speed);
+  if (!span) return null;
+  const { t0, t1, near } = span;
   const when = mmss(t0);
-  if (seg.near?.name) return `${stimulusLabel(seg.near.name)} (${when})`;
+  if (near) return `${stimulusLabel(near)} (${when})`;
   const talk = talkAt(ctx.events, t0, t1);
   if (talk) return `대사 ${talk.seq} 무렵 (${when})`;
   const scene = sceneAt(ctx.events, t0);
   if (scene) return `${scene} (${when})`;
   return `${when} 무렵`;
 }
+
+/** "가장 차분히 집중한 순간" 의 구간(영화 시간) — 그래프에 띠로 칠할 때 쓴다. 없으면 null. */
+export function focusSpan(summary, speed = 1) {
+  const seg = summary?.topSegments?.[0];
+  if (!seg) return null;
+  const sp = speed || 1;
+  return { t0: seg.t0 * sp, t1: (seg.t1 ?? seg.t0) * sp, near: seg.near?.name || null };
+}
+
+/**
+ * 카드의 세 기준(B128·B144) — 한 카드에 나란히 놓이는 세 값은 서로 다른 것을 잰다.
+ *  turned/flinched/missed  사건마다 "돌아봤나" — 사건 방향 ±28°(ENGAGE_PARAMS.LOOK_TOL_DEG) 안으로 고개를 돌렸는가.
+ *                          돌아보지 않았어도 빠른 고개 움직임·후퇴가 있으면 반응(responded)이라 "움찔만" 으로 따로 센다.
+ *  peak                    긴장 추정 x̂ 최고 — 반응의 크기. 돌아보지 않은 사건이 여기 올 수 있다(1배속 /film ON 공포형의 개구리:
+ *                          135° 뒤라 돌아보지 않았지만 511°/s 로 움찔해 x̂ 1.00).
+ *  calm                    집중도 점수 최고 2초 — 사건 반응률·잔움직임 억제·의도 방향 응시의 합성(lib/engagementSense.js).
+ *                          크게 반응한 순간과 다른 때일 때가 많다(움직임이 가라앉아야 점수가 오른다) — 1배속 /interim 공포형은 S5 개구리(1:37)
+ *                          vs 인사 장면(2:15), 차분형은 둘 다 S1 우비 인물(0:16)이었다.
+ * 옛 이름("본 것/안 본 것"·"가장 집중"·"x̂ 최고")은 기준을 밝히지 않아 "안 본 개구리가 x̂ 최고" 가 모순으로 읽혔다.
+ */
+export const MOMENT_TEXT = {
+  turned: "돌아본 사건",
+  flinched: "움찔만 한 사건",
+  missed: "반응 없던 사건",
+  peak: "가장 크게 반응한 순간",
+  calm: "가장 차분히 집중한 순간",
+};
+export const MOMENT_BASIS = [
+  "돌아본 사건 = 사건 방향 ±28° 안으로 고개를 돌림",
+  "움찔만 = 고개가 빠르게 움직였지만 사건 쪽을 돌아보지는 않음",
+  "가장 크게 반응 = 긴장 추정 x̂ 최고(반응의 크기 · 상한 1.0 에 닿은 봉우리가 여럿이면 잘리기 전 값으로 가름)",
+  "가장 차분히 집중 = 집중도 점수 최고 2초(사건 반응률·잔움직임 억제·의도 방향 응시)",
+];

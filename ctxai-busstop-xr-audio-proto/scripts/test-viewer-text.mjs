@@ -1,6 +1,6 @@
 // 관객 결과 문장 회귀 테스트(B86·B84·B117·B121) — 종료 카드·비교 화면의 배합 줄이 판정과 모순되지 않고, 반응 지문·집중한 순간이 세 화면에서 같은 규칙으로 나온다
 import assert from "node:assert/strict";
-import { mixText, verdictOf, mixLines, mmss, GENRE_LABEL, fingerprintText, focusText, talkAt, sceneAt, stimulusLabel, filmTimeEvents } from "../lib/viewerText.js";
+import { mixText, verdictOf, mixLines, mmss, GENRE_LABEL, fingerprintText, focusText, focusSpan, MOMENT_TEXT, MOMENT_BASIS, talkAt, sceneAt, stimulusLabel, filmTimeEvents } from "../lib/viewerText.js";
 
 let n = 0;
 function test(name, fn) { try { fn(); n++; console.log("ok ", name); } catch (e) { console.log("FAIL", name, "—", e.message); process.exitCode = 1; } }
@@ -154,6 +154,23 @@ test("focusText(B117): near 가 없으면 그 시각에 걸친 대사 줄 — �
   // 창이 안 겹쳐도 3초 안이면 가장 가까운 줄
   assert.equal(focusText({ topSegments: [{ t0: 144, t1: 146, score: 0.9, near: null }] }, { events: FILM_EVENTS }), "대사 13 무렵 (2:24)");
 });
+test("focusSpan(B144): 가장 차분히 집중한 구간을 영화 시간으로 — 배속이면 × speed, 없으면 null", () => {
+  assert.deepEqual(focusSpan({ topSegments: [{ t0: 44.5, t1: 46.5, score: 0.9, near: { name: "cat" } }] }), { t0: 44.5, t1: 46.5, near: "cat" });
+  assert.deepEqual(focusSpan({ topSegments: [{ t0: 10, t1: 12, score: 0.9, near: null }] }, 4), { t0: 40, t1: 48, near: null });
+  assert.equal(focusSpan({ topSegments: [] }), null);
+  assert.equal(focusSpan(null), null);
+});
+
+test("MOMENT_TEXT(B128·B144): 세 기준의 이름 — 옛 '본 것'·'가장 집중'·'x̂ 최고' 를 쓰지 않고 기준을 밝힌다", () => {
+  assert.equal(MOMENT_TEXT.peak, "가장 크게 반응한 순간");
+  assert.equal(MOMENT_TEXT.calm, "가장 차분히 집중한 순간");
+  assert.equal(MOMENT_TEXT.turned, "돌아본 사건");
+  assert.equal(MOMENT_TEXT.flinched, "움찔만 한 사건");
+  const all = [...Object.values(MOMENT_TEXT), ...MOMENT_BASIS].join(" | ");
+  assert.ok(!/본 것|x̂ 최고 \d/.test(all), all);
+  assert.ok(MOMENT_BASIS.some((b) => b.includes("±28°")) && MOMENT_BASIS.some((b) => b.includes("x̂")) && MOMENT_BASIS.some((b) => b.includes("집중도")));
+});
+
 test("focusText: 대사도 없으면 장면 이름(버스 장면), 그것도 없으면 'm:ss 무렵'", () => {
   assert.equal(focusText({ topSegments: [{ t0: 162.7, t1: 164.7, score: 0.87, near: null }] }, { events: FILM_EVENTS }), "버스 장면 (2:42)");
   assert.equal(focusText({ topSegments: [{ t0: 148.5, t1: 154.5, score: 0.88, near: null }] }, { events: [] }), "2:28 무렵");

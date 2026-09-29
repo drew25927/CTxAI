@@ -56,7 +56,8 @@ import { loadDialoguePool, pickPoolLine, poolCoverage } from "@/lib/dialoguePool
 import { beatOf, gazeFor, playsLine, playedCount, beatsTotalSec, nextPlayedBeat, subtitleHoldSec, splitLead, silenceAfter, dialogueQuiet, quietState, answerWatchStart, answerWatchUpdate, answerWatchResult } from "@/lib/dialogueBeats";
 import { scoresFromMoodApi } from "@/lib/textKeywords";
 import { analyzeProsody } from "@/lib/voiceProsody";
-import { mixLines, mmss, fingerprintText, focusText, filmTimeEvents, STIMULUS_LABEL } from "@/lib/viewerText";
+import { mixLines, mmss, fingerprintText, STIMULUS_LABEL, MOMENT_TEXT } from "@/lib/viewerText";
+import { momentsOf, peakText } from "@/lib/sessionCompare";
 import s from "../story/story.module.css";
 import f from "./film.module.css";
 
@@ -70,7 +71,8 @@ const GENRE_META = {
 };
 const CAM_WINDOW_MS = 8000;
 const EVENT_LABEL = STIMULUS_LABEL; // 사건 이름표는 종료 카드·비교 화면·/interim 과 한 표(lib/viewerText.js)
-// 관객 반응 지문(fingerprintText)·집중한 순간(focusText)도 lib/viewerText.js — 비교 화면과 사본이 갈라졌던 문제(B84·B108)
+// 관객 반응 지문(fingerprintText)도 lib/viewerText.js — 비교 화면과 사본이 갈라졌던 문제(B84·B108). 두 순간(가장 크게 반응·가장 차분히 집중)은
+// 비교 화면과 같은 lib/sessionCompare momentsOf(B144)
 
 // 연속 액추에이터의 기준값(B116) — ReactiveStage 가 오프셋을 얹기 전의 deriveParams 값 중 구동 축만.
 // 모니터·control:actuate 가 "밀려고 한 양(오프셋)" 이 아니라 "무대가 받은 양(적용 − 기준)" 을 적게 한다.
@@ -878,6 +880,7 @@ export default function FilmPage() {
   const [engSummary, setEngSummary] = useState(null);
   const [monitor, setMonitor] = useState(null); // 디렉터 모니터(?monitor=1): 목표 곡선 vs 추정 x̂, 관객모델 θ̂, 다음 자극 추천
   const [fingerprint, setFingerprint] = useState(null); // 종료 카드 반응 지문(관객 응답 모델 θ)
+  const [endMoments, setEndMoments] = useState(null); // 종료 카드 두 순간 — 가장 크게 반응(x̂ 최고)·가장 차분히 집중(집중도 최고 2초), B144
   async function saveSession(extra = {}) {
     const data = sessionData(extra);
     if (!data) return;
@@ -891,8 +894,11 @@ export default function FilmPage() {
     if (phase === "end") {
       setSelfReport(null);
       const eng = engagementRef.current?.data?.();
-      setEngSummary(engagementRef.current?.report?.()?.summary || null);
+      const summary = engagementRef.current?.report?.()?.summary || null;
+      setEngSummary(summary);
       setFingerprint(eng ? fingerprintText(fitViewerModel(eng.stimuli)) : null);
+      // 비교 화면과 같은 함수(lib/sessionCompare momentsOf) — 세션 모양으로 넘겨 카드와 비교 화면이 같은 답을 낸다
+      setEndMoments(eng ? momentsOf({ route: "film", speed, events: directionRef.current?.st.events, engagement: { windows: eng.windows, stimuli: eng.stimuli } }, summary) : null);
       saveSession();
     } /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [phase]);
@@ -1084,9 +1090,14 @@ export default function FilmPage() {
               {["R", "H", "C"].map((g) => <span key={g}><i style={{ background: GENRE_META[g].accent }} />{GENRE_META[g].label}</span>)}
               <span><i style={{ background: "rgba(255,255,255,0.35)" }} />정착도</span>
             </div>
+            {endMoments?.peak && (
+              <p className={f.endSub} style={{ marginTop: 12, marginBottom: 0 }}>
+                {MOMENT_TEXT.peak}: <b style={{ color: accent }}>{peakText(endMoments.peak)}</b>
+              </p>
+            )}
             {engSummary && (
-              <p className={f.endSub} style={{ marginTop: 12 }}>
-                집중한 순간: <b style={{ color: accent }}>{focusText(engSummary, { events: filmTimeEvents(directionRef.current?.st.events, speed), speed }) || "-"}</b>
+              <p className={f.endSub} style={{ marginTop: endMoments?.peak ? 4 : 12 }}>
+                {MOMENT_TEXT.calm}: <b style={{ color: accent }}>{endMoments?.calm?.text || "-"}</b>
                 {engSummary.probeResponseRate != null && <> · 사건에 반응한 비율 <b>{Math.round(engSummary.probeResponseRate * 100)}%</b></>}
                 {engSummary.laughEpisodes?.length > 0 && <> · 웃음 <b>{engSummary.laughEpisodes.length}회</b></>}
                 {engSummary.dropPoint && <> · 집중이 풀린 지점 <b>{mmss(engSummary.dropPoint.t * (speed || 1))}</b></>}

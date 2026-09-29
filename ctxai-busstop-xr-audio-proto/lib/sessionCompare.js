@@ -14,7 +14,7 @@
 import { estimateTensionSeries } from "./tensionEstimate.js";
 import { probeMarks } from "./interimProbes.js";
 import { T as INTERIM_T } from "./interimTimeline.js";
-import { GENRE_LABEL, mmss, stimulusLabel, filmTimeEvents } from "./viewerText.js";
+import { GENRE_LABEL, mmss, stimulusLabel, filmTimeEvents, focusText, focusSpan } from "./viewerText.js";
 
 // 슬롯 변형 id(lib/tensionCurve.js SLOTS) → 비교 화면 이름. 모르는 것은 id 그대로.
 const VARIANT_LABEL = { once: "한 번", twice: "두 번", loud: "크게", soft: "작게", mid: "중간", playful: "장난스럽게", sudden: "갑자기", brief: "잠깐", linger: "머묾", return: "돌아옴", near: "가까이", far: "멀리", flicker: "깜빡임", shut: "닫힘" };
@@ -139,7 +139,8 @@ export function xhatSeries(sess) {
   let series = [];
   if (eng?.windows?.length) series = estimateTensionSeries({ windows: eng.windows, stimuli: eng.stimuli || [] });
   else if (Array.isArray(sess.control?.tension)) series = sess.control.tension;
-  return series.map((p) => ({ t: Math.round(p.t * sp * 100) / 100, tension: p.tension }));
+  // fromStim 은 사건 반응 몫 — 비교 화면이 사건 사이 구간을 흐리게 그린다(B151, lib/tensionEstimate observedSegments). control.tension 엔 없다
+  return series.map((p) => ({ t: Math.round(p.t * sp * 100) / 100, tension: p.tension, ...(Number.isFinite(p.fromStim) ? { fromStim: p.fromStim } : {}) }));
 }
 
 /**
@@ -188,30 +189,105 @@ export function judgeLine(sess) {
 }
 
 /**
- * /interim 다섯 사건 중 반응한 것·안 한 것 — engagement.stimuli 의 responded(우리 관측 축). 팀 등급과 별개.
- * /film 은 null — 비교 화면이 헤드 포즈 채점의 "본 것/안 본 것" 을 쓴다(탐침 이름이 겹쳐 S 번호가 잘못 붙는다).
- * @returns {{responded:string[], missed:string[]}|null}
+ * 사건별 반응 세 갈래(B128) — 돌아본 사건(looked: 사건 방향 ±28° 안으로 고개를 돌림) · 움찔만 한 사건(responded 인데 looked 아님:
+ * 빠른 고개 움직임·후퇴만 있고 사건 쪽을 돌아보지는 않음) · 반응 없던 사건. 두 라우트 모두 우리 관측 축 engagement.stimuli 하나로 가른다
+ * (/film 헤드 포즈 채점 headPose.events[].feats.looked 도 같은 ±28° 기준 — 옛 "본 것/안 본 것" 은 그것을 기준 없이 적었다).
+ * 긴장 x̂ 는 반응의 크기라 돌아보지 않은 사건이 x̂ 최고일 수 있다 — 그래서 "움찔만" 을 따로 적는다.
+ * /interim 은 S 번호 순·S 번호를 앞에(팀 등급과 별개), /film 은 사건 시각 순. 같은 이름표가 한 갈래에 여러 번이면(미세 자극
+ * "먼 문 소리") 한 번만 적고 "×3" 을 붙인다. engagement 가 없는 옛 /film 세션은 헤드 포즈 채점으로 돌아본 것만 가른다.
+ * @returns {{turned:string[], flinched:string[], missed:string[]}|null}
  */
-export function probeResponses(sess) {
+export function lookResponses(sess) {
   const st = sess?.engagement?.stimuli;
-  if (sessionRoute(sess) !== "interim" || !Array.isArray(st) || !st.length) return null;
-  const sig = Object.fromEntries(probeMarks().map((m) => [m.name, m.label]));
+  const interim = sessionRoute(sess) === "interim";
+  if (!Array.isArray(st) || !st.length) {
+    const ev = interim ? null : sess?.headPose?.events;
+    if (!Array.isArray(ev) || !ev.length) return null;
+    return {
+      turned: group(ev.filter((e) => e.feats?.looked).map((e) => stimulusLabel(e.name))),
+      flinched: [],
+      missed: group(ev.filter((e) => !e.feats?.looked).map((e) => stimulusLabel(e.name))),
+    };
+  }
+  const sig = interim ? Object.fromEntries(probeMarks().map((m) => [m.name, m.label])) : {};
   const tag = (s) => `${sig[s.name] ? `${sig[s.name]} ` : ""}${stimulusLabel(s.name)}`;
-  const sorted = st.slice().sort((a, b) => (sig[a.name] || a.name).localeCompare(sig[b.name] || b.name));
-  return { responded: sorted.filter((s) => s.responded).map(tag), missed: sorted.filter((s) => !s.responded).map(tag) };
+  const sorted = interim
+    ? st.slice().sort((a, b) => (sig[a.name] || a.name).localeCompare(sig[b.name] || b.name))
+    : st.slice().sort((a, b) => (a.onset ?? 0) - (b.onset ?? 0));
+  return {
+    turned: group(sorted.filter((s) => s.looked).map(tag)),
+    flinched: group(sorted.filter((s) => !s.looked && s.responded).map(tag)),
+    missed: group(sorted.filter((s) => !s.looked && !s.responded).map(tag)),
+  };
 }
+function group(labels) {
+  const count = new Map();
+  for (const l of labels) count.set(l, (count.get(l) || 0) + 1);
+  return [...count].map(([l, n]) => (n > 1 ? `${l} ×${n}` : l));
+}
+
+/** 세 갈래를 한 줄로 — "돌아본 사건: 포스터, 물보라 · 움찔만 한 사건: 개구리". 비어 있는 갈래는 뺀다. */
+export function lookText(lr) {
+  if (!lr) return "";
+  return [["turned", "돌아본 사건"], ["flinched", "움찔만 한 사건"], ["missed", "반응 없던 사건"]]
+    .filter(([k]) => lr[k]?.length).map(([k, name]) => `${name}: ${lr[k].join(", ")}`).join(" · ");
+}
+
+export const X_CEIL = 0.999; // x̂ 는 1.0 에서 잘린다 — 창 안 최댓값(B150) 뒤 공포형 합성 관객은 봉우리가 1.0 에 여럿 붙는다(B152)
 
 /**
  * x̂ 봉우리 — 계열에서 가장 높은 점과 6초 안의 가장 가까운 사건 눈금.
- * @returns {{t, tension, label}|null}
+ * 여러 봉우리가 상한 1.0 에 닿았으면 잘리기 전 사건 반응 몫(fromStim)이 가장 큰 것을 고르고, 상한에 닿은 다른 사건 수를 capped 로 —
+ * 그러지 않으면 "가장 크게 반응한 순간" 이 동률 여덟 곳 중 첫째(늘 포스터 0:08)로 정해진다.
+ * @returns {{t, tension, label, capped}|null}
  */
 export function xhatPeak(series, marks = []) {
   if (!series?.length) return null;
+  const raw = (q) => (Number.isFinite(q.fromStim) ? q.fromStim : q.tension);
   let p = series[0];
-  for (const q of series) if (q.tension > p.tension) p = q;
-  let near = null, best = Infinity;
-  for (const m of marks) { const d = Math.abs(m.t - p.t); if (d < best && p.t >= m.t - 1) { best = d; near = m; } }
-  return { t: p.t, tension: p.tension, label: near && best <= 6 ? near.label : null };
+  for (const q of series) {
+    if (q.tension > p.tension + 1e-9 || (q.tension >= X_CEIL && p.tension >= X_CEIL && raw(q) > raw(p))) p = q;
+  }
+  const nearOf = (q) => {
+    let near = null, best = Infinity;
+    for (const m of marks) { const d = Math.abs(m.t - q.t); if (d < best && q.t >= m.t - 1) { best = d; near = m; } }
+    return near && best <= 6 ? near : null;
+  };
+  const near = nearOf(p);
+  const hit = new Set();
+  if (p.tension >= X_CEIL) {
+    for (const q of series) {
+      if (q.tension < X_CEIL) continue;
+      const m = nearOf(q);
+      hit.add(m ? `${m.label}@${m.t}` : `~${Math.round(q.t / 6)}`);
+    }
+  }
+  return { t: p.t, tension: p.tension, label: near ? near.label : null, capped: hit.size > 1 ? hit.size : 0 };
+}
+
+/**
+ * 카드의 두 순간(B144) — 가장 크게 반응한 순간(x̂ 최고)과 가장 차분히 집중한 순간(집중도 점수 최고 2초). 영화 시간.
+ * 종료 카드(/film·/interim)는 세션 모양의 객체({route, speed, events, engagement})를 만들어 같은 함수를 부른다 — 카드와 비교 화면이 같은 답.
+ * @param {object} sess
+ * @param {object} [summary]  engagement.summary (없으면 sess.engagement.summary)
+ * @returns {{peak:{t,tension,label,capped}|null, calm:{text,t0,t1}|null}}
+ */
+export function momentsOf(sess, summary = sess?.engagement?.summary) {
+  const peak = xhatPeak(xhatSeries(sess), eventMarks(sess));
+  const sp = sess?.speed || 1;
+  const span = focusSpan(summary, sp);
+  let text = span ? focusText(summary, { events: movieEvents(sess), speed: sp }) : null;
+  // /interim 은 사건 이름 앞에 S 번호 — 같은 카드의 "가장 크게 반응한 순간 S1 우비 인물" 과 표기를 맞춘다
+  const sig = span?.near && sessionRoute(sess) === "interim" ? probeMarks().find((m) => m.name === span.near)?.label : null;
+  if (sig) text = `${sig} ${text}`;
+  return { peak, calm: span ? { text, t0: span.t0, t1: span.t1 } : null };
+}
+
+/** "고양이 (0:44) · x̂ 1.00(상한에 닿은 8곳 중 최대)" · "물보라 (0:36) · x̂ 0.31" — 사건 이름이 없으면 "2:28 무렵". */
+export function peakText(pk) {
+  if (!pk) return null;
+  const when = pk.label ? `${pk.label} (${mmss(pk.t)})` : `${mmss(pk.t)} 무렵`;
+  return `${when} · x̂ ${pk.tension.toFixed(2)}${pk.capped ? `(상한에 닿은 ${pk.capped}곳 중 최대)` : ""}`;
 }
 
 /**

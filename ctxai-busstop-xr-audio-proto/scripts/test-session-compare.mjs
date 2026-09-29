@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import {
   sessionRoute, biasOf, movieEvents, movieTrajectory, sessionBadges, directionChangeText, actuationStats,
-  xhatSeries, eventMarks, markBefore, MARK_NEAR_SEC, judgeTime, judgeLine, probeResponses, xhatPeak, xhatGap, pairWarning,
+  xhatSeries, eventMarks, markBefore, MARK_NEAR_SEC, judgeTime, judgeLine, lookResponses, lookText, xhatPeak, xhatGap, pairWarning,
+  momentsOf, peakText,
 } from "../lib/sessionCompare.js";
 
 let n = 0;
@@ -203,17 +204,66 @@ test("judgeTime·judgeLine: /interim 은 judge 큐(1:55)와 팀 5신호 점수 �
   assert.equal(judgeTime({ ...ON, verdict: null }), 58, "verdict 없으면 judge 큐");
 });
 
-test("probeResponses: /interim 은 S 번호 순으로 반응한 사건·없던 사건, /film 은 null(헤드 포즈 채점을 쓴다)", () => {
-  assert.deepEqual(probeResponses(CALM), { responded: ["S1 우비 인물", "S2 물보라"], missed: ["S4 고양이"] });
-  assert.deepEqual(probeResponses(FEARFUL).responded, ["S1 우비 인물", "S2 물보라", "S4 고양이"]);
-  assert.equal(probeResponses(ON), null);
+test("lookResponses(B128): /interim 은 S 번호 순으로 돌아본·움찔만·반응 없던 사건, 기준은 engagement.stimuli 하나", () => {
+  assert.deepEqual(lookResponses(CALM), { turned: ["S1 우비 인물", "S2 물보라"], flinched: [], missed: ["S4 고양이"] });
+  assert.deepEqual(lookResponses(FEARFUL).turned, ["S1 우비 인물", "S2 물보라", "S4 고양이"]);
+  // 돌아보지 않았지만 빠른 고개 움직임이 있으면 "움찔만" — 옛 "안 본 것" 과 x̂ 최고가 같은 사건일 때 모순처럼 읽히던 경우
+  const flinch = { ...FEARFUL, engagement: { ...FEARFUL.engagement, stimuli: [...FEARFUL.engagement.stimuli, stim("frog", 95, 1, { looked: 0, lookLatency: null, lookSec: 0 })] } };
+  assert.deepEqual(lookResponses(flinch).flinched, ["S5 개구리"]);
+  assert.equal(lookText(lookResponses(flinch)), "돌아본 사건: S1 우비 인물, S2 물보라, S4 고양이 · 움찔만 한 사건: S5 개구리");
+  assert.equal(lookText(lookResponses(CALM)), "돌아본 사건: S1 우비 인물, S2 물보라 · 반응 없던 사건: S4 고양이");
+});
+
+test("lookResponses(B128): /film 은 사건 시각 순, 같은 이름표(미세 자극 먼 문 소리)는 ×N, engagement 없으면 헤드 포즈 채점", () => {
+  const film = { ...ON, engagement: { ...ON.engagement, stimuli: [
+    stim("micro-1", 68, 1), stim("frog", 37, 1, { looked: 0 }), stim("poster", 6, 1), stim("micro-2", 80, 1), stim("cat", 44, 0, { looked: 0 }),
+  ] } };
+  assert.deepEqual(lookResponses(film), { turned: ["포스터", "먼 문 소리 ×2"], flinched: ["개구리"], missed: ["고양이"] });
+  const old = { ...ON, engagement: undefined, headPose: { events: [{ name: "poster", feats: { looked: 1 } }, { name: "frog", feats: { looked: 0 } }] } };
+  assert.deepEqual(lookResponses(old), { turned: ["포스터"], flinched: [], missed: ["개구리"] });
+  assert.equal(lookResponses({ ...ON, engagement: undefined }), null);
+  assert.equal(lookText(null), "");
 });
 
 test("xhatPeak: 최고점과 6초 안에서 그 시각 직전·직후의 사건 눈금", () => {
   const p = xhatPeak([{ t: 10, tension: 0.2 }, { t: 76, tension: 0.8 }, { t: 90, tension: 0.3 }], eventMarks(FEARFUL));
-  assert.deepEqual(p, { t: 76, tension: 0.8, label: "S4 고양이" });
+  assert.deepEqual(p, { t: 76, tension: 0.8, label: "S4 고양이", capped: 0 });
   assert.equal(xhatPeak([{ t: 130, tension: 0.5 }], eventMarks(FEARFUL)).label, null, "사건에서 멀면 이름 없음");
   assert.equal(xhatPeak([], []), null);
+});
+
+test("xhatPeak(B144·B152): 여러 봉우리가 상한 1.0 에 닿으면 잘리기 전 fromStim 이 큰 것, 상한에 닿은 사건 수", () => {
+  const sr = [{ t: 17, tension: 1, fromStim: 1.1 }, { t: 37, tension: 0.4, fromStim: 0.2 }, { t: 76, tension: 1, fromStim: 1.4 }, { t: 97, tension: 1, fromStim: 1.2 }];
+  const p = xhatPeak(sr, eventMarks(FEARFUL));
+  assert.equal(p.label, "S4 고양이", "첫째 동률(S1)이 아니라 잘리기 전 값이 가장 큰 S4");
+  assert.equal(p.capped, 3);
+  assert.equal(peakText(p), "S4 고양이 (1:16) · x̂ 1.00(상한에 닿은 3곳 중 최대)");
+  assert.equal(peakText({ t: 36, tension: 0.31, label: "S2 물보라", capped: 0 }), "S2 물보라 (0:36) · x̂ 0.31");
+  assert.equal(peakText({ t: 148, tension: 0.5, label: null, capped: 0 }), "2:28 무렵 · x̂ 0.50");
+  assert.equal(peakText(null), null);
+});
+
+test("momentsOf(B144): 가장 크게 반응(x̂ 최고)과 가장 차분히 집중(집중도 최고 2초)은 영화 시간 — 배속 회차도 × speed", () => {
+  const summary = { topSegments: [{ t0: 29, t1: 31, score: 0.9, near: null }] };
+  const m = momentsOf({ ...FEARFUL, engagement: { ...FEARFUL.engagement, summary } });
+  assert.deepEqual(m.peak, xhatPeak(xhatSeries(FEARFUL), eventMarks(FEARFUL)), "비교 화면과 같은 계열·눈금");
+  assert.ok(m.peak.label, "사건 이름이 붙는다");
+  assert.deepEqual([m.calm.t0, m.calm.t1], [29, 31]);
+  assert.equal(m.calm.text, "0:29 무렵", "focusText 와 같은 규칙(사건·대사·장면이 없으면 m:ss 무렵)");
+  const fast = momentsOf({ ...FEARFUL, speed: 4, engagement: { ...FEARFUL.engagement, summary } });
+  assert.deepEqual([fast.calm.t0, fast.calm.t1], [116, 124]);
+  assert.equal(momentsOf({ ...FEARFUL, engagement: { ...FEARFUL.engagement } }).calm, null, "요약 없으면 calm 없음");
+  // /interim 은 가까운 사건 이름에 S 번호 — 같은 카드의 "가장 크게 반응한 순간 S1 우비 인물" 과 같은 표기
+  const near = { topSegments: [{ t0: 16.3, t1: 18.3, score: 0.9, near: { name: "figureApproach", onset: 15 } }] };
+  assert.equal(momentsOf({ ...CALM, engagement: { ...CALM.engagement, summary: near } }).calm.text, "S1 우비 인물 (0:16)");
+  assert.equal(momentsOf({ ...ON, engagement: { ...ON.engagement, summary: { topSegments: [{ t0: 37.5, t1: 39.5, score: 0.9, near: { name: "frog" } }] } } }).calm.text, "개구리 (0:37)", "/film 은 S 번호 없음");
+  assert.deepEqual(momentsOf(null), { peak: null, calm: null });
+});
+
+test("xhatSeries(B151): 사건 반응 몫 fromStim 을 넘긴다 — 비교 화면이 사건 사이 구간을 흐리게 그린다", () => {
+  const s = xhatSeries(FEARFUL);
+  assert.ok(s.every((p) => Number.isFinite(p.fromStim)));
+  assert.ok(s.find((p) => p.t === 76).fromStim > s.find((p) => p.t === 14).fromStim);
 });
 
 test("pairWarning: 라우트나 배속이 다르면 경고, 같으면 null", () => {
