@@ -12,3 +12,4 @@ assets/vo/
 .env*
 data/sessions/
 data/engagement_export/
+data/sim/
