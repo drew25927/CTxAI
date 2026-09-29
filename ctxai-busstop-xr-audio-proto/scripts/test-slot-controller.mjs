@@ -71,4 +71,50 @@ test("microDecision: xhat 없으면 발동 안 함", () => {
   assert.equal(microDecision({ xhat: null, target: 0.65, tol: 0.1, tNow: 80, lastAt: -Infinity, count: 0 }).fire, false);
 });
 
+// nextAdvice (디렉터 모니터 "다음" 줄 — B66: 고정 슬롯이 끝난 뒤 고양이가 남던 결함)
+import { nextAdvice, MICRO_PARAMS } from "../lib/slotController.js";
+const planH = runController("H", { g: 0.8, L: 0.5, tau: 2, rho: 0.1 }).entries;
+const sceneArgs = { entries: planH, verdict: true, target: 0.65, tol: 0.1, ceiling: 0.9, sceneStart: 68, sceneEnd: 150 };
+test("nextAdvice: 고정 슬롯이 남았으면 그 슬롯 계획(0:40 → 고양이)", () => {
+  const a = nextAdvice({ ...sceneArgs, tNow: 40 });
+  assert.equal(a.kind, "slot"); assert.equal(a.slotId, "cat");
+  assert.equal(a.variantId, entry({ entries: planH }, "cat").variantId);
+});
+test("nextAdvice: 고양이(0:45) 뒤로는 어떤 시각에도 고양이를 추천하지 않는다", () => {
+  for (let t = 45.1; t <= 200; t += 0.5) {
+    const a = nextAdvice({ ...sceneArgs, tNow: t, xhat: 0.2, lastMicroAt: -Infinity, microCount: 0 });
+    assert.notEqual(a.slotId, "cat", `t=${t}`); assert.notEqual(a.kind, "slot", `t=${t}`);
+  }
+});
+test("nextAdvice: 고양이 뒤·장면 전(0:50)과 판정 전에는 미세 자극 대기 안내", () => {
+  const a = nextAdvice({ ...sceneArgs, tNow: 50, xhat: 0.2 });
+  assert.equal(a.kind, "micro"); assert.equal(a.slotId, "micro-door"); assert.equal(a.dose, null);
+  assert.ok(/판정 뒤 장면\(1:08~2:30\)/.test(a.reason), a.reason);
+  assert.ok(/판정 뒤 장면/.test(nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2, verdict: false }).reason));
+});
+test("nextAdvice: 장면 안에서 곡선 아래면 microDecision 과 같은 용량으로 발동 조건 충족", () => {
+  const a = nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2 });
+  const d = microDecision({ xhat: 0.2, target: 0.65, tol: 0.1, tNow: 90, lastAt: -Infinity, count: 0 });
+  assert.equal(a.dose, d.dose); assert.ok(/발동 조건 충족/.test(a.reason), a.reason);
+  assert.ok(/권고만/.test(nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2, controlOn: false }).reason));
+});
+test("nextAdvice: 간격 대기·곡선 안·상한 위·예산 소진을 구분한다", () => {
+  assert.match(nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2, lastMicroAt: 85, microCount: 1 }).reason, /간격 대기 7s \(직전 1:25\)/);
+  assert.match(nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.6 }).reason, /곡선 안/);
+  assert.match(nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.95 }).reason, /상한 위/);
+  const spent = nextAdvice({ ...sceneArgs, tNow: 90, xhat: 0.2, microCount: MICRO_PARAMS.max });
+  assert.match(spent.reason, /예산 소진 3\/3/); assert.equal(spent.dose, null);
+});
+test("nextAdvice: 장면 끝(2:30) 뒤는 제어 구간 끝", () => {
+  const a = nextAdvice({ ...sceneArgs, tNow: 160, xhat: 0.2, microCount: 2 });
+  assert.equal(a.kind, "done"); assert.equal(a.slotId, null); assert.match(a.reason, /제어 구간 끝 · 미세 자극 2\/3/);
+});
+test("MICRO_PARAMS 로 옮긴 뒤에도 microDecision 기본값이 그대로(간격 12s·예산 3·용량 0.2~0.6)", () => {
+  assert.deepEqual({ ...MICRO_PARAMS }, { gap: 12, max: 3, doseMin: 0.2, doseMax: 0.6, doseBias: 0.2 });
+  assert.equal(microDecision({ xhat: 0.2, target: 0.65, tol: 0.1, tNow: 80, lastAt: 68.5, count: 1 }).fire, false); // 11.5s < 12
+  assert.equal(microDecision({ xhat: 0.2, target: 0.65, tol: 0.1, tNow: 80, lastAt: 67.5, count: 1 }).fire, true);
+  assert.equal(microDecision({ xhat: 0.0, target: 0.9, tol: 0.1, tNow: 80 }).dose, 0.6);
+  assert.equal(microDecision({ xhat: 0.5, target: 0.6, tol: 0.05, tNow: 80 }).dose, 0.3);
+});
+
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);

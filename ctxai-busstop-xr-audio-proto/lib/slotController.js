@@ -94,12 +94,16 @@ export function chooseVariant(track, cands, idx, x0, theta, channelCounts, prev,
   return { ...best, reason };
 }
 
+/** 미세 자극 액추에이터의 기본값(잠정치) — microDecision 과 모니터 안내(nextAdvice)가 같은 값을 쓴다. */
+export const MICRO_PARAMS = Object.freeze({ gap: 12, max: 3, doseMin: 0.2, doseMax: 0.6, doseBias: 0.2 });
+
 /**
  * 판정 뒤 장면의 미세 자극 결정(실제 액추에이터) — 관객 긴장 x̂ 이 작가 곡선 아래로 처지면 은은한
  * 자극을 한 번 넣어 곡선 쪽으로 끌어올린다. 도입부 중립 탐침은 건드리지 않으므로 이 함수는 판정 뒤에만 쓴다.
  * @returns {{fire:boolean, dose:number}}
  */
-export function microDecision({ xhat, target, tol, tNow, lastAt = -Infinity, count = 0 }, { gap = 12, max = 3, doseMin = 0.2, doseMax = 0.6, doseBias = 0.2 } = {}) {
+export function microDecision({ xhat, target, tol, tNow, lastAt = -Infinity, count = 0 }, opts = {}) {
+  const { gap, max, doseMin, doseMax, doseBias } = { ...MICRO_PARAMS, ...opts };
   if (xhat == null || !Number.isFinite(xhat)) return { fire: false, dose: 0 };
   const below = xhat < target - tol;
   const spaced = tNow - lastAt > gap;
@@ -107,6 +111,37 @@ export function microDecision({ xhat, target, tol, tNow, lastAt = -Infinity, cou
   if (!(below && spaced && budget)) return { fire: false, dose: 0 };
   const dose = Math.max(doseMin, Math.min(doseMax, (target - xhat) + doseBias));
   return { fire: true, dose: Math.round(dose * 1000) / 1000 };
+}
+
+const mmss = (t) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, "0")}`;
+const f2 = (v) => (Number.isFinite(v) ? v.toFixed(2) : "-");
+
+/**
+ * 디렉터 모니터의 "다음" 줄 — 지금 시각 뒤에 올 개입 하나를 고른다.
+ *   (1) 남은 시각 고정 슬롯이 있으면 그 슬롯의 계획(runController entries 한 줄).
+ *   (2) 고정 슬롯이 끝났으면 미세 자극(먼 문 — /film 이 실제로 울리는 방위 −60° 기척) 상태를 microDecision 과
+ *       같은 조건으로 알린다: 판정·장면 전이면 대기, 장면 안이면 발동 조건 충족·곡선 안·상한 위·간격 대기·예산 소진,
+ *       장면 뒤면 제어 구간 끝.
+ * 예전에는 (1) 이 없으면 마지막 고정 슬롯(고양이 0:45)을 영화 끝까지 보여줬다(B66).
+ * @returns {{kind:"slot"|"micro"|"done", slotId:string|null, variantId?:string, dose?:number|null, reason:string, count?:number, max?:number}}
+ */
+export function nextAdvice({ entries = [], tNow, verdict = true, xhat = null, target = null, tol = 0, ceiling = null,
+  lastMicroAt = -Infinity, microCount = 0, controlOn = true, sceneStart = 68, sceneEnd = 150, micro = {} }) {
+  const slot = entries.find((e) => e.t > tNow);
+  if (slot) return { kind: "slot", slotId: slot.slotId, variantId: slot.variantId, dose: slot.dose, reason: slot.reason };
+  const M = { ...MICRO_PARAMS, ...micro };
+  if (tNow > sceneEnd) return { kind: "done", slotId: null, reason: `제어 구간 끝 · 미세 자극 ${microCount}/${M.max}` };
+  const base = { kind: "micro", slotId: "micro-door", variantId: "shut", dose: null, count: microCount, max: M.max };
+  const advisory = controlOn ? "" : " (제어 OFF — 권고만)";
+  if (microCount >= M.max) return { ...base, reason: `예산 소진 ${microCount}/${M.max} — 남은 장면은 연속 구동만` };
+  if (!verdict || tNow < sceneStart) return { ...base, reason: `판정 뒤 장면(${mmss(sceneStart)}~${mmss(sceneEnd)})에서 x̂ 이 곡선 아래로 처지면` };
+  if (xhat == null || !Number.isFinite(xhat) || !Number.isFinite(target)) return { ...base, reason: "x̂ 추정 대기" };
+  const d = microDecision({ xhat, target, tol, tNow, lastAt: lastMicroAt, count: microCount }, M);
+  if (d.fire) return { ...base, dose: d.dose, reason: `x̂ ${f2(xhat)} < 목표 ${f2(target)}−${f2(tol)} → 발동 조건 충족${advisory}` };
+  if (Number.isFinite(ceiling) && xhat > ceiling) return { ...base, reason: `상한 위(x̂ ${f2(xhat)} > ${f2(ceiling)}) — 자극 없음, 연속 구동이 이완` };
+  if (xhat >= target - tol) return { ...base, reason: `곡선 안(x̂ ${f2(xhat)} ≥ ${f2(target - tol)}) — 대기` };
+  const wait = Math.max(0, M.gap - (tNow - lastMicroAt));
+  return { ...base, reason: `간격 대기 ${Math.ceil(wait)}s (직전 ${mmss(Math.max(0, lastMicroAt))})${advisory}` };
 }
 
 /** 후보 슬롯 목록 — 시각 고정 슬롯을 시각 순으로. (미세 슬롯은 t 를 주면 포함) */

@@ -42,7 +42,7 @@ import { fitViewerModel } from "@/lib/viewerModel";
 import { estimateTensionSeries } from "@/lib/tensionEstimate";
 import DirectorMonitor from "@/components/DirectorMonitor";
 import { curveAt } from "@/lib/tensionCurve";
-import { runController, microDecision } from "@/lib/slotController";
+import { runController, microDecision, nextAdvice } from "@/lib/slotController";
 import { actuationFor, bgmScale } from "@/lib/controlActuate";
 import { selectTrack } from "@/lib/trackSelect";
 import { deriveBgmGains, TRIGGERS } from "@/lib/directionMap";
@@ -360,7 +360,7 @@ export default function FilmPage() {
       // 착석 뒤 옆사람의 거리는 상태가 정한다 (요청서 v5.0 §2.7: 0.5~1.4m)
       film.npcDistance = paramsRef.current?.npcDistance ?? 0.9;
 
-      // 디렉터 모니터 — 관객모델 θ̂·긴장 추정 x̂·목표 곡선·다음 자극 추천 (advisory: 아직 자극을 바꾸진 않는다)
+      // 디렉터 모니터 — 관객모델 θ̂·긴장 추정 x̂·목표 곡선·다음 개입 안내 (표시만 한다. 실제 구동은 아래 ?control=1 블록)
       if (q.monitor === "1") {
         const eng = engagementRef.current?.data?.();
         const track = (q.track || film.dominant || snap.dominant || "H").toUpperCase();
@@ -371,7 +371,9 @@ export default function FilmPage() {
           const last = series[series.length - 1];
           const tgt = curveAt(track, film.t);
           const rec = runController(track, theta);
-          const next = rec.entries.find((e) => e.t > film.t) || rec.entries[rec.entries.length - 1];
+          // 다음 개입 — 남은 고정 슬롯이 없으면(고양이 0:45 뒤) 미세 자극의 발동 조건·대기 사유를 보인다(B66)
+          const next = nextAdvice({ entries: rec.entries, tNow: film.t, verdict: !!film.dominant, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling,
+            lastMicroAt: film.lastMicroAt ?? -Infinity, microCount: film.microCount || 0, controlOn: q.control === "1", sceneStart: T.npcSeated, sceneEnd: 150 });
           const sel = theta.nResp >= 1 ? selectTrack(theta, { genrePrior: snap.current, priorWeight: 0.3 }) : null;
           setMonitor({ track, theta, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, series, next, nStim: eng.stimuli.length, sel, control: q.control === "1", micro: film.microCount || 0, actuate: adjustRef.current });
         }

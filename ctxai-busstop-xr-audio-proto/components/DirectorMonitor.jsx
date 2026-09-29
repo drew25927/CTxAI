@@ -9,7 +9,8 @@
 //
 // monitor 객체 모양(페이지가 250ms/200ms 틱마다 만든다):
 //   { track, theta:{g,L,tau,rho,confidence,nResp}, xhat, target?, tol?, ceiling?, series:[{t,tension}],
-//     nStim, sel?:{track,reach}, control?:bool, micro?:number, next?:{slotId,variantId,dose,reason}, note?,
+//     nStim, sel?:{track,reach}, control?:bool, micro?:number, note?,
+//     next?:{kind:"slot"|"micro"|"done", slotId, variantId?, dose?, reason, count?, max?}   ← lib/slotController nextAdvice
 //     actuate?:{u,mode,offsets} }   ← /film 연속 액추에이터(lib/controlActuate.js)의 현재 구동량·오프셋
 
 import { curveAt } from "@/lib/tensionCurve";
@@ -58,6 +59,16 @@ function actuateText(a) {
   return parts.length ? parts.join(" · ") : "오프셋 0";
 }
 
+// "다음" 줄의 머리 — 고정 슬롯이면 계획 변형·용량, 고정 슬롯이 끝났으면 미세 자극 차례(B66), 장면 뒤면 없음
+function nextHeadline(next, eventLabel) {
+  const label = eventLabel[next.slotId] || next.slotId;
+  if (next.kind === "done") return <span style={{ opacity: 0.6 }}>다음 개입 없음</span>;
+  if (next.kind === "micro") {
+    return <span>다음 미세 자극 <b>{label}</b> {next.count ?? 0}/{next.max ?? 3}{next.dose != null && <> → <b>{next.variantId}</b> (용량 {next.dose})</>}</span>;
+  }
+  return <span>다음 <b>{label}</b> → <b>{next.variantId}</b> (용량 {next.dose})</span>;
+}
+
 export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTarget = true, marks = [], eventLabel = {}, title = "디렉터 모니터" }) {
   if (!monitor) return null;
   const { theta } = monitor;
@@ -88,7 +99,7 @@ export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTar
       {monitor.note && <div style={{ opacity: 0.7 }}>{monitor.note}</div>}
       {monitor.next && (
         <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.1)" }}>
-          다음 <b>{eventLabel[monitor.next.slotId] || monitor.next.slotId}</b> → <b>{monitor.next.variantId}</b> (용량 {monitor.next.dose})
+          {nextHeadline(monitor.next, eventLabel)}
           <div style={{ opacity: 0.7, fontSize: 11 }}>{monitor.next.reason}</div>
         </div>
       )}
