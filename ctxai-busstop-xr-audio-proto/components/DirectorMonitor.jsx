@@ -45,7 +45,7 @@ export function MonitorChart({ series = [], track = "H", tNow = 0, ceiling = 1, 
 
 const fmt2 = (v) => (Number.isFinite(v) ? v.toFixed(2) : "-");
 const sgn = (v, d = 2) => (v > 0 ? "+" : "") + v.toFixed(d);
-const ACT_MODE = { arouse: "각성", relax: "이완", hold: "유지", off: "대기" };
+const ACT_MODE = { arouse: "각성", relax: "이완", hold: "유지", settle: "자극 뒤 멈춤", off: "대기" };
 
 // 연속 액추에이터 한 줄 — 0 이 아닌 축만. (BGM 은 배율, 나머지는 deriveParams 값에 더한 오프셋)
 function actuateText(a) {
@@ -107,7 +107,7 @@ export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTar
         <div style={{ opacity: 0.85 }}>실제 제어: {monitor.control ? <b style={{ color: "#7fd1ff" }}>ON · 미세 자극 {monitor.micro ?? 0}/3</b> : <span style={{ opacity: 0.6 }}>OFF (advisory)</span>}</div>
       )}
       {monitor.control && monitor.actuate && (
-        <div style={{ opacity: 0.85, fontSize: 11 }}>연속 구동 <b>{ACT_MODE[monitor.actuate.mode] || monitor.actuate.mode}</b> u {sgn(monitor.actuate.u || 0)} · {actuateText(monitor.actuate)}</div>
+        <div style={{ opacity: 0.85, fontSize: 11 }}>연속 구동 <b>{ACT_MODE[monitor.actuate.mode] || monitor.actuate.mode}{monitor.actuate.mode === "settle" && Number.isFinite(monitor.actuate.settleLeft) ? ` ${monitor.actuate.settleLeft.toFixed(1)}s` : ""}</b> u {sgn(monitor.actuate.u || 0)} · {actuateText(monitor.actuate)}</div>
       )}
       {monitor.slots && slotsText(monitor.slots, eventLabel) && (
         <div style={{ opacity: 0.85, fontSize: 11 }}>슬롯 변형 {slotsText(monitor.slots, eventLabel)}</div>

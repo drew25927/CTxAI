@@ -58,13 +58,14 @@ test("결정적: 같은 입력이면 같은 궤적", () => {
   assert.deepEqual(a.x, b.x); assert.deepEqual(a.u, b.u); assert.deepEqual(a.micro, b.micro);
 });
 
-test("B75: 코미디 트랙 민감형 — 미세 자극 직후 연속 손이 이완(relax)으로 맞서고, holdAfterMicro 창에서는 멈춘다", () => {
-  const asIs = simulateViewer({ track: "C", theta: ARCHETYPES.sensitive, mode: "film" });
-  const hold = simulateViewer({ track: "C", theta: ARCHETYPES.sensitive, mode: "film", opts: { holdAfterMicro: SIM_PARAMS.HOLD_AFTER_MICRO } });
+test("B75: 코미디 트랙 민감형 — 창이 없으면(B75 이전) 미세 자극 직후 연속 손이 이완(relax)으로 맞서고, 기본값(/film 과 같은 창)에서는 멈춘다", () => {
+  const asIs = simulateViewer({ track: "C", theta: ARCHETYPES.sensitive, mode: "film", opts: { holdAfterMicro: 0 } });
+  const hold = simulateViewer({ track: "C", theta: ARCHETYPES.sensitive, mode: "film" });
+  assert.equal(hold.opts.holdAfterMicro, SIM_PARAMS.HOLD_AFTER_MICRO, "기본값은 /film 의 창");
   const m = asIs.micro[0];
   const win = (r) => r.mode.slice(at(m.t) + 1, at(m.t + SIM_PARAMS.HOLD_AFTER_MICRO));
   assert.ok(win(asIs).includes("relax"), `as-is 창 안 모드 ${[...new Set(win(asIs))]}`);
-  assert.ok(win(hold).every((x) => x === "hold"), `hold 창 안 모드 ${[...new Set(win(hold))]}`);
+  assert.ok(win(hold).every((x) => x === "settle"), `hold 창 안 모드 ${[...new Set(win(hold))]}`);
   const uWin = (r) => r.u.slice(at(m.t) + 1, at(m.t + SIM_PARAMS.HOLD_AFTER_MICRO));
   assert.ok(new Set(uWin(hold)).size === 1, "hold 창 안에서 u 불변");
   assert.ok(Math.min(...uWin(asIs)) < uWin(hold)[0], "as-is 는 창 안에서 u 가 내려간다");

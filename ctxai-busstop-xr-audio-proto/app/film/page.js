@@ -44,7 +44,7 @@ import DirectorMonitor from "@/components/DirectorMonitor";
 import { curveAt } from "@/lib/tensionCurve";
 import { runController, microDecision, nextAdvice } from "@/lib/slotController";
 import { decideSlot, CONTROLLED_SLOTS, DECIDE_AT } from "@/lib/slotActuate";
-import { actuationFor, bgmScale } from "@/lib/controlActuate";
+import { actuationFor, bgmScale, ACTUATE_PARAMS } from "@/lib/controlActuate";
 import { selectTrack } from "@/lib/trackSelect";
 import { deriveBgmGains, TRIGGERS } from "@/lib/directionMap";
 import { CUES, evalActors, T } from "@/lib/filmTimeline";
@@ -404,13 +404,17 @@ export default function FilmPage() {
         const tgt = curveAt(film.dominant, film.t);
         const prev = adjustRef.current;
         const dtFilm = prev ? Math.max(0, Math.min(2, film.t - prev.t)) : 0.25 * speed;
-        const act = actuationFor({ xhat, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, track: film.dominant, theta, prev, dt: dtFilm, active: controlOn });
+        // 미세 자극 뒤 HOLD_AFTER_MICRO 초는 연속 손을 멈춘다(B75) — ?hold=0 이면 창 없음(B75 이전과 비교용)
+        const holdQ = q.hold ? Number(q.hold) : NaN;
+        const actParams = Number.isFinite(holdQ) ? { ...ACTUATE_PARAMS, HOLD_AFTER_MICRO: Math.max(0, holdQ) } : ACTUATE_PARAMS;
+        const act = actuationFor({ xhat, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, track: film.dominant, theta, prev, dt: dtFilm, active: controlOn, tNow: film.t, lastMicroAt: film.lastMicroAt }, actParams);
         adjustRef.current = { ...act, t: film.t, xhat, target: tgt.target };
         if (film.lastActuateLogAt == null || film.t - film.lastActuateLogAt >= 2) {
           const p = paramsRef.current || {};
           const r3 = (v) => (Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null);
           d.markEvent("control:actuate", {
-            t: Math.round(film.t * 10) / 10, active: controlOn, mode: act.mode, u: act.u, err: act.err, gScale: act.gScale,
+            t: Math.round(film.t * 10) / 10, active: controlOn, mode: act.mode, u: act.u, uTarget: act.uTarget, err: act.err, gScale: act.gScale,
+            ...(act.mode === "settle" ? { settleLeft: act.settleLeft } : {}),
             xhat: r3(xhat), target: r3(tgt.target), offsets: act.offsets, bgm: r3(bgmScale(act.offsets)),
             applied: { npcSilence: r3(p.npcSilence), lampOn: r3(p.lampOn), fogDensity: r3(p.fogDensity), npcDistance: r3(p.npcDistance), npcGaze: r3(p.npcGaze) },
           });
@@ -763,7 +767,7 @@ export default function FilmPage() {
         const slots = {};
         for (const [id, c] of Object.entries(filmRef.current.slotChoice || {})) slots[id] = { t: c.t, track: c.track, variantId: c.variantId, dose: c.dose, reason: c.reason, target: c.target ?? null, predTension: c.predTension ?? null, actuation: { sfx: c.actuation.sfx, volume: c.actuation.volume, plays: c.actuation.plays, gap: c.actuation.gap }, schedule: c.schedule || null };
         control = { track, theta, mode: q.control === "1" ? "full" : "off", plan: runController(track, theta).entries, slots,
-          actuation: { on: q.control === "1", ticks: filmRef.current.actuateLogCount || 0, micro: filmRef.current.microCount || 0, last: a ? { t: a.t, u: a.u, mode: a.mode, offsets: a.offsets } : null } };
+          actuation: { on: q.control === "1", holdAfterMicro: q.hold ? Math.max(0, Number(q.hold) || 0) : ACTUATE_PARAMS.HOLD_AFTER_MICRO, ticks: filmRef.current.actuateLogCount || 0, micro: filmRef.current.microCount || 0, last: a ? { t: a.t, u: a.u, mode: a.mode, offsets: a.offsets } : null } };
       }
     } catch { /* 로그 실패는 무시 */ }
     const vs = viewerSimRef.current;

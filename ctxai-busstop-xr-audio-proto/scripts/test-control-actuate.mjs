@@ -172,4 +172,50 @@ test("실제 곡선 위에서: 공포 트랙 90초, 차분한 관객(x̂ 0.2)은
   console.log(`                        과민 u=${jumpy.u} 안개 ${pj.fogDensity.toFixed(3)} 침묵 ${pj.npcSilence.toFixed(2)}s 거리 ${pj.npcDistance.toFixed(2)}m BGM×${bgmScale(jumpy.offsets).toFixed(2)} 가로등 ${pj.lampOn.toFixed(2)}`);
 });
 
+// B75 — 미세 자극 뒤 멈춤 창. 상황: 각성으로 u 가 올라 있던 관객에게 미세 자극이 울렸고, 그 과도 응답으로
+// x̂ 이 상한 위로 치솟았다. 창이 없으면 연속 손이 곧바로 이완으로 맞선다.
+const HOLD = ACTUATE_PARAMS.HOLD_AFTER_MICRO;
+const SPIKE = { xhat: 0.95, target: 0.4, tol: 0.1, ceiling: 0.7, track: "C", theta: PRIOR };
+function warmArouse() { return run({ xhat: 0.1, target: 0.5, tol: 0.1, ceiling: 0.7, track: "C", theta: PRIOR }); }
+
+test("B75 멈춤 창: 미세 자극 뒤 HOLD 초 동안은 u·오프셋이 직전 값 그대로(mode settle) — 과도 응답에 이완으로 맞서지 않는다", () => {
+  const warm = warmArouse();
+  assert.ok(warm.u > 0.9, `각성 포화 ${warm.u}`);
+  let prev = warm;
+  const fireAt = 90;
+  for (let t = fireAt; t < fireAt + HOLD - 1e-9; t += 0.25) {
+    const r = actuationFor({ ...SPIKE, prev, dt: 0.25, tNow: t, lastMicroAt: fireAt });
+    assert.equal(r.mode, "settle", `t ${t}`);
+    assert.equal(r.u, warm.u, `t ${t} u 불변`);
+    assert.deepEqual(r.offsets, warm.offsets);
+    assert.ok(r.uTarget < 0 && r.err < 0, "기록용 uTarget·err 은 '창이 없었다면' 이완 쪽");
+    assert.ok(Math.abs(r.settleLeft - (fireAt + HOLD - t)) < 1e-9, `남은 창 ${r.settleLeft}`);
+    prev = r;
+  }
+  // 창이 끝나면 그때의 x̂ 으로 다시 판단한다 — 여전히 상한 위면 이제 이완(슬루 제한 그대로)
+  const after = actuationFor({ ...SPIKE, prev, dt: 0.25, tNow: fireAt + HOLD, lastMicroAt: fireAt });
+  assert.equal(after.mode, "relax");
+  assert.ok(after.u < warm.u && warm.u - after.u <= ACTUATE_PARAMS.SLEW * 0.25 + 1e-9, `창 뒤 첫 틱 ${warm.u}→${after.u}`);
+});
+
+test("B75 멈춤 창: 창이 없던 때(HOLD 0)와 비교하면 창 안에서만 다르고, lastMicroAt 이 없거나 창 밖이면 종전과 같다", () => {
+  const warm = warmArouse();
+  const noHold = { ...ACTUATE_PARAMS, HOLD_AFTER_MICRO: 0 };
+  const a = actuationFor({ ...SPIKE, prev: warm, dt: 0.25, tNow: 91, lastMicroAt: 90 }, noHold);
+  assert.equal(a.mode, "relax", "창이 없으면 곧바로 이완");
+  assert.ok(a.u < warm.u);
+  const base = actuationFor({ ...SPIKE, prev: warm, dt: 0.25 });
+  for (const extra of [{}, { tNow: 91 }, { lastMicroAt: 90 }, { tNow: 90 + HOLD, lastMicroAt: 90 }, { tNow: 200, lastMicroAt: 90 }, { tNow: 89, lastMicroAt: 90 }]) {
+    assert.deepEqual(actuationFor({ ...SPIKE, prev: warm, dt: 0.25, ...extra }), base, JSON.stringify(extra));
+  }
+});
+
+test("B75 멈춤 창: 비활성(OFF·트랙 없음)은 창 안에서도 즉시 0 — 창이 OFF=항등을 깨지 않는다", () => {
+  const warm = warmArouse();
+  const off = actuationFor({ ...SPIKE, prev: warm, active: false, tNow: 91, lastMicroAt: 90 });
+  assert.equal(off.mode, "off"); assert.equal(off.u, 0);
+  for (const k of ACTUATED_KEYS) assert.equal(off.offsets[k], 0);
+  assert.equal(actuationFor({ ...SPIKE, track: null, prev: warm, tNow: 91, lastMicroAt: 90 }).mode, "off");
+});
+
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);

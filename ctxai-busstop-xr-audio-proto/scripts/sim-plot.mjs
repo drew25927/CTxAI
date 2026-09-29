@@ -169,11 +169,11 @@ function figB77() {
 function figB75() {
   const MEASURED = { key: "measured", label: "실측 공포형 θ̂(1배속 세션 B59: g1.28 L0.19 τ0.43 ρ0)", g: 1.28, L: 0.19, tau: 0.43, rho: 0 };
   const ROWS = [["C", "블랙코미디(상한 0.7)"], ["R", "로맨스(상한 0.75)"]];
-  const COLS = [{ hold: 0, title: "(3) 현재 — 자극 직후 x̂ 봉우리를 연속 손이 즉시 이완으로 맞선다" }, { hold: SIM_PARAMS.HOLD_AFTER_MICRO, title: `(1) 미세 자극 뒤 ${SIM_PARAMS.HOLD_AFTER_MICRO}s 는 연속 손을 멈춤(hold)` }];
+  const COLS = [{ hold: 0, title: "(3) 창 없음(B75 이전) — 자극 직후 x̂ 봉우리를 연속 손이 즉시 이완으로 맞선다" }, { hold: SIM_PARAMS.HOLD_AFTER_MICRO, title: `(1) 미세 자극 뒤 ${SIM_PARAMS.HOLD_AFTER_MICRO}s 는 연속 손을 멈춤(settle) — /film 현재` }];
   const W = 1560, PW = 750, PH = 290, UH = 110, ROW = PH + UH + 66, TOP = 96;
   const svg = new Svg(W, TOP + 2 * ROW + 6);
-  svg.text(20, 30, "B75 — 두 손의 상호작용: 미세 자극의 과도 응답을 연속 액추에이터가 상쇄하는가 (그대로 vs 자극 뒤 hold)", { size: 20, weight: "bold" });
-  svg.text(20, 52, "/film 현재 모드 · 판정 1:08 뒤 미세 자극(먼 문, 간격 12s, ≤3회)이 x̂ 을 순간 올리면 연속 액추에이터(SLEW 0.2/s)가 허용폭 위라고 보고 u 를 내린다(relax, ●) · 공포 트랙에서는 목표(0.62~0.85)가 높아 이 충돌이 나지 않고, 코미디·로맨스에서 난다", { size: 11.5, color: "#444" });
+  svg.text(20, 30, "B75 — 두 손의 상호작용: 미세 자극의 과도 응답을 연속 액추에이터가 상쇄하는가 (창 없음 vs 자극 뒤 멈춤 — /film 은 B75 부터 멈춤)", { size: 20, weight: "bold" });
+  svg.text(20, 52, "film 모드 · 판정 1:08 뒤 미세 자극(먼 문, 간격 12s, ≤3회)이 x̂ 을 순간 올리면, 멈춤 창이 없을 때 연속 액추에이터(SLEW 0.2/s)가 허용폭 위라고 보고 u 를 내린다(relax, ●) · 공포 트랙에서는 목표(0.62~0.85)가 높아 이 충돌이 나지 않고, 코미디·로맨스에서 난다", { size: 11.5, color: "#444" });
   svg.text(20, 70, "3배속 실측(B11b)에서는 x̂ 이 0.26→1.0 으로 튀어 u 가 −1 까지 갔다(합성 관객의 정향 세기가 모델 관객보다 크다) — 여기서는 모델 관객 두 명으로 방향만 본다", { size: 11.5, color: "#444" });
   legend(svg, 20, 90, [{ label: "민감형 g1.2 τ3.5s", color: COLORS.sensitive }, { label: MEASURED.label, color: COLORS.measured }, { label: "작가 목표 ±tol", color: COLORS.band, kind: "band" }, { label: "상한", color: COLORS.ceiling, dash: "4 3", width: 1 }, { label: "미세 자극", color: "#555", kind: "tri" }, { label: "u 의 이완(relax) 틱", color: "#555", kind: "dot" }]);
   const xd = [64, 110], xTicks = [64, 68, 72, 76, 80, 84, 88, 92, 96, 100, 104, 108];
@@ -182,7 +182,7 @@ function figB75() {
     const [track, name] = ROWS[r];
     const opts = { holdAfterMicro: COLS[c].hold };
     const vs = [{ key: "sensitive", run: simulateViewer({ track, theta: ARCHETYPES.sensitive, mode: "film", opts }), color: COLORS.sensitive }, { key: "measured", run: simulateViewer({ track, theta: MEASURED, mode: "film", opts }), color: COLORS.measured }];
-    const rows = vs.map((v) => { const i0 = Math.round(64 / SIM_PARAMS.DT), i1 = Math.round(110 / SIM_PARAMS.DT); const modes = v.run.mode.slice(i0, i1); const us = v.run.u.slice(i0, i1); return { key: v.key, relaxTicks: modes.filter((m) => m === "relax").length, holdTicks: modes.filter((m) => m === "hold").length, uMin: Math.min(...us), micro: v.run.micro.map((m) => m.t), xPeak: Math.max(...v.run.x.slice(i0, i1)) }; });
+    const rows = vs.map((v) => { const i0 = Math.round(64 / SIM_PARAMS.DT), i1 = Math.round(110 / SIM_PARAMS.DT); const modes = v.run.mode.slice(i0, i1); const us = v.run.u.slice(i0, i1); return { key: v.key, relaxTicks: modes.filter((m) => m === "relax").length, holdTicks: modes.filter((m) => m === "settle").length, uMin: Math.min(...us), micro: v.run.micro.map((m) => m.t), xPeak: Math.max(...v.run.x.slice(i0, i1)) }; });
     summary.b75[`${track}_hold${COLS[c].hold}`] = rows;
     const note = rows.map((x) => `${x.key === "sensitive" ? "민감형" : "실측 공포형"}: relax 틱 ${x.relaxTicks} · u 최소 ${x.uMin.toFixed(2)} · x 봉우리 ${x.xPeak.toFixed(2)} · 미세 자극 ${x.micro.map(mmss).join("·")}`);
     say(`   ${track} hold=${COLS[c].hold}s | ${note.join(" | ")}`);

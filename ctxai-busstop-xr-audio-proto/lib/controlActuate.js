@@ -14,6 +14,11 @@
 //      알아채지 못하게 하는 장치다.
 //   5. 비활성(active=false: 도입부 탐침 구간·?control=0) — u 를 즉시 0 으로, 오프셋은 정확히 0.
 //      도입부 다섯 사건은 θ 를 공정히 읽는 중립 탐침이라 자극이 조금이라도 새면 추정이 오염된다.
+//   6. 미세 자극 뒤 멈춤(B75) — 첫 번째 손(미세 자극)이 방금 울렸으면 HOLD_AFTER_MICRO 초 동안 u 를
+//      직전 값에 묶어 둔다(mode "settle"). 자극 직후 x̂ 은 과도 응답으로 잠깐 치솟는데, 그 봉우리를 보고
+//      연속 손이 곧바로 이완으로 맞서면 두 손이 서로 싸운다(3배속 실측에서 u −1 까지 갔다). 창이 끝나면
+//      그때의 x̂ 으로 다시 판단한다. 시뮬(sim-b75-two-hands.png)에서 이 창은 모델 관객의 충돌을 0 으로 만들고
+//      긴장 봉우리는 바꾸지 않았다.
 //
 // 방향표(AXES)는 "각성 = 그 트랙의 장르 색을 더 진하게" 로 정했다 — directionMap ANCHORS 에서 트랙
 // 앵커가 중립 앵커로부터 떨어진 방향과 같은 부호다(공포는 침묵이 길고 안개가 짙고 옆사람이 멀다,
@@ -31,6 +36,7 @@ export const ACTUATE_PARAMS = Object.freeze({
   G_SCALE_MIN: 0.5,  // 이득 배율 하한 — 매우 잘 놀라는 관객도 절반까지만 줄인다
   G_SCALE_MAX: 2,    // 이득 배율 상한 — 잘 안 놀라는 관객도 두 배까지만
   SLEW: 0.2,         // 구동량 변화 한도(초당). 0 → 1 까지 5초
+  HOLD_AFTER_MICRO: 5, // 미세 자극 뒤 연속 손을 멈추는 창(영화 시간 초, B75) ≈ 응답 상승 + 보통형 2τ(잠정치)
 });
 
 // 구동량 u = +1(최대 각성)일 때의 오프셋. u = −1 이면 부호가 반대(이완). 트랙별 창작값(잠정치).
@@ -79,9 +85,12 @@ export function offsetsFor(track, u) {
  * @param {{u:number}} [a.prev]   직전 틱 결과(없으면 u=0 에서 시작)
  * @param {number} [a.dt=0.25]    직전 틱 뒤 경과(영화 시간 초)
  * @param {boolean} [a.active=true] false 면 즉시 0(도입부 탐침·제어 OFF)
- * @returns {{u:number, uTarget:number, mode:"arouse"|"relax"|"hold"|"off", err:number, gScale:number, offsets:object}}
+ * @param {number} [a.tNow]        현재 영화 시간(초) — lastMicroAt 과 함께 주면 미세 자극 뒤 멈춤 창을 본다
+ * @param {number} [a.lastMicroAt] 직전 미세 자극 시각(영화 시간 초). 없으면 멈춤 창 없음
+ * @returns {{u:number, uTarget:number, mode:"arouse"|"relax"|"hold"|"settle"|"off", err:number, gScale:number, offsets:object, settleLeft?:number}}
+ *   mode "hold" 는 데드밴드 안(u 를 0 쪽으로 되돌리는 중), "settle" 은 미세 자극 뒤 멈춤 창(u 를 직전 값에 묶음).
  */
-export function actuationFor({ xhat, target, tol, ceiling = 1, track, theta, prev, dt = 0.25, active = true }, params = ACTUATE_PARAMS) {
+export function actuationFor({ xhat, target, tol, ceiling = 1, track, theta, prev, dt = 0.25, active = true, tNow, lastMicroAt }, params = ACTUATE_PARAMS) {
   const P = params;
   if (!active || !AXES[track]) return { u: 0, uTarget: 0, mode: "off", err: 0, gScale: 1, offsets: { ...ZERO } };
 
@@ -99,6 +108,13 @@ export function actuationFor({ xhat, target, tol, ceiling = 1, track, theta, pre
   const uTarget = clamp(P.K_P * gScale * err, -1, 1);
 
   const u0 = Number.isFinite(prev?.u) ? prev.u : 0;
+
+  // 미세 자극 뒤 멈춤 창 — u·오프셋은 직전 값 그대로. err·uTarget 은 "창이 없었다면" 을 기록용으로 남긴다.
+  const since = Number.isFinite(tNow) && Number.isFinite(lastMicroAt) ? tNow - lastMicroAt : Infinity;
+  if (P.HOLD_AFTER_MICRO > 0 && since >= 0 && since < P.HOLD_AFTER_MICRO) {
+    return { u: u0, uTarget: r4(uTarget), mode: "settle", err: r4(err), gScale: r4(gScale), offsets: offsetsFor(track, u0), settleLeft: r4(P.HOLD_AFTER_MICRO - since) };
+  }
+
   const step = P.SLEW * Math.max(0, dt);
   const u = r4(u0 + clamp(uTarget - u0, -step, step));
   const mode = uTarget > 0 ? "arouse" : uTarget < 0 ? "relax" : "hold";

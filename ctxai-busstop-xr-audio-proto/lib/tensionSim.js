@@ -33,7 +33,7 @@ export const SIM_PARAMS = Object.freeze({
   MICRO_DUR: 1.5,       // 미세 자극(먼 문) 길이(초) — /film beginStimulus 와 같다
   CONT_K: 0.25,         // (가정) 연속 채널 u=+1 을 오래 유지하면 기준 관객(g = G_REF)의 긴장이 이만큼 오른다
   CONT_TAU: 12,         // (가정) 그 느린 항의 시정수(초) — 안개·침묵은 몇 초 만에 체감되지 않는다
-  HOLD_AFTER_MICRO: 5,  // B75 안 (1): 미세 자극 뒤 연속 손을 멈추는 창(초) ≈ RISE_SEC + 2τ(보통형)
+  HOLD_AFTER_MICRO: ACTUATE_PARAMS.HOLD_AFTER_MICRO, // B75: 미세 자극 뒤 연속 손을 멈추는 창(초) — /film 과 같은 값(controlActuate)
 });
 
 // 관객 3유형 — 값은 창작·잠정치(sim-trajectory 의 관객 분포 g 0.3~1.3 · τ 1~4 · ρ 0~0.45 안에서 골랐다).
@@ -74,7 +74,7 @@ export function makeRecord(theta, { name, t, dur = 1, channel, dose, nth = 0, ki
  * @param {object} [o.opts]
  * @param {number}  [o.opts.contTruth=0]     연속 채널이 참 긴장에 미치는 효과(0 = 없음, CONT_K 등)
  * @param {"none"|"slow"} [o.opts.contModel="none"]  x̂ 에 연속 채널의 느린 항을 넣는가(B77 안 2)
- * @param {number}  [o.opts.holdAfterMicro=0] 미세 자극 뒤 연속 손을 멈추는 창(초, B75 안 1)
+ * @param {number}  [o.opts.holdAfterMicro=HOLD_AFTER_MICRO] 미세 자극 뒤 연속 손을 멈추는 창(초, B75). 0 이면 B75 이전(창 없음)
  * @param {object}  [o.params=SIM_PARAMS]
  * @returns {{t:number[], x:number[], xhat:number[], u:number[], mode:string[], target:number[], tol:number[], ceiling:number,
  *            stimuli:Array, micro:Array, plan:Array, thetaHat:object|null, track:string, simMode:string}}
@@ -83,7 +83,8 @@ export function simulateViewer({ track, theta, mode = "off", opts = {}, params =
   const P = params;
   const contTruth = Number.isFinite(opts.contTruth) ? opts.contTruth : 0;
   const contModel = opts.contModel || "none";
-  const hold = Number.isFinite(opts.holdAfterMicro) ? opts.holdAfterMicro : 0;
+  const hold = Number.isFinite(opts.holdAfterMicro) ? opts.holdAfterMicro : P.HOLD_AFTER_MICRO;
+  const actParams = { ...ACTUATE_PARAMS, HOLD_AFTER_MICRO: hold };
   const cands = candidateSlots();
   const mid = (s) => s.variants[Math.floor((s.variants.length - 1) / 2)];
 
@@ -136,9 +137,8 @@ export function simulateViewer({ track, theta, mode = "off", opts = {}, params =
     let uMode = "off";
     if (mode !== "off" && t >= P.VERDICT_T && t <= P.SCENE_END) {
       if (thetaDirty) { thetaHat = fitViewerModel(records); thetaDirty = false; }
-      const holding = hold > 0 && t - lastMicroAt < hold;
-      if (holding && act) { act = { ...act, mode: "hold" }; }                       // B75 안 (1): 과도 응답 창에서는 손을 멈춘다
-      else act = actuationFor({ xhat, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, track, theta: thetaHat, prev: act, dt: P.DT, active: true });
+      // B75: 미세 자극 뒤 창에서는 actuationFor 가 u 를 직전 값에 묶는다(mode "settle") — /film 과 같은 코드 경로
+      act = actuationFor({ xhat, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, track, theta: thetaHat, prev: act, dt: P.DT, active: true, tNow: t, lastMicroAt }, actParams);
       uMode = act.mode;
       const d = microDecision({ xhat, target: tgt.target, tol: tgt.tol, tNow: t, lastAt: lastMicroAt, count: microCount });
       if (d.fire) {
