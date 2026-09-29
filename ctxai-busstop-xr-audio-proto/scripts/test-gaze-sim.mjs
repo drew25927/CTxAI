@@ -163,26 +163,35 @@ function filmGenre(profile) {
   }
   return { genre: rank(d.st.current).dominant, current: d.st.current };
 }
+// /interim 은 페이지(app/interim/page.js)와 같은 조건 — 판정은 T.judge 에서, 그 시각까지 채점된 사건만 judge() 에 넣는다.
+// 페이지는 헤드셋 세션이 아니면 합성 관객에게 큐마다 lib/interimProbes 의 탐침을 trigger 하므로(S2·S4 포함) 여기서도 같은 목록을 준다.
 function interimGenre(profile) {
   const s = createHeadPoseSensor({ push: () => {}, mark: () => {} }); const su = createStandUpSensor();
-  const probes = INTERIM_CUES.filter((c) => c.sense).map((c) => ({ t: c.t, name: c.name, azimuth: c.sense.azimuth, dur: c.sense.dur, kind: c.sense.kind }));
-  const sim = createGazeSim(profile, { seed: 1, probes }); const fired = new Set();
-  for (let t = 0; t < IT.judge + 6; t += DT) {
-    for (const c of INTERIM_CUES) if (c.sense && t >= c.t && !fired.has(c.name)) { fired.add(c.name); s.beginEvent(c.name, c.sense.azimuth, c.sense.dur, { kind: c.sense.kind }); }
+  const sim = createGazeSim(profile, { seed: 1, probes: INTERIM_PROBE_LIST }); const fired = new Set();
+  for (let t = 0; t < IT.judge; t += DT) {
+    for (const c of INTERIM_CUES) if (c.sense && t >= c.t && !fired.has(c.name)) { fired.add(c.name); s.beginEvent(c.name, c.sense.azimuth, c.sense.dur, { kind: c.sense.kind, tail: 4 }); }
     const p = sim.step(t, DT); s.update(p.yaw, p.pitch, p.z, DT); su.update(p.y, DT, true);
   }
   const by = Object.fromEntries(s.report().events.map((e) => [e.name, e.feats]));
-  const obs = { S1: by.figureApproach ? gradeS1FromHeadPose(by.figureApproach) : "D", S3: by.poster ? gradeS3FromHeadPose(by.poster) : "C", S5: by.frog ? gradeS5FromHeadPose(by.frog, { stoodUp: su.stoodUp }) : "D" };
-  return { ...judge(obs), obs, stoodUp: su.stoodUp };
+  // 페이지처럼 채점된 신호만 넣는다(없는 신호는 생략 — judge() 가 0점 취급). 세 신호가 다 있어야 정상.
+  const obs = {};
+  if (by.figureApproach) obs.S1 = gradeS1FromHeadPose(by.figureApproach);
+  if (by.poster) obs.S3 = gradeS3FromHeadPose(by.poster);
+  if (by.frog) obs.S5 = gradeS5FromHeadPose(by.frog, { stoodUp: su.stoodUp });
+  return { ...judge(obs), obs, stoodUp: su.stoodUp, feats: by };
 }
 
-test("팀 판정 경로(1배속): 공포형 → 공포, 차분형 → 로맨스 (/film·/interim 모두), 호기심형 → /interim 코미디", () => {
+test("팀 판정 경로(1배속, 판정 시각 T.judge): 공포형 → 공포, 차분형 → 로맨스 (/film·/interim 모두), 호기심형 → /interim 코미디", () => {
   const fF = filmGenre("fearful"), cF = filmGenre("calm");
   assert.equal(fF.genre, "H", `film fearful ${JSON.stringify(fF.current)}`);
   assert.equal(cF.genre, "R", `film calm ${JSON.stringify(cF.current)}`);
   const fI = interimGenre("fearful"), uI = interimGenre("curious"), cI = interimGenre("calm");
-  assert.equal(fI.genre, "H", `interim fearful ${JSON.stringify(fI.obs)}`);
+  for (const [name, r] of [["fearful", fI], ["curious", uI], ["calm", cI]]) {
+    assert.ok(r.obs.S1 && r.obs.S3 && r.obs.S5, `${name}: 판정 시각에 S1·S3·S5 가 모두 채점돼 있어야 한다 ${JSON.stringify(r.obs)}`);
+  }
+  assert.equal(fI.genre, "H", `interim fearful ${JSON.stringify(fI.obs)} ${JSON.stringify(fI.totals)}`);
   assert.equal(fI.obs.S5, "A", "공포형은 개구리에 벌떡(S5:A)");
+  assert.equal(fI.obs.S3, "B", `공포형은 포스터를 오래 못 읽는다(S3:B 힐끗) — lookSec ${fI.feats.poster?.lookSec}`);
   assert.equal(uI.genre, "C", `interim curious ${JSON.stringify(uI.obs)}`);
   assert.equal(cI.genre, "R", `interim calm ${JSON.stringify(cI.obs)}`);
   assert.equal(cI.obs.S1, "A", "차분형은 인물을 지속 관찰(S1:A)");

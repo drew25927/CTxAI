@@ -38,9 +38,19 @@ export const T = {
 // S1(길 건너 판초 인물에 대한 지속적 관심)은 순간 사건이 아니라 0:15~1:55 내내 측정되는
 // 값이라, azimuth는 인물이 걸어오는 방향의 대략치(카페 쪽, -35°)로 근사했다 — 실제로는
 // 인물이 계속 이동하므로 이 고정값은 1차 근사다.
+//
+// S1 관찰 창은 판정(T.judge)보다 먼저 닫혀야 한다. lib/headPoseSense.js 는 dur 가 끝난 뒤 tail(4초, 회복·
+// 재확인 관찰)까지 더 지켜본 다음에야 채점(event:scored)하고, app/interim/page.js 는 그 등급을 200ms 주기로
+// judge() 입력에 병합한다. 예전처럼 dur = T.judge − T.figureStart 로 두면 채점이 1:59 에 나와 1:55 판정에
+// S1 이 한 번도 들어가지 못했다(2026-09-29 발견 — 세션 judge.breakdown 에 S3·S5 만 있었다). 그래서
+// dur = judge − figureStart − tail − 여유. 여유 2초는 배속 6 에서도 병합 주기가 판정 전에 한 번은 돌게 한다(0.33 실초).
+const S1_TAIL_SEC = 4;   // headPoseSense.beginEvent 의 tail 기본값 — page.js 도 4/speed 로 넘긴다
+const S1_MARGIN_SEC = 2; // 채점 → 등급 병합(200ms) → 판정 사이 여유(영화 초)
+export const S1_DUR = T.judge - T.figureStart - S1_TAIL_SEC - S1_MARGIN_SEC; // 94초 → 관찰 종료 0:15+94+4 = 1:53
+export const S1_OBSERVE_END = T.figureStart + S1_DUR + S1_TAIL_SEC;           // 113 — 회귀 테스트가 이 값으로 확인한다
 export const CUES = [
   { t: 0.5, name: "ambience", loop: true },
-  { t: T.figureStart, name: "figureApproach", signal: "S1", sense: { azimuth: -35, dur: T.judge - T.figureStart, kind: "track" } },
+  { t: T.figureStart, name: "figureApproach", signal: "S1", sense: { azimuth: -35, dur: S1_DUR, kind: "track" } },
   { t: T.truckSplash, name: "truckSplash", signal: "S2" },
   { t: T.poster, name: "poster", signal: "S3", sense: { azimuth: 72, dur: 3, kind: "probe" } },
   { t: T.catIn + 3, name: "cat", signal: "S4" },

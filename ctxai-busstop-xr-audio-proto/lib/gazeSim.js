@@ -33,11 +33,16 @@ export const GAZE_PROFILES = Object.freeze({
     orient: { probe: 0.85, startle: 0.85, track: 0.6 },   // 방위의 이 비율만큼 돌린다
     rate: 12,                                             // 정향 속도(1/s)
     maxVel: 500,                                          // 고개 최대 각속도(°/s) — 1차 지연의 첫 프레임 점프를 사람 범위로 자른다
-    hold: { probe: 3.2, startle: 3.2, track: 1.0, behind: 3.2 }, // 그쪽을 보는 시간(s). behind = 뒤쪽(|방위| ≥ BEHIND_DEG) 사건이 우선
+    // 그쪽을 보는 시간(s). behind = 뒤쪽(|방위| ≥ BEHIND_DEG) 사건이 우선. probe 는 3초 미만 — 무서워서 포스터를 오래
+    // 못 읽는다(팀 등급표 S3:B 힐끗). 3.2 로 두면 S3:A(몸 돌려 읽음 = 코미디 3점)가 돼 S5:A 와 동점 → 로맨스로 새던 값.
+    hold: { probe: 2.2, startle: 3.2, track: 1.0, behind: 3.2 },
     retreat: { probe: 0.03, startle: 0.09, track: 0, behind: 0.09 }, // 뒤로 물러남(m)
     standUp: { behind: 0.35 },                            // 보이지 않는 뒤쪽 소리(개구리·비명)에 벌떡(m)
     returnRate: 0.9,                                      // 느린 회복(1/s)
-    glance: { every: [3.5, 5.5], factor: 0.5, hold: 1.2, rate: 10 }, // track 중 "불안한 재확인"
+    // track 중 "불안한 재확인". linger = 센서의 추적 창이 닫힌 뒤에도 이만큼(영화 초) 더 힐끗거린다 — 판초 인물은 1:53 에
+    // 관찰이 끝나도 1:58 까지 화면에 있으므로 "그 사람 어디 갔지" 하고 계속 살핀다. 팀 등급표의 S1:B(반복 확인)는
+    // 사건 종료 1.5초 뒤에 다시 봐야 잡히므로(headPoseSense recheck) 이 여운이 없으면 공포형이 S1:A(지속 관찰=로맨스)로 새어 나간다.
+    glance: { every: [3.5, 5.5], factor: 0.5, hold: 1.2, rate: 10, linger: 8 },
     wander: null,
     restFactor: 0.35,                                     // 옆사람이 앉으면 그쪽을 이만큼만(곁눈질)
     sway: { amp: 2.5, hz: 0.6 },                          // 안절부절
@@ -162,7 +167,8 @@ export function createGazeSim(profile, { seed = 1, probes = [], speed = 1 } = {}
     }
     const ds = dt * sp;                // 영화 시간 증분
     tSim += ds;
-    for (let i = active.length - 1; i >= 0; i--) if (tSim > active[i].until + 1) active.splice(i, 1);
+    const keep = Math.max(1, P.glance?.linger ?? 0); // 추적 사건은 재확인 여운(linger)만큼 더 살려 둔다
+    for (let i = active.length - 1; i >= 0; i--) if (tSim > active[i].until + (active[i].kind === "track" ? keep : 1)) active.splice(i, 1);
 
     const holding = tSim <= holdUntil;
     if (!holding) {
@@ -173,7 +179,7 @@ export function createGazeSim(profile, { seed = 1, probes = [], speed = 1 } = {}
       targetZ = 0;
       if (tSim > standUntil) targetY = SEAT_Y;
       // 공포형의 불안한 재확인 — 추적 사건(인물)이 진행 중이면 몇 초마다 그쪽을 짧게 힐끗
-      const track = P.glance ? active.find((a) => a.kind === "track" && tSim <= a.until) : null;
+      const track = P.glance ? active.find((a) => a.kind === "track" && tSim <= a.until + (P.glance.linger ?? 0)) : null;
       if (track && tSim >= nextGlanceAt) {
         targetYaw = clampDeg(track.azimuth * P.glance.factor);
         rate = P.glance.rate;

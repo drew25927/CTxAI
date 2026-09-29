@@ -50,10 +50,11 @@ function run(profile) {
   const active = [];
   let nextGlanceAt = 3; // 공포형의 "불안한 재확인" 스케줄 — 아래에서 갱신
 
-  // S1(판초 인물)은 dur = T.judge - T.figureStart, tail 기본값 4초라 observeUntil이
-  // T.judge를 넘어선다 — 그 시점까지 돌지 않으면 채점 자체가 안 되고 항상 "D"(관측 실패)로
-  // 빠진다. 넉넉히 tail+여유를 더한다.
-  while (t < T.judge + 6) {
+  // S1(판초 인물)의 관찰 창은 lib/interimTimeline.js 의 S1_DUR(= judge − figureStart − tail 4 − 여유 2)로
+  // 1:53 에 닫힌다 — 페이지(app/interim/page.js)가 1:55 에 judge() 를 부를 때 S1 등급이 들어가도록. 예전에는
+  // dur = judge − figureStart 라 채점이 판정 뒤(1:59)에 나와 페이지에서는 S1 이 늘 빠졌고, 이 시뮬만 +6초를 더
+  // 돌려 그 결함을 가렸다. 지금은 페이지와 같은 시각(T.judge)에서 끊는다.
+  while (t < T.judge) {
     for (const c of CUES) {
       if (c.sense && t >= c.t && !fired.has(c.name)) {
         fired.add(c.name);

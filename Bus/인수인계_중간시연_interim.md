@@ -80,6 +80,13 @@ https://busstop-team.vercel.app/interim?s1=A&s3=A&speed=20
 - `?speed=N` : 재생 속도 배수
 - `?cam=0` : 웹캠 안 켜고 테스트
 - `?mic=0` : 마이크 안 켜고 테스트
+- `?auto=1` : 게이트 화면을 건너뛰고 1.5초 뒤 자동 시작 (헤드리스 관찰·리허설용)
+- `?viewer=fearful|curious|calm` (+ `?seed=N`) : 합성 관객 — 헤드셋 없이도 머리 방향·후퇴·기립을 지어내 센서에 넣는다
+  (`lib/gazeSim.js`, 창작값). 화면에 "합성 관객(시연용)" 배지가 항상 뜨고, 세션 JSON 에 `viewer.synthetic=true` 가 남는다.
+  실제 관객 반응이 아니므로 임계값 보정 근거로 쓰면 안 된다.
+- `?monitor=1` : 좌상단 디렉터 모니터(S1~S5 눈금 위 긴장 추정 x̂ 곡선, 관객 응답 모델 θ̂, 도달가능 트랙)
+- `?speed=N` 으로 배속 관찰할 때 장르 판정을 읽으면 안 된다 — 응시 2초·회복 3/1.5초 같은 센서 임계값은 실제 초 기준이라
+  배속에서는 회복이 전부 "빠름"으로 읽혀 코미디 쪽으로 쏠린다. 배속은 흐름·HUD 확인용, 판정 증거는 1배속.
 
 화면 우측(또는 하단) HUD에 실시간 장르 점수, 드리프트 %, 신호별 등급, 센서 연결 상태가
 전부 표시됩니다.
@@ -91,3 +98,22 @@ https://busstop-team.vercel.app/interim?s1=A&s3=A&speed=20
 `/film`(main 병합됨, `https://busstop-team.vercel.app/film`)은 그대로 살아있는 5분 분량
 "다음 단계" 데모입니다. `/interim`은 그것과 완전히 별개 라우트라서 서로 영향 없습니다.
 두 데모 모두 대시보드(`/todo`)에서 링크로 연결되어 있습니다.
+
+---
+
+## 7. 수정 기록
+
+### 2026-09-29 — S1(판초 인물)이 판정에 한 번도 들어가지 않던 결함
+- **증상**: 어떤 관객이든 1:55 판정의 `judge.breakdown` 에 S1 이 없었다(세션 JSON 에 S3·S5 만 기록). HUD 의 S1 칸은
+  판정 뒤 1:59 에야 채워졌다.
+- **원인**: `lib/interimTimeline.js` 의 S1 큐가 `dur = T.judge − T.figureStart`(100초)였는데, `lib/headPoseSense.js` 는
+  dur 뒤 tail 4초까지 더 지켜본 다음에야 채점한다 → 채점 1:59 > 판정 1:55. `scripts/sim-interim.mjs` 는 이걸 알고
+  +6초를 더 돌려 시뮬에서만 S1 이 나왔다(결함이 가려짐).
+- **수정**: S1 `dur = S1_DUR = judge − figureStart − tail(4) − 여유(2) = 94초` → 채점 1:53. 여유 2초는 페이지의
+  200ms 등급 병합 주기가 배속 6 에서도 판정 전에 한 번은 돌게 한다. `sim-interim.mjs` 도 페이지와 같은 시각(T.judge)에서
+  끊도록 바꿨다. 회귀: `scripts/test-interim.mjs` "S1 — 배속 1·4·6: 판정 시각에 figureApproach 채점이 이미 나와 있다".
+- **남은 한계**: S1:B(반복 확인)는 `headPoseSense` 의 recheck(사건 종료 1.5초 뒤 다시 봄)로만 잡히는데, 94초짜리 추적
+  사건에서는 그 창이 1:50.5~1:53 의 2.5초뿐이다. 그 사이에 우연히 인물을 봤는가에 B/A 가 갈린다(합성 공포형 시드 12개 중
+  2개가 S1:A → R3 로 공포 대신 로맨스). 파일럿 뒤 S1 은 창 안의 "방향 전환 횟수"로 B 를 매기는 편이 안정적이다
+  (`lib/interimGrader.js` 만 고치면 됨, 판정 규칙은 그대로).
+

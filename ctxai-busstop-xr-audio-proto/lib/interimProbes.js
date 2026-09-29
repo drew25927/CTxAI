@@ -10,15 +10,16 @@
 // 도입부 다섯 사건은 중립 탐침이다 — 용량을 바꾸면 그 사건이 만드는 θ̂ 추정이 오염되므로 여기서는
 // 관측만 하고 자극을 바꾸지 않는다(설계 문서 §9).
 
-import { T } from "./interimTimeline.js";
+import { T, S1_DUR } from "./interimTimeline.js";
 
 // 잠정치 — 팀 큐에는 용량(볼륨) 개념이 없어 균일값을 쓴다. /film 큐 볼륨의 중앙값(0.5~0.8) 근사.
 // 응답 모델의 회귀는 log(반응/용량) 이라 균일값이면 이득 g 의 절대 크기만 바뀌고 관객 간 순서는 같다.
 export const INTERIM_DOSE = 0.6;
 
 export const INTERIM_PROBES = Object.freeze({
-  // S1 판초 인물 — 0:15~1:55 내내 추적(track). 방위는 팀 큐와 같은 카페 쪽 -35°(1차 근사).
-  figureApproach: { azimuth: -35, dur: T.judge - T.figureStart, kind: "track", channel: "visual" },
+  // S1 판초 인물 — 0:15 부터 추적(track). 길이는 팀 큐와 같은 S1_DUR(94초, 꼬리 4초 포함 1:53 에 닫힘 — 판정 1:55 전에
+  // 레코드가 확정돼 θ̂·도달가능 트랙이 판정 시각에 완성된다). 방위는 팀 큐와 같은 카페 쪽 -35°(1차 근사).
+  figureApproach: { azimuth: -35, dur: S1_DUR, kind: "track", channel: "visual" },
   // S2 트럭 물보라 — 정면 약간 오른쪽. 물보라 1.4초 + 여운.
   truckSplash: { azimuth: 8, dur: 2.5, kind: "probe", channel: "av" },
   // S3 포스터 — 팀 큐 sense 와 동일.
