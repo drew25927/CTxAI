@@ -37,6 +37,7 @@ import { createHeadPoseSensor } from "@/lib/headPoseSense";
 import { createEngagementSensor } from "@/lib/engagementSense";
 import { fitViewerModel } from "@/lib/viewerModel";
 import { estimateTensionSeries } from "@/lib/tensionEstimate";
+import DirectorMonitor from "@/components/DirectorMonitor";
 import { curveAt } from "@/lib/tensionCurve";
 import { runController, microDecision } from "@/lib/slotController";
 import { selectTrack } from "@/lib/trackSelect";
@@ -70,25 +71,6 @@ function fingerprintText(theta) {
   const hab = theta.rho > 0.25 ? "반복될수록 반응이 눈에 띄게 줄었습니다" : "반복돼도 반응이 유지됐습니다";
   const gain = theta.g > 1 ? "전반적으로 자극에 크게 흔들렸고, " : theta.g < 0.45 ? "전반적으로 차분했고, " : "";
   return `${gain}${lat} ${rec} ${hab}`;
-}
-
-// 디렉터 모니터의 작은 그래프 — 작가 목표 곡선(점선)과 관객 긴장 추정 x̂(실선), 현재 시각 표시.
-function MonitorChart({ series = [], track = "H", tNow = 0, ceiling = 1 }) {
-  const W = 292, H = 60, PAD = 4;
-  const tMax = Math.max(180, tNow, series.length ? series[series.length - 1].t : 0);
-  const x = (t) => PAD + (t / tMax) * (W - PAD * 2);
-  const y = (v) => H - PAD - v * (H - PAD * 2);
-  const target = [];
-  for (let t = 0; t <= tMax; t += 6) target.push(`${t === 0 ? "M" : "L"}${x(t).toFixed(1)},${y(curveAt(track, t).target).toFixed(1)}`);
-  const xhat = series.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.tension).toFixed(1)}`).join(" ");
-  return (
-    <svg width={W} height={H} style={{ display: "block", background: "rgba(255,255,255,0.04)", borderRadius: 6 }}>
-      <line x1={PAD} x2={W - PAD} y1={y(ceiling)} y2={y(ceiling)} stroke="rgba(224,168,106,0.4)" strokeDasharray="2 3" />
-      <path d={target.join(" ")} fill="none" stroke="rgba(255,255,255,0.45)" strokeDasharray="4 3" strokeWidth="1.5" />
-      {xhat && <path d={xhat} fill="none" stroke="#7fd1ff" strokeWidth="2" />}
-      <line x1={x(tNow)} x2={x(tNow)} y1={PAD} y2={H - PAD} stroke="rgba(255,255,255,0.3)" />
-    </svg>
-  );
 }
 
 // URL 옵션은 마운트 뒤에 읽는다 — 서버 렌더와 첫 클라이언트 렌더가 같아야 하이드레이션 오류가 없다.
@@ -351,7 +333,8 @@ export default function FilmPage() {
         const track = (q.track || film.dominant || snap.dominant || "H").toUpperCase();
         if (eng) {
           const theta = fitViewerModel(eng.stimuli);
-          const series = estimateTensionSeries(eng);
+          // 센서 시각은 실제 경과 초, 모니터의 목표 곡선·현재 시각은 영화 시간 — 배속이면 환산해 겹친다
+          const series = estimateTensionSeries(eng).map((p) => (speed === 1 ? p : { ...p, t: Math.round(p.t * speed * 10) / 10 }));
           const last = series[series.length - 1];
           const tgt = curveAt(track, film.t);
           const rec = runController(track, theta);
@@ -805,25 +788,7 @@ export default function FilmPage() {
       )}
 
       {monitor && phase !== "gate" && phase !== "end" && (
-        <div style={{ position: "fixed", top: 12, left: 12, zIndex: 40, width: 320, padding: "12px 14px", borderRadius: 10, background: "rgba(12,14,20,0.82)", color: "#e6e9f0", font: "12px/1.5 ui-monospace, monospace", border: "1px solid rgba(255,255,255,0.12)" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-            <b>디렉터 모니터</b><span style={{ opacity: 0.6 }}>트랙 {monitor.track} · 자극 {monitor.nStim}</span>
-          </div>
-          <MonitorChart series={monitor.series} track={monitor.track} tNow={snap?.t ?? 0} ceiling={monitor.ceiling} />
-          <div style={{ display: "flex", justifyContent: "space-between", margin: "6px 0" }}>
-            <span>목표 <b>{monitor.target?.toFixed(2)}</b></span>
-            <span>추정 x̂ <b style={{ color: monitor.xhat > monitor.target + monitor.tol ? "#e0a86a" : monitor.xhat < monitor.target - monitor.tol ? "#8fae95" : "#cfe" }}>{monitor.xhat?.toFixed(2)}</b></span>
-          </div>
-          <div style={{ opacity: 0.85 }}>관객모델 θ̂: 이득 {monitor.theta.g} · 지연 {monitor.theta.L}s · 회복 {monitor.theta.tau}s · 습관화 {monitor.theta.rho} <span style={{ opacity: 0.5 }}>(확신 {Math.round(monitor.theta.confidence * 100)}%)</span></div>
-          {monitor.sel && <div style={{ opacity: 0.85 }}>도달가능 트랙: R {monitor.sel.reach.R} · H {monitor.sel.reach.H} · C {monitor.sel.reach.C} → <b>{monitor.sel.track}</b></div>}
-          <div style={{ opacity: 0.85 }}>실제 제어: {monitor.control ? <b style={{ color: "#7fd1ff" }}>ON · 미세 자극 {monitor.micro}/3</b> : <span style={{ opacity: 0.6 }}>OFF (advisory)</span>}</div>
-          {monitor.next && (
-            <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.1)" }}>
-              다음 <b>{EVENT_LABEL[monitor.next.slotId] || monitor.next.slotId}</b> → <b>{monitor.next.variantId}</b> (용량 {monitor.next.dose})
-              <div style={{ opacity: 0.7, fontSize: 11 }}>{monitor.next.reason}</div>
-            </div>
-          )}
-        </div>
+        <DirectorMonitor monitor={monitor} tNow={snap?.t ?? 0} tMax={180} showTarget eventLabel={EVENT_LABEL} />
       )}
 
       {phase === "gate" && (

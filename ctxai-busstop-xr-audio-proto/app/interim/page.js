@@ -39,6 +39,14 @@
 //   ?speed=3        영화 시간 배속 (데모용)
 //   ?cam=0          웹캠 채널 끄기
 //   ?mic=0          마이크 채널 끄기 (둘 다 끄면 S2·S4가 항상 "관측 실패"로 남는다)
+//   ?auto=1         게이트 없이 자동 시작 (헤드리스 관찰·리허설용)
+//   ?monitor=1      디렉터 모니터 — 관객 응답 모델 θ̂·긴장 추정 x̂·도달가능 트랙 (components/DirectorMonitor)
+//
+// 관측 축(궤적 추종 엔진, 팀 판정과 나란히) — 위 5신호 판정(judge·drift)은 그대로 두고, 같은
+// 카메라 자세 스트림을 lib/engagementSense.js 에도 먹여 다섯 사건을 "탐침"으로 기록한다. 그 레코드로
+// lib/viewerModel.js 가 관객별 반응 동역학 θ̂(이득·지연·회복·습관화)를, lib/tensionEstimate.js 가
+// 긴장 추정 x̂(t) 를 낸다. 큐 → 탐침 메타는 lib/interimProbes.js. 도입부 사건은 중립 탐침이므로
+// 판정 전에는 자극을 바꾸지 않는다. 종료 시 세션 전체를 POST /api/session 에 남긴다(route:"interim").
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
@@ -57,6 +65,13 @@ import {
   gradeS1FromHeadPose, gradeS3FromHeadPose, gradeS5FromHeadPose,
   gradeS2FromWebcam, gradeS4FromWebcam,
 } from "@/lib/interimGrader";
+import { createEngagementSensor } from "@/lib/engagementSense";
+import { fitViewerModel } from "@/lib/viewerModel";
+import { estimateTensionSeries } from "@/lib/tensionEstimate";
+import { selectTrack } from "@/lib/trackSelect";
+import { probeFor, probeMarks, interimTrack } from "@/lib/interimProbes";
+import DirectorMonitor from "@/components/DirectorMonitor";
+import { T } from "@/lib/interimTimeline";
 import s from "../story/story.module.css";
 import f from "../film/film.module.css";
 
@@ -78,6 +93,8 @@ const SIGNALS = ["S1", "S2", "S3", "S4", "S5"];
 // 신호 하나를 재는 웹캠 관찰 창 길이(ms, 실제 시간 — speed 배속과 무관하게 카메라·모델은
 // 실시간으로 돈다). behaviorSense.observe()는 첫 1.2초를 기준선 잡기에 쓰므로 그보다는 길게.
 const WEBCAM_GRADE_MS = { S2: 2500, S4: 4500 };
+const PROBE_MARKS = probeMarks();           // 디렉터 모니터 사건 눈금 S1~S5
+const TRAJ_SAMPLE_SEC = 0.5;                // 세션 저장용 드리프트 궤적 표본 간격(영화 시간)
 
 function useQuery() {
   const [q, setQ] = useState({});
@@ -89,12 +106,13 @@ function useQuery() {
 // 드리프트를 tick하고, 판정 시점에 judge()를 부른다. 렌더는 순수하게 actorsRef/driftRef를
 // 프레임마다 갱신하는 것뿐이라 React 상태로 만들지 않는다 — 화면 전환이 필요한 지점만
 // onCue로 페이지에 알린다.
-function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, observationsRef, onCue, speed = 1 }) {
+function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, engagementRef, trajRef, observationsRef, onCue, speed = 1 }) {
   const session = useXR((xr) => xr.session);
   const euler = useMemo(() => new Euler(), []);
   const tRef = useRef(0);
   const cueIdxRef = useRef(0);
   const judgedRef = useRef(false);
+  const lastSampleRef = useRef(-Infinity);
 
   useFrame((state, dt) => {
     const clamped = Math.min(dt, 0.1);
@@ -107,6 +125,9 @@ function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, observati
     const z = session ? state.camera.position.z : 0;
     sensorRef.current?.update(yaw, pitch, z, clamped);
     standUpRef.current?.update(state.camera.position.y, clamped, !!session);
+    // 같은 자세 스트림을 집중도·탐침 센서에도 — 관객 응답 모델 θ̂·긴장 추정 x̂ 의 원천(film/page.js 와 동일)
+    const cp = state.camera.position;
+    engagementRef.current?.update({ yaw, pitch, roll: MathUtils.radToDeg(euler.z), x: session ? cp.x : 0, y: session ? cp.y : 0, z }, clamped);
 
     tRef.current += clamped * speed;
     const t = tRef.current;
@@ -115,6 +136,9 @@ function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, observati
       const cue = CUES[cueIdxRef.current++];
       onCue?.(cue, t);
       if (cue.sense) sensorRef.current?.beginEvent(cue.name, cue.sense.azimuth, cue.sense.dur / speed, { kind: cue.sense.kind, tail: 4 / speed });
+      // 다섯 사건 모두를 탐침으로 기록 — S2·S4(웹캠 담당)도 방위 보조 메타로 반응 크기·지연을 잰다
+      const probe = probeFor(cue.name, speed);
+      if (probe) engagementRef.current?.beginStimulus(probe);
       if (cue.signal && !judgedRef.current) {
         // 부분 관측치로 "지금까지의 선두 장르"를 뽑아 드리프트에 알린다 (§4 "선두가
         // 바뀌면 방향도 바뀐다"). 최종 판정과 같은 엔진을 재사용 — 별도 로직 없음.
@@ -131,6 +155,13 @@ function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, observati
 
     driftRef.current.tick(dt);
     actorsRef.current = evalActors(t, { dominant: driftRef.current.st.finalGenre });
+
+    // 세션 저장용 궤적 — 드리프트 배합을 0.5초(영화 시간)마다 표본화 (/film 의 trajectory 와 같은 모양)
+    if (trajRef && t - lastSampleRef.current >= TRAJ_SAMPLE_SEC) {
+      lastSampleRef.current = t;
+      const st = driftRef.current.st;
+      trajRef.current.push({ t: Math.round(t * 10) / 10, R: r3(st.current.R), H: r3(st.current.H), C: r3(st.current.C), settled: r3(st.settled), phase: st.phase });
+    }
   });
 
   return null;
@@ -163,9 +194,21 @@ export default function InterimPage() {
   const liveGradesRef = useRef({}); // 실제 센서가 매긴 등급
   const observationsRef = useRef({}); // judge()에 실제로 들어가는 값 — 매 프레임 병합
   const rawRef = useRef({});        // 등급 뒤에 숨은 원시 점수 — 실측 보정 때 HUD로 보려고
+  const engagementRef = useRef(null); // 집중도·탐침 센서(lib/engagementSense) — θ̂·x̂ 의 원천
+  const trajRef = useRef([]);         // 드리프트 배합 궤적(세션 저장용)
+  const eventsRef = useRef([]);       // 큐·탐침·판정 이벤트 로그(세션 저장용)
+  const judgeRef = useRef(null);      // 최종 판정 결과(judge())
+  const startedAtRef = useRef(null);
+  const [monitor, setMonitor] = useState(null); // 디렉터 모니터(?monitor=1)
+  const [savedId, setSavedId] = useState(null);
 
   if (!driftRef.current) driftRef.current = createInterimDrift();
   if (!standUpRef.current) standUpRef.current = createStandUpSensor();
+  if (!engagementRef.current) {
+    engagementRef.current = createEngagementSensor({
+      mark: (name, detail) => { eventsRef.current.push({ t: elapsedSec(startedAtRef.current), name, detail }); },
+    });
+  }
   if (!sensorRef.current) {
     sensorRef.current = createHeadPoseSensor({
       push: () => {}, // 연속 블렌딩(lib/directionState.js)은 안 쓴다 — 드리프트는 interimDrift가 따로 맡는다
@@ -194,6 +237,17 @@ export default function InterimPage() {
     debugObsRef.current = obs;
   }, [q]);
 
+  const speed = Number(q.speed) || 1;
+  const useCam = q.cam !== "0";
+  const useMic = q.mic !== "0";
+  const monitorOn = q.monitor === "1";
+  // ?auto=1 — 마운트 직후 자동 시작 (관찰·리허설용. 웹캠·마이크 권한 프롬프트는 브라우저 정책을 따른다)
+  const autoStart = q.auto === "1";
+  useEffect(() => {
+    if (autoStart && phase === "gate") { const id = setTimeout(() => start(), 1500); return () => clearTimeout(id); }
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [autoStart]);
+
   // 매 프레임 판정 엔진에 들어갈 값 = 디버그 강제값(있으면) 우선, 없으면 실제 센서 등급.
   useEffect(() => {
     const id = setInterval(() => {
@@ -205,24 +259,40 @@ export default function InterimPage() {
       observationsRef.current = merged;
       const d = driftRef.current;
       if (d) {
+        // 관측 축 — 탐침 레코드에서 θ̂·x̂ 를 다시 계산한다(가벼운 data() 접근자, 원시 CSV 는 만들지 않는다)
+        let engine = null;
+        const eng = engagementRef.current?.data?.();
+        if (eng) {
+          const theta = fitViewerModel(eng.stimuli);
+          // 센서 시각은 실제 경과 초 — 모니터 눈금(영화 시간)과 맞추려고 배속을 곱한다
+          const series = estimateTensionSeries(eng).map((p) => (speed === 1 ? p : { ...p, t: r3(p.t * speed) }));
+          const last = series[series.length - 1];
+          const track = interimTrack(d.st);
+          const sel = theta.nResp >= 1 ? selectTrack(theta, { genrePrior: d.st.current, priorWeight: 0.3 }) : null;
+          engine = { theta, xhat: last?.tension ?? null, series, nStim: eng.stimuli.length, active: engagementRef.current.current().active, sel, track };
+        }
         setHud({
           current: { ...d.st.current }, settled: d.st.settled, elapsed: d.st.elapsed,
           grades: merged,
           raw: { ...rawRef.current },
           stoodUp: !!standUpRef.current?.stoodUp,
           debugSignals: new Set(Object.keys(debugObsRef.current)),
+          engine,
         });
+        if (monitorOn && engine) {
+          setMonitor({
+            track: engine.track, theta: engine.theta, xhat: engine.xhat, series: engine.series, nStim: engine.nStim, sel: engine.sel,
+            note: d.st.finalGenre ? `팀 판정 ${GENRE_META[d.st.finalGenre].label} · 드리프트 ${Math.round(d.st.settled * 100)}%` : `판정 전 · 선두 ${d.st.leadingGenre ? GENRE_META[d.st.leadingGenre].label : "-"} · 드리프트 ${Math.round(d.st.settled * 100)}%`,
+          });
+        }
       }
     }, 200);
     return () => clearInterval(id);
-  }, []);
+  }, [monitorOn, speed]);
 
-  const speed = Number(q.speed) || 1;
-  const useCam = q.cam !== "0";
-  const useMic = q.mic !== "0";
-
-  function onCue(cue) {
-    if (cue.name === "judged") { setGenre(cue.result.genre); return; }
+  function onCue(cue, t) {
+    eventsRef.current.push({ t: Math.round((t ?? 0) * 10) / 10, name: "cue", detail: cue.name === "judged" ? { name: "judged", result: cue.result } : cue.name });
+    if (cue.name === "judged") { judgeRef.current = cue.result; setGenre(cue.result.genre); return; }
     if (cue.name === "transition") setPhase("running");
     if (cue.name === "greeting") setPhase("greeting");
     if (cue.name === "end") setPhase("end");
@@ -264,6 +334,7 @@ export default function InterimPage() {
   }
 
   async function start() {
+    startedAtRef.current = performance.now();
     setPhase("running");
     if (useCam) {
       try {
@@ -288,6 +359,47 @@ export default function InterimPage() {
     micStreamRef.current?.getTracks().forEach((t) => t.stop());
   }, []);
 
+  // 종료 시 자동 저장 — /film 과 같은 data/sessions/ (gitignore). 팀 판정(grades·judge)과 우리 관측 축
+  // (engagement·control.theta)을 한 파일에 나란히 남겨 /film/compare 가 두 관객을 비교할 수 있게 한다.
+  function sessionData() {
+    const d = driftRef.current;
+    if (!d) return null;
+    let control = null;
+    try {
+      const eng = engagementRef.current?.data?.();
+      if (eng && eng.stimuli.length) {
+        const theta = fitViewerModel(eng.stimuli);
+        const sel = theta.nResp >= 1 ? selectTrack(theta, { genrePrior: d.st.current, priorWeight: 0.3 }) : null;
+        control = { track: interimTrack(d.st), theta, sel, tension: estimateTensionSeries(eng) };
+      }
+    } catch { /* 로그 실패는 무시 */ }
+    return {
+      route: "interim",
+      exportedAt: new Date().toISOString(),
+      dominant: d.st.finalGenre,
+      speed,
+      final: { current: { ...d.st.current }, settled: d.st.settled, elapsed: d.st.elapsed, phase: d.st.phase, dominant: d.st.finalGenre },
+      trajectory: trajRef.current,
+      events: eventsRef.current,
+      grades: { ...observationsRef.current },
+      raw: { ...rawRef.current },
+      debugSignals: Object.keys(debugObsRef.current),
+      judge: judgeRef.current,
+      sensors: { cam: camStatus, mic: micStatus, xr: xrActive, stoodUp: !!standUpRef.current?.stoodUp },
+      headPose: sensorRef.current?.report?.(),
+      engagement: engagementRef.current?.report?.(),
+      control,
+    };
+  }
+  useEffect(() => {
+    if (phase !== "end") return;
+    const data = sessionData();
+    if (!data) return;
+    fetch("/api/session", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) })
+      .then((r) => r.json()).then((j) => { if (j?.ok) setSavedId(j.id); }).catch(() => { /* 로컬 저장 실패는 체험에 영향 없음 */ });
+    /* eslint-disable-next-line react-hooks/exhaustive-deps */
+  }, [phase]);
+
   async function enterVr() {
     try { await xrStore.enterVR(); } catch { setXrError("VR 진입에 실패했습니다 — 헤드셋 연결과 브라우저의 WebXR 지원을 확인해 주세요."); }
   }
@@ -308,7 +420,7 @@ export default function InterimPage() {
             <ReactiveStage actorsRef={actorsRef} directionRef={driftRef} dominant={genre} reflect={!xrActive} />
             <XRProbe onChange={setXrActive} />
             {phase !== "gate" && (
-              <InterimDirector actorsRef={actorsRef} driftRef={driftRef} sensorRef={sensorRef} standUpRef={standUpRef} observationsRef={observationsRef} onCue={onCue} speed={speed} />
+              <InterimDirector actorsRef={actorsRef} driftRef={driftRef} sensorRef={sensorRef} standUpRef={standUpRef} engagementRef={engagementRef} trajRef={trajRef} observationsRef={observationsRef} onCue={onCue} speed={speed} />
             )}
           </XR>
           <OrbitControls target={[0, 1.15, 0.34]} enableZoom={false} enablePan={false} enableDamping dampingFactor={0.08} rotateSpeed={-0.35} />
@@ -378,7 +490,24 @@ export default function InterimPage() {
           <div className={f.hudMeta} style={{ opacity: 0.6 }}>
             미연결 — 외부 몸 카메라 (S2·S4는 얼굴 웹캠으로 근사 중)
           </div>
+          {hud.engine && (
+            <>
+              {/* 관측 축(궤적 추종 엔진) — 팀 판정과 나란히. hudMeta 는 2열 격자라 라벨/값 쌍으로 쓴다 */}
+              <div className={f.hudMeta} style={{ marginTop: 8, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.12)" }}>
+                <span>관객모델 θ̂</span><b>이득 {hud.engine.theta.g} · 지연 {hud.engine.theta.L}s</b>
+                <span style={{ opacity: 0.7 }}>확신 {Math.round(hud.engine.theta.confidence * 100)}% · 응답 {hud.engine.theta.nResp}/{hud.engine.theta.n}</span><b>회복 {hud.engine.theta.tau}s · 습관화 {hud.engine.theta.rho}</b>
+              </div>
+              <div className={f.hudMeta} style={{ marginTop: 2 }}>
+                <span>자극 · 긴장 x̂</span><b>자극 {hud.engine.nStim}{hud.engine.active ? `+${hud.engine.active}` : ""} · x̂ {hud.engine.xhat == null ? "-" : hud.engine.xhat.toFixed(2)}</b>
+                {hud.engine.sel && <><span>도달가능 트랙</span><b>{hud.engine.sel.track} <span style={{ opacity: 0.6, fontWeight: 400 }}>(R {hud.engine.sel.reach.R} · H {hud.engine.sel.reach.H} · C {hud.engine.sel.reach.C})</span></b></>}
+              </div>
+            </>
+          )}
         </div>
+      )}
+
+      {monitorOn && monitor && phase !== "gate" && phase !== "end" && (
+        <DirectorMonitor monitor={monitor} tNow={(hud?.elapsed ?? 0) * speed} tMax={T.end} showTarget={false} marks={PROBE_MARKS} title="디렉터 모니터 · 중간시연" />
       )}
 
       {phase === "greeting" && genre && (
@@ -394,7 +523,7 @@ export default function InterimPage() {
           <div className={s.introCard}>
             <p className={s.introEyebrow}>정류장 · 중간시연</p>
             <h1 className={s.introTitle}>{genre ? GENRE_META[genre].label : "-"}</h1>
-            <p className={s.introSub}>체험이 끝났습니다.</p>
+            <p className={s.introSub}>체험이 끝났습니다.{savedId ? <><br /><span style={{ opacity: 0.6, fontSize: "0.85em" }}>세션 저장: {savedId}</span></> : null}</p>
             <div className={s.choices}>
               <button className={s.choiceBtn} onClick={() => window.location.reload()}>다시 앉기 ↺</button>
             </div>
@@ -404,6 +533,9 @@ export default function InterimPage() {
     </div>
   );
 }
+
+const r3 = (x) => Math.round(x * 1000) / 1000;
+function elapsedSec(startedAt) { return startedAt == null ? 0 : Math.round((performance.now() - startedAt) / 100) / 10; }
 
 function mmss(sec) {
   const s2 = Math.max(0, Math.floor(sec));

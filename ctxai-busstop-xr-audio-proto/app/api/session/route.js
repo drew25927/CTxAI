@@ -4,7 +4,7 @@
 // JSON이 자동으로 쌓여야 한다. 관객이 종료 카드에서 내려받기를 누르는 데 의존하지 않는다.
 // 저장소는 Supabase가 아니라 프로젝트 안 data/sessions/ (gitignore). 전시 PC 로컬 실행 전제.
 //
-//   POST /api/session  { ...exportSession() 결과, selfReport?: "R"|"H"|"C" }
+//   POST /api/session  { ...exportSession() 결과, selfReport?: "R"|"H"|"C", route?: "interim" }
 //   GET  /api/session  → 저장된 파일 목록과 요약(마지막 배합·앉은 인물·자기보고)
 
 import fs from "node:fs/promises";
@@ -22,7 +22,9 @@ export async function POST(req) {
 
   await fs.mkdir(DIR, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const id = `${stamp}_${(body.dominant || "x")}`;
+  // 라우트가 있으면 이름에 넣는다 — /interim 세션과 /film 세션을 디렉터리에서 바로 가를 수 있게 (film 은 route 를 안 보내 이름이 그대로다)
+  const route = typeof body.route === "string" && /^[a-z]+$/.test(body.route) ? `${body.route}_` : "";
+  const id = `${stamp}_${route}${(body.dominant || "x")}`;
   const file = path.join(DIR, `${id}.json`);
   await fs.writeFile(file, JSON.stringify({ id, savedAt: new Date().toISOString(), ...body }, null, 2));
   return Response.json({ ok: true, id });
