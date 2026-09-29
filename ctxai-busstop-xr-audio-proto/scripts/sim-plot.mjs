@@ -4,7 +4,8 @@
 //   node scripts/sim-plot.mjs [outDir] [--cloud N] [--stats N] [--b55 session.json ...] [--no-png] [--scale 2]
 //
 // 산출물(outDir 기본 data/sim/):
-//   sim-onoff.{svg,png}            트랙 H/R/C × (OFF · ON /film 현재 · ON 설계 전체) — 관객 3유형 + 무작위 N명
+//   sim-onoff.{svg,png}            트랙 H/R/C × (OFF · ON 슬롯 고정(B78 이전) · ON 설계 전체 = /film 현재) — 관객 3유형 + 무작위 N명
+//                                  + 수치 요약에 현실 조건(B87: 결정 때 닫힌 레코드만 · DECIDE_AT · /film 탐침 용량) 행
 //   sim-b77-continuous.{svg,png}   연속 채널의 되먹임(B77) — 참 효과 가정 × x̂ 모델 항 유무
 //   sim-b75-two-hands.{svg,png}    미세 자극 vs 연속 손의 충돌(B75) — 그대로 vs 자극 뒤 hold
 //   sim-b55-theta-scale.{svg,png}  (--b55) 실측 세션의 θ̂ 회귀에서 track 레코드 척도 차이(B55)
@@ -81,8 +82,8 @@ function drawTension(svg, { x, y, w, h, hu, xd, title, run0, cloud = [], arch = 
 function figOnOff() {
   const MODES = [
     { key: "off", title: "제어 OFF — 고정 연출(모든 슬롯 가운데 변형, 판정 뒤 자극 없음)" },
-    { key: "film", title: "제어 ON · /film 현재 — 중립 탐침 5개, 판정 뒤 미세 자극(≤3회) + 연속 채널" },
-    { key: "full", title: "제어 ON · 설계 전체 — 탐침 3개 뒤 슬롯 변형을 θ̂ 로 선택 + 판정 뒤 두 손" },
+    { key: "film", title: "제어 ON · 슬롯 고정(B78 이전 /film) — 중립 탐침 5개, 판정 뒤 미세 자극(≤3회) + 연속 채널" },
+    { key: "full", title: "제어 ON · 설계 전체 = /film 현재 — 탐침 3개 뒤 슬롯 변형을 θ̂ 로 선택 + 판정 뒤 두 손" },
   ];
   const W = 1860, PW = 600, PH = 300, UH = 74, ROW = PH + UH + 76, TOP = 92;
   const svg = new Svg(W, TOP + 3 * ROW + 10);
@@ -108,6 +109,13 @@ function figOnOff() {
       const runs = cloudRuns(track, m.key, N_STATS);
       stat[m.key] = { peaks: summarizeAtPeaks(runs), scene: summarize(runs, { t0: SIM_PARAMS.VERDICT_T, t1: SIM_PARAMS.SCENE_END }), all: summarize(runs, { t0: 0, t1: SIM_PARAMS.SCENE_END }), microAvg: runs.reduce((a, x) => a + x.micro.length, 0) / runs.length, uEndAvg: runs.reduce((a, x) => a + x.u[Math.round(SIM_PARAMS.SCENE_END / SIM_PARAMS.DT)], 0) / runs.length };
     }
+    // 현실 조건(B87) — OFF 도 같은 탐침 용량으로 돌려 짝을 맞춘다. 그림에는 그리지 않고 수치만(아래 full 칸 주석 · 요약).
+    const real = {};
+    for (const k of ["off", "full"]) {
+      const runs = cloudRuns(track, k, N_STATS, { realistic: true });
+      real[k] = { peaks: summarizeAtPeaks(runs), scene: summarize(runs, { t0: SIM_PARAMS.VERDICT_T, t1: SIM_PARAMS.SCENE_END }), nFit: k === "full" ? runs[0].plan.filter((p) => p.nFit != null).map((p) => `${SLOT_LABEL[p.slotId]} ${p.nFit}개`).join(" · ") : null };
+    }
+    stat.realistic = real;
     summary.onoff[track] = stat;
     say(`-- 트랙 ${track}(${name})`);
     for (const m of MODES) {
@@ -115,6 +123,10 @@ function figOnOff() {
       const d = m.key === "off" ? "" : ` | OFF 대비 봉우리 std ${pct(s.peaks.meanStd, o.peaks.meanStd)} · RMSE ${pct(s.peaks.rmse, o.peaks.rmse)} / 장면 RMSE ${pct(s.scene.rmse, o.scene.rmse)}`;
       say(`   ${m.key.padEnd(4)} 봉우리 std ${s.peaks.meanStd.toFixed(3)} · RMSE ${s.peaks.rmse.toFixed(3)} | 장면 std ${s.scene.meanStd.toFixed(3)} · RMSE ${s.scene.rmse.toFixed(3)} | 전구간 RMSE ${s.all.rmse.toFixed(3)} | 미세 자극 ${s.microAvg.toFixed(2)}회 · u@2:30 ${s.uEndAvg.toFixed(2)}${d}`);
     }
+    const ro = stat.realistic.off, rf = stat.realistic.full;
+    say(`   현실 조건(B87 · 결정 때 닫힌 레코드만: ${rf.nFit} · 탐침 용량 /film 큐 볼륨)`);
+    say(`   off·현실  봉우리 std ${ro.peaks.meanStd.toFixed(3)} · RMSE ${ro.peaks.rmse.toFixed(3)} | 장면 RMSE ${ro.scene.rmse.toFixed(3)}`);
+    say(`   full·현실 봉우리 std ${rf.peaks.meanStd.toFixed(3)} · RMSE ${rf.peaks.rmse.toFixed(3)} | 장면 RMSE ${rf.scene.rmse.toFixed(3)} | OFF·현실 대비 봉우리 std ${pct(rf.peaks.meanStd, ro.peaks.meanStd)} · RMSE ${pct(rf.peaks.rmse, ro.peaks.rmse)} / 장면 RMSE ${pct(rf.scene.rmse, ro.scene.rmse)}`);
     for (let c = 0; c < MODES.length; c++) {
       const m = MODES[c];
       const cloud = cloudRuns(track, m.key, N_CLOUD), arch = archRuns(track, m.key);
@@ -123,7 +135,11 @@ function figOnOff() {
         `슬롯 봉우리: 관객 간 std ${s.peaks.meanStd.toFixed(3)} · 목표 RMSE ${s.peaks.rmse.toFixed(3)}${m.key === "off" ? "" : ` (OFF 대비 ${pct(s.peaks.meanStd, o.peaks.meanStd)} · ${pct(s.peaks.rmse, o.peaks.rmse)})`}`,
         `장면 1:08~2:30: 목표 RMSE ${s.scene.rmse.toFixed(3)}${m.key === "off" ? "" : ` (${pct(s.scene.rmse, o.scene.rmse)})`} · 미세 자극 평균 ${s.microAvg.toFixed(1)}회 · u@2:30 평균 ${s.uEndAvg.toFixed(2)}`,
       ];
-      if (m.key === "full") note.push(`frog/cat 변형: 민감형 ${arch.sensitive.plan.slice(3).map((p) => p.variantId).join("·")} / 둔감형 ${arch.blunt.plan.slice(3).map((p) => p.variantId).join("·")}`);
+      if (m.key === "full") {
+        note.push(`frog/cat 변형: 민감형 ${arch.sensitive.plan.slice(3).map((p) => p.variantId).join("·")} / 둔감형 ${arch.blunt.plan.slice(3).map((p) => p.variantId).join("·")} · 위 수치는 이상 조건(결정 때 앞 탐침 응답 전부)`);
+        const ro = stat.realistic.off, rf = stat.realistic.full;
+        note.push(`현실 조건(결정 때 닫힌 레코드 ${rf.nFit} · /film 탐침 용량, OFF·현실 대비): 봉우리 std ${pct(rf.peaks.meanStd, ro.peaks.meanStd)} · RMSE ${pct(rf.peaks.rmse, ro.peaks.rmse)}`);
+      }
       drawTension(svg, { x: 16 + c * (PW + 16), y: TOP + r * ROW, w: PW, h: PH, hu: UH, xd, xTicks, title: `${track} ${name} · ${m.title}`, run0: arch.typical, cloud, arch, note });
     }
   }
@@ -145,14 +161,14 @@ function figB77() {
   const W = 1560, PW = 750, PH = 300, UH = 74, ROW = PH + UH + 86, TOP = 96;
   const svg = new Svg(W, TOP + 2 * ROW + 6);
   svg.text(20, 30, "B77 — 연속 채널(침묵·BGM·가로등·안개·거리·시선)은 x̂ 에 되먹임되지 않는다: 참 효과 가정 × x̂ 모델 항 유무", { size: 20, weight: "bold" });
-  svg.text(20, 52, "트랙 H(공포) · /film 현재 모드(중립 탐침 5 + 판정 뒤 미세 자극·연속 채널) · 실선 = 참 긴장 x, 점선 = 추정 x̂ · 1배속 실측(B11c)에서 u 는 2:14 에 +1.0 으로 포화했고 x̂ 은 0.17 에 머물렀다", { size: 11.5, color: "#444" });
+  svg.text(20, 52, "트랙 H(공포) · 설계 전체 = /film 현재 모드(탐침 3 뒤 슬롯 변형 + 판정 뒤 미세 자극·연속 채널) · 실선 = 참 긴장 x, 점선 = 추정 x̂ · 1배속 실측(B11c)에서 u 는 2:14 에 +1.0 으로 포화했고 x̂ 은 0.17 에 머물렀다", { size: 11.5, color: "#444" });
   svg.text(20, 70, "결론용 관찰 — 장면(1:08~2:30)의 작가 목표 0.62~0.85 는 이산 자극(≤3회, 용량 ≤0.6)만으로는 어느 관객도 못 닿는다. 연속 채널이 긴장을 실제로 올린다면(가정 B) (1) 은 민감형을 상한 근처까지 밀고, (2) 는 u 를 덜 포화시킨다. 어느 가정이 맞는지는 파일럿이 정한다.", { size: 11.5, color: "#444" });
   legend(svg, 20, 90, [{ label: "민감형 x(실선) / x̂(점선)", color: COLORS.sensitive }, { label: "둔감형 x / x̂", color: COLORS.blunt }, { label: "작가 목표 ±tol", color: COLORS.band, kind: "band" }, { label: "상한", color: COLORS.ceiling, dash: "4 3", width: 1 }, { label: "미세 자극", color: "#555", kind: "tri" }]);
   const xd = [60, SIM_PARAMS.T_END], xTicks = [60, 80, 100, 120, 140, 160, 180];
-  say("== 그림 2 sim-b77-continuous — 트랙 H · film 모드 · 민감형/둔감형 (t=2:30 값)");
+  say("== 그림 2 sim-b77-continuous — 트랙 H · full 모드(= /film 현재) · 민감형/둔감형 (t=2:30 값)");
   for (let r = 0; r < ROWS.length; r++) for (let c = 0; c < COLS.length; c++) {
     const opts = { contTruth: ROWS[r].truth, contModel: COLS[c].model };
-    const runs = { sensitive: simulateViewer({ track: "H", theta: ARCHETYPES.sensitive, mode: "film", opts }), blunt: simulateViewer({ track: "H", theta: ARCHETYPES.blunt, mode: "film", opts }) };
+    const runs = { sensitive: simulateViewer({ track: "H", theta: ARCHETYPES.sensitive, mode: "full", opts }), blunt: simulateViewer({ track: "H", theta: ARCHETYPES.blunt, mode: "full", opts }) };
     const iEnd = Math.round(SIM_PARAMS.SCENE_END / SIM_PARAMS.DT), i0 = Math.round(SIM_PARAMS.VERDICT_T / SIM_PARAMS.DT);
     const rows = Object.entries(runs).map(([k, run]) => ({ key: k, uEnd: run.u[iEnd], xEnd: run.x[iEnd], xhatEnd: run.xhat[iEnd], xMax: Math.max(...run.x.slice(i0, iEnd + 1)), overCeil: run.x.slice(i0, iEnd + 1).filter((v) => v > run.ceiling).length * SIM_PARAMS.DT, uSatSec: run.u.slice(i0, iEnd + 1).filter((v) => v >= 0.999).length * SIM_PARAMS.DT }));
     summary.b77[`truth${ROWS[r].truth}_${COLS[c].model}`] = rows;

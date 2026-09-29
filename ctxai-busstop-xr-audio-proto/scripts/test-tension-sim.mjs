@@ -3,6 +3,7 @@
 import assert from "node:assert/strict";
 import { simulateViewer, summarize, summarizeAtPeaks, ARCHETYPES, rng, randomViewer, SIM_PARAMS } from "../lib/tensionSim.js";
 import { MICRO_PARAMS } from "../lib/slotController.js";
+import { PROBE_DOSE } from "../lib/slotActuate.js";
 
 let n = 0;
 function test(name, fn) { try { fn(); n++; console.log("ok ", name); } catch (e) { console.log("FAIL", name, "—", e.message); process.exitCode = 1; } }
@@ -81,6 +82,30 @@ test("B77: 연속 채널의 느린 항 — 참 효과가 있으면 x 가 x̂ 보
   assert.ok(Math.max(...slow.x) < Math.max(...asIs.x), "모델 항이 있으면 참 긴장의 최대치가 낮다(과잉 구동 완화)");
   const none = simulateViewer({ track: "H", theta: ARCHETYPES.sensitive, mode: "film" });
   assert.deepEqual(none.x, none.xhat, "기본값(효과 0·모델 없음)은 x̂ = x");
+});
+
+test("B87 현실 조건: 개구리·고양이 결정은 그 시각까지 닫힌 레코드만(우비 인물은 아직 열림 → 2개) · 탐침 용량은 /film 큐 볼륨", () => {
+  const ideal = simulateViewer({ track: "H", theta: ARCHETYPES.typical, mode: "full" });
+  const real = simulateViewer({ track: "H", theta: ARCHETYPES.typical, mode: "full", opts: { realistic: true } });
+  assert.deepEqual(ideal.plan.filter((p) => p.nFit != null).map((p) => p.nFit), [3, 4], "이상 조건은 앞 자극 전부");
+  assert.deepEqual(real.plan.filter((p) => p.nFit != null).map((p) => p.nFit), [2, 2], "현실 조건: 포스터·물보라만 닫힘");
+  assert.deepEqual(real.plan.slice(0, 3).map((p) => p.dose), [PROBE_DOSE.poster, PROBE_DOSE.figure, PROBE_DOSE.truck]);
+  assert.equal(real.opts.realistic, true);
+  assert.ok(real.stimuli.every((r) => r.closeAt >= r.onset), "닫히는 시각은 자극 뒤");
+  const off = simulateViewer({ track: "H", theta: ARCHETYPES.typical, mode: "off" });
+  assert.ok(off.stimuli.every((r) => r.closeAt === r.onset), "기본값은 이상 조건(즉시 닫힘)");
+});
+
+// 40명에서는 H 가 현실 0.154 · 이상 0.153 으로 거의 같아(표본 흔들림) 120명으로 본다. sim:plot 200명: 봉우리 std H −16%→−13% · R −19%→−14% · C −14%→−12%.
+for (const track of ["H", "R", "C"]) test(`B87 ${track}: 현실 조건에서도 full 이 off 보다 봉우리 분산·목표 오차를 줄이지만, 감소 폭은 이상 조건보다 크지 않다 (무작위 120명)`, () => {
+  const red = (o, f, k) => 1 - f[k] / o[k];
+  const io = summarizeAtPeaks(cloud(track, "off", 120)), iF = summarizeAtPeaks(cloud(track, "full", 120));
+  const ro = summarizeAtPeaks(cloud(track, "off", 120, { realistic: true })), rF = summarizeAtPeaks(cloud(track, "full", 120, { realistic: true }));
+  for (const k of ["meanStd", "rmse"]) {
+    const ideal = red(io, iF, k), real = red(ro, rF, k);
+    assert.ok(real > 0, `${k} 현실 조건 감소 ${real.toFixed(3)}`);
+    assert.ok(real <= ideal, `${k} 현실 ${real.toFixed(3)} ≤ 이상 ${ideal.toFixed(3)}`);
+  }
 });
 
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);

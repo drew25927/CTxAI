@@ -3,6 +3,10 @@
 // 파일럿 전에 코드로 확인한다. 실제 사람이 아니라 모델이 만든 관객이므로 상한 증거는 아니고,
 // 제어기·모델·곡선이 서로 맞물려 동작하는지와 방향성을 본다.
 //
+// 규약 주의(B88): 이 시뮬은 초기 설계 규약이다 — 도입부 탐침 3개(poster·figure·truck)까지 제어기가 변형을 고른다.
+// 현행 설계(/film)는 탐침을 중립으로 두고 frog·cat 만 고르므로, 현행 설계의 수치는 `npm run sim:plot`(lib/tensionSim.js
+// full 열 · 현실 조건 행)을 쓴다. 이 스크립트의 "분산 N%↓" 는 발표·심사 수치로 인용하지 않는다.
+//
 //   node scripts/sim-trajectory.mjs [N] [track]
 
 import { fitViewerModel, predictResponse } from "../lib/viewerModel.js";
@@ -67,7 +71,7 @@ function runStats(mode) {
 const off = runStats("off");
 const on = runStats("on");
 
-console.log(`트랙 ${TRACK} · 관객 ${N}명 · 측정 슬롯 [${kfSlots.map((s) => s.id).join(", ")}]`);
+console.log(`트랙 ${TRACK} · 관객 ${N}명 · 측정 슬롯 [${kfSlots.map((s) => s.id).join(", ")}] · 초기 설계 규약(탐침까지 변형 선택 — 현행 설계 수치는 npm run sim:plot)`);
 console.log(`제어 OFF (고정 연출): 궤적 표준편차 평균 ${off.meanStd.toFixed(3)} · 목표 RMSE ${off.rmse.toFixed(3)}`);
 console.log(`제어 ON  (관객모델):  궤적 표준편차 평균 ${on.meanStd.toFixed(3)} · 목표 RMSE ${on.rmse.toFixed(3)}`);
 for (const s of kfSlots) console.log(`   ${s.id}: OFF std ${off.perKfStd[s.id].toFixed(3)} → ON std ${on.perKfStd[s.id].toFixed(3)}`);

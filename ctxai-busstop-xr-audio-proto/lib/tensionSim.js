@@ -7,9 +7,14 @@
 //
 // 세 모드
 //   off  : 고정 연출 — 모든 슬롯 가운데 변형, 미세 자극·연속 액추에이터 없음.
-//   film : /film 의 현재 코드 — 고정 슬롯 5개는 전부 중립 탐침(가운데 변형), 판정(68s) 뒤 장면(~150s)에서
+//   film : 슬롯 고정(B78 이전 /film) — 고정 슬롯 5개는 전부 중립 탐침(가운데 변형), 판정(68s) 뒤 장면(~150s)에서
 //          미세 자극(slotController.microDecision)과 연속 액추에이터(controlActuate.actuationFor)만 움직인다.
-//   full : 설계 전체 — 탐침 N_PROBE 개 뒤의 고정 슬롯부터 제어기(chooseVariant)가 변형을 고르고, 판정 뒤는 film 과 같다.
+//   full : 설계 전체 = /film 현재(B78 뒤) — 탐침 N_PROBE 개 뒤의 고정 슬롯부터 제어기(chooseVariant)가 변형을 고르고, 판정 뒤는 film 과 같다.
+//
+// 이상 조건 vs 현실 조건(B87) — 기본값은 이상 조건이다: 레코드가 자극 시각에 바로 닫혀 결정 순간 앞 자극의 응답을 전부 쓴다.
+// /film 은 레코드가 자극 뒤 dur + tail(4초) 에 닫히고(engagementSense observeUntil), 개구리·고양이는 DECIDE_AT 에 정한다.
+// `opts.realistic` 을 켜면 (1) 결정·θ̂ 적합에 그 시각까지 닫힌 레코드만 쓰고 (2) 결정 시각을 DECIDE_AT 으로 (3) 탐침 용량을
+// /film 큐 볼륨(PROBE_DOSE)으로 맞춘다. 관측 잡음(peakAmp 흔들림)과 제어 OFF 의 큐 볼륨 척도(0.8)는 넣지 않았다.
 //
 // 참 관객 모델(지상진실)은 tensionEstimate 와 같은 커널이다: 자극 k 마다 A_k = K_RESP · g·d_k·(1−ρ)^{n_k} 봉우리가
 // RISE_SEC 에 올라 τ 로 감쇠한다. 레코드 필드를 engagementSense report().stimuli 와 같게 만들어 x̂ 는 실제 코드
@@ -20,9 +25,11 @@
 
 import { predictResponse, fitViewerModel } from "./viewerModel.js";
 import { chooseVariant, candidateSlots, microDecision, MICRO_PARAMS } from "./slotController.js";
-import { curveAt } from "./tensionCurve.js";
+import { curveAt, SLOTS } from "./tensionCurve.js";
 import { tensionAt, TENSION_PARAMS } from "./tensionEstimate.js";
 import { actuationFor, ACTUATE_PARAMS } from "./controlActuate.js";
+import { CUES } from "./filmTimeline.js";
+import { PROBE_DOSE, DECIDE_AT } from "./slotActuate.js";
 
 export const SIM_PARAMS = Object.freeze({
   DT: 0.25,             // 틱(영화 시간 초) — /film 의 250ms 제어 틱과 같다
@@ -34,7 +41,13 @@ export const SIM_PARAMS = Object.freeze({
   CONT_K: 0.25,         // (가정) 연속 채널 u=+1 을 오래 유지하면 기준 관객(g = G_REF)의 긴장이 이만큼 오른다
   CONT_TAU: 12,         // (가정) 그 느린 항의 시정수(초) — 안개·침묵은 몇 초 만에 체감되지 않는다
   HOLD_AFTER_MICRO: ACTUATE_PARAMS.HOLD_AFTER_MICRO, // B75: 미세 자극 뒤 연속 손을 멈추는 창(초) — /film 과 같은 값(controlActuate)
+  TAIL: 4,              // 현실 조건(B87): 레코드는 자극 뒤 dur + TAIL 에 닫힌다 — /film onCue beginStimulus tail 과 같은 값
+  MICRO_TAIL: 3,        // 현실 조건: 미세 자극 레코드의 tail — /film 미세 자극 beginStimulus 와 같은 값
 });
+
+/** 현실 조건에서 고정 슬롯 레코드가 닫히기까지의 관측 길이(초) — /film CUES 의 sense.dur(슬롯 event 로 찾는다). */
+export const SLOT_SENSE_DUR = Object.freeze(Object.fromEntries(
+  SLOTS.filter((s) => s.t != null).map((s) => [s.id, CUES.find((c) => c.name === s.event)?.sense?.dur ?? 1])));
 
 // 관객 3유형 — 값은 창작·잠정치(sim-trajectory 의 관객 분포 g 0.3~1.3 · τ 1~4 · ρ 0~0.45 안에서 골랐다).
 export const ARCHETYPES = Object.freeze({
@@ -75,6 +88,7 @@ export function makeRecord(theta, { name, t, dur = 1, channel, dose, nth = 0, ki
  * @param {number}  [o.opts.contTruth=0]     연속 채널이 참 긴장에 미치는 효과(0 = 없음, CONT_K 등)
  * @param {"none"|"slow"} [o.opts.contModel="none"]  x̂ 에 연속 채널의 느린 항을 넣는가(B77 안 2)
  * @param {number}  [o.opts.holdAfterMicro=HOLD_AFTER_MICRO] 미세 자극 뒤 연속 손을 멈추는 창(초, B75). 0 이면 B75 이전(창 없음)
+ * @param {boolean} [o.opts.realistic=false]  현실 조건(B87) — 닫힌 레코드만·DECIDE_AT·탐침 용량 PROBE_DOSE. 기본은 이상 조건
  * @param {object}  [o.params=SIM_PARAMS]
  * @returns {{t:number[], x:number[], xhat:number[], u:number[], mode:string[], target:number[], tol:number[], ceiling:number,
  *            stimuli:Array, micro:Array, plan:Array, thetaHat:object|null, track:string, simMode:string}}
@@ -84,6 +98,7 @@ export function simulateViewer({ track, theta, mode = "off", opts = {}, params =
   const contTruth = Number.isFinite(opts.contTruth) ? opts.contTruth : 0;
   const contModel = opts.contModel || "none";
   const hold = Number.isFinite(opts.holdAfterMicro) ? opts.holdAfterMicro : P.HOLD_AFTER_MICRO;
+  const realistic = !!opts.realistic;
   const actParams = { ...ACTUATE_PARAMS, HOLD_AFTER_MICRO: hold };
   const cands = candidateSlots();
   const mid = (s) => s.variants[Math.floor((s.variants.length - 1) / 2)];
@@ -93,7 +108,14 @@ export function simulateViewer({ track, theta, mode = "off", opts = {}, params =
   const plan = [];         // 고정 슬롯에서 고른 변형
   const micro = [];        // 미세 자극 발동 기록
   let prevSlot = null, slotIdx = 0;
-  let thetaHat = null, thetaDirty = true;
+  let thetaHat = null, thetaDirty = true, fitN = -1;
+  // 결정·θ̂ 에 쓸 수 있는 레코드 — 이상 조건은 전부, 현실 조건은 시각 tq 까지 닫힌 것만(B87)
+  const usable = (tq) => (realistic ? records.filter((r) => r.closeAt <= tq) : records);
+  const refit = (tq) => {
+    const rs = usable(tq);
+    if (thetaDirty || rs.length !== fitN) { thetaHat = fitViewerModel(rs); fitN = rs.length; thetaDirty = false; }
+    return rs.length;
+  };
   let act = null;          // 연속 액추에이터 직전 결과
   let lastMicroAt = -Infinity, microCount = 0;
   let xcTrue = 0, xcHat = 0; // 연속 채널의 느린 항(참 / 추정)
@@ -114,17 +136,21 @@ export function simulateViewer({ track, theta, mode = "off", opts = {}, params =
     // 고정 슬롯 발동(시각 도달 시 한 번) — 변형은 그 순간의 x̂·θ̂ 로 고른다.
     while (slotIdx < cands.length && t >= cands[slotIdx].t) {
       const slot = cands[slotIdx];
-      let dose = mid(slot).dose, variantId = mid(slot).id, reason = "중립(가운데 변형)";
+      let dose = mid(slot).dose, variantId = mid(slot).id, reason = "중립(가운데 변형)", nFit = null;
+      if (realistic && slotIdx < P.N_PROBE && Number.isFinite(PROBE_DOSE[slot.id])) { dose = PROBE_DOSE[slot.id]; variantId = null; reason = "중립 탐침(/film 큐 볼륨)"; }
       if (mode === "full" && slotIdx >= P.N_PROBE) {
-        if (thetaDirty) { thetaHat = fitViewerModel(records); thetaDirty = false; }
-        const x0 = clamp01(TENSION_PARAMS.BASE + tensionAt(records, slot.t, null, P0) + (contModel === "slow" ? xcHat : 0));
+        const tDec = realistic && Number.isFinite(DECIDE_AT[slot.id]) ? DECIDE_AT[slot.id] : slot.t;
+        nFit = refit(tDec);
+        const x0 = clamp01(TENSION_PARAMS.BASE + tensionAt(records, tDec, null, P0) + (contModel === "slow" ? xcHat : 0));
         const c = chooseVariant(track, cands, slotIdx, x0, thetaHat, channelCounts, prevSlot);
         dose = c.dose; variantId = c.variantId; reason = c.reason;
       }
       const nth = channelCounts[slot.channel] || 0;
-      records.push(makeRecord(theta, { name: slot.id, t: slot.t, dur: 1, channel: slot.channel, dose, nth }));
+      const rec = makeRecord(theta, { name: slot.id, t: slot.t, dur: 1, channel: slot.channel, dose, nth });
+      rec.closeAt = realistic ? slot.t + (SLOT_SENSE_DUR[slot.id] ?? 1) + P.TAIL : slot.t;
+      records.push(rec);
       channelCounts[slot.channel] = nth + 1;
-      plan.push({ slotId: slot.id, t: slot.t, channel: slot.channel, variantId, dose, nth, reason });
+      plan.push({ slotId: slot.id, t: slot.t, channel: slot.channel, variantId, dose, nth, reason, ...(nFit != null ? { nFit } : {}) });
       prevSlot = { t: slot.t, channel: slot.channel };
       slotIdx++; thetaDirty = true;
     }
@@ -136,14 +162,16 @@ export function simulateViewer({ track, theta, mode = "off", opts = {}, params =
 
     let uMode = "off";
     if (mode !== "off" && t >= P.VERDICT_T && t <= P.SCENE_END) {
-      if (thetaDirty) { thetaHat = fitViewerModel(records); thetaDirty = false; }
+      refit(t);
       // B75: 미세 자극 뒤 창에서는 actuationFor 가 u 를 직전 값에 묶는다(mode "settle") — /film 과 같은 코드 경로
       act = actuationFor({ xhat, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, track, theta: thetaHat, prev: act, dt: P.DT, active: true, tNow: t, lastMicroAt }, actParams);
       uMode = act.mode;
       const d = microDecision({ xhat, target: tgt.target, tol: tgt.tol, tNow: t, lastAt: lastMicroAt, count: microCount });
       if (d.fire) {
         const nth = channelCounts.audio || 0;
-        records.push(makeRecord(theta, { name: `micro-${microCount + 1}`, t, dur: P.MICRO_DUR, channel: "audio", dose: d.dose, nth }));
+        const rec = makeRecord(theta, { name: `micro-${microCount + 1}`, t, dur: P.MICRO_DUR, channel: "audio", dose: d.dose, nth });
+        rec.closeAt = realistic ? t + P.MICRO_DUR + P.MICRO_TAIL : t;
+        records.push(rec);
         channelCounts.audio = nth + 1;
         micro.push({ t, dose: d.dose, xhat: r3(xhat), target: r3(tgt.target) });
         lastMicroAt = t; microCount++; thetaDirty = true;
@@ -157,8 +185,8 @@ export function simulateViewer({ track, theta, mode = "off", opts = {}, params =
     out.t.push(t); out.x.push(r3(x)); out.xhat.push(r3(xhat)); out.u.push(act ? act.u : 0); out.mode.push(uMode);
     out.target.push(r3(tgt.target)); out.tol.push(r3(tgt.tol));
   }
-  if (thetaDirty) thetaHat = records.length ? fitViewerModel(records) : null;
-  return { ...out, ceiling, stimuli: records, micro, plan, thetaHat, track, simMode: mode, theta, opts: { contTruth, contModel, holdAfterMicro: hold } };
+  if (thetaDirty || realistic) thetaHat = records.length ? fitViewerModel(records) : null; // 끝난 뒤에는 모든 레코드가 닫혀 있다
+  return { ...out, ceiling, stimuli: records, micro, plan, thetaHat, track, simMode: mode, theta, opts: { contTruth, contModel, holdAfterMicro: hold, realistic } };
 }
 
 /**
