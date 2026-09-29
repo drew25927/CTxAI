@@ -4,8 +4,8 @@
 // JSON이 자동으로 쌓여야 한다. 관객이 종료 카드에서 내려받기를 누르는 데 의존하지 않는다.
 // 저장소는 Supabase가 아니라 프로젝트 안 data/sessions/ (gitignore). 전시 PC 로컬 실행 전제.
 //
-//   POST /api/session  { ...exportSession() 결과, selfReport?: "R"|"H"|"C", route?: "interim" }
-//   GET  /api/session  → 저장된 파일 목록과 요약(판정 때 배합·마지막 배합·앉은 인물·자기보고)
+//   POST /api/session  { ...exportSession() 결과, selfReport?: "R"|"H"|"C", route?: "film"|"interim" }
+//   GET  /api/session  → 저장된 파일 목록과 요약(라우트·합성 관객·배속·판정 때 배합·마지막 배합·앉은 인물·자기보고)
 
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -22,8 +22,9 @@ export async function POST(req) {
 
   await fs.mkdir(DIR, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
-  // 라우트가 있으면 이름에 넣는다 — /interim 세션과 /film 세션을 디렉터리에서 바로 가를 수 있게 (film 은 route 를 안 보내 이름이 그대로다)
-  const route = typeof body.route === "string" && /^[a-z]+$/.test(body.route) ? `${body.route}_` : "";
+  // film 이 아닌 라우트는 이름에 넣는다 — /interim 세션과 /film 세션을 디렉터리에서 바로 가를 수 있게.
+  // /film 은 본문에 route:"film" 을 담지만(B100) 파일 이름은 예전 그대로(<시각>_<장르>.json) 둔다 — 쌓인 파일럿 기록과 이름 규칙이 같도록.
+  const route = typeof body.route === "string" && /^[a-z]+$/.test(body.route) && body.route !== "film" ? `${body.route}_` : "";
   const id = `${stamp}_${route}${(body.dominant || "x")}`;
   const file = path.join(DIR, `${id}.json`);
   await fs.writeFile(file, JSON.stringify({ id, savedAt: new Date().toISOString(), ...body }, null, 2));
@@ -48,6 +49,10 @@ export async function GET(req) {
       const j = JSON.parse(await fs.readFile(path.join(DIR, n), "utf8"));
       items.push({
         id: j.id, savedAt: j.savedAt, dominant: j.dominant ?? null, selfReport: j.selfReport ?? null,
+        // 라우트 — B100 이전 /film 세션은 route 가 없어 파일 이름으로 가른다(/interim 은 처음부터 route·`_interim_`)
+        route: j.route || (/_interim_/.test(j.id || n) ? "interim" : "film"),
+        viewer: j.viewer?.synthetic ? { profile: j.viewer.profile ?? null, label: j.viewer.label ?? null, seed: j.viewer.seed ?? null } : null,
+        speed: j.speed ?? 1,
         final: j.final?.current ?? null, settled: j.final?.settled ?? null, confidence: j.final?.confidence ?? null,
         verdict: j.verdict ? { mix: j.verdict.mix ?? null, t: j.verdict.t ?? null } : null, // 판정 때 배합(B86 이후 /film 세션). final 은 끝 배합이라 판정과 1위가 다를 수 있다
         durationSec: j.trajectory?.length ? j.trajectory[j.trajectory.length - 1].t : null,

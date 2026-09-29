@@ -798,7 +798,7 @@ export default function FilmPage() {
     } catch { /* 로그 실패는 무시 */ }
     const vs = viewerSimRef.current;
     const viewer = vs ? { synthetic: true, profile: vs.profile, label: vs.label, seed: vs.seed } : undefined; // 합성 관객 세션은 파일에도 표기
-    return d.exportSession({ dominant: filmRef.current.dominant, verdict: filmRef.current.verdict || null, speed, viewer, headPose: sensorRef.current?.report?.(), engagement: engagementRef.current?.report?.(), control, ...extra });
+    return d.exportSession({ route: "film", dominant: filmRef.current.dominant, verdict: filmRef.current.verdict || null, speed, viewer, headPose: sensorRef.current?.report?.(), engagement: engagementRef.current?.report?.(), control, ...extra });
   }
 
   // 종료 시 자동 저장 (data/sessions/, Supabase 아님). 실패해도 체험은 영향 없다.
