@@ -281,4 +281,43 @@ test("B116 표기 규칙: 오프셋 0 이면 '오프셋 0', base 없이 부르�
   console.log(`    공포 u=−1 → ${relax}`);
 });
 
+// 검토 턴 31 — 포화 판정이 절대값 1e-3 이라 오프셋이 작은 축(안개)은 실제로 다 움직였는데 "포화" 로 찍혔다
+// (로맨스 u 0.08 → 안개 −0.0005 → "안개 포화(0.050)", `work/evidence/review31/probe-b116-fog.txt`).
+test("B116 상대 기준: 작은 u 에서도 실제로 움직인 축은 '포화' 가 아니다 — 로맨스·공포·코미디 u ±0.02~1", () => {
+  for (const tr of ["R", "H", "C"]) {
+    const base = deriveParams(STATES[tr], 1);
+    for (const u of [0.02, 0.05, 0.08, 0.16, -0.02, -0.08]) {
+      const off = offsetsFor(tr, u);
+      for (const e of actuationEffect(base, off)) {
+        const full = Math.abs(e.delta - e.offset) < 1e-9;
+        if (full) assert.equal(e.saturated, false, `${tr} u ${u} ${e.key} 오프셋 ${e.offset} 을 다 받았는데 포화`);
+      }
+      const text = actuationText(off, base);
+      // 공포 트랙 각성의 가로등만 진짜 포화(lampEarlyOn) — 나머지 포화 표기는 없어야 한다
+      const sat = text.match(/(\S+) 포화/g) || [];
+      const expect = tr === "H" && u > 0 ? ["가로등 포화"] : [];
+      assert.deepEqual(sat, expect, `${tr} u ${u} → ${text}`);
+    }
+  }
+  const r = deriveParams(STATES.R, 1);
+  const t08 = actuationText(offsetsFor("R", 0.08), r);
+  assert.doesNotMatch(t08, /안개 포화/);
+  console.log(`    로맨스 u=+0.08 → ${t08}`);
+  console.log(`    공포 u=+0.02 → ${actuationText(offsetsFor("H", 0.02), deriveParams(STATES.H, 1))}`);
+});
+
+test("B116 표시 자릿수: 오프셋·움직인 양이 표시 자릿수에서 0 이면 줄에서 뺀다(\"안개 +0.000\" 없음)", () => {
+  const base = { npcSilence: 1.2, npcDistance: 0.9, npcGaze: 0.5, lampOn: 0.4, fogDensity: 0.05 };
+  // 안개 0.0004·시선 0.004(=0.4%) 는 표시하면 0 이다
+  const off = { npcSilence: 0.3, bgmGain: 0, lampOn: 0, fogDensity: 0.0004, npcDistance: 0, npcGaze: 0.004 };
+  assert.equal(actuationText(off, base), "침묵 +0.30s");
+  assert.equal(actuationText(off), "침묵 +0.30s", "base 없는 종전 표기도 같은 규칙");
+  // 표시 자릿수 이상인 오프셋이 거의 다 잘려 움직인 양만 0 이 되면 포화로 적는다(상대 5% 미만)
+  const nearTop = { ...base, fogDensity: RANGES.fogDensity[1] - 0.00005 };
+  assert.match(actuationText({ ...off, fogDensity: 0.004 }, nearTop), /안개 포화/);
+  // 오프셋 0.002 가 0.0015 만 움직이면(한계) 여전히 적는다
+  const partial = { ...base, fogDensity: RANGES.fogDensity[1] - 0.0015 };
+  assert.match(actuationText({ ...off, fogDensity: 0.002 }, partial), /안개 \+0\.002\(한계\)|안개 \+0\.001\(한계\)/);
+});
+
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);

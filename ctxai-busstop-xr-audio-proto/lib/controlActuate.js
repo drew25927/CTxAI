@@ -150,7 +150,10 @@ export function bgmScale(offsets) {
 // deriveParams 의 lampEarlyOn 트리거가 판정 전에 base 를 1.0 으로 켜 두므로 각성 쪽 +0.6 은 전부 잘린다
 // (B11c 비교에서 ON−OFF 가로등 0.00). 모니터가 오프셋을 그대로 적으면 "가로등 +0.60" 이 움직이지 않은
 // 축에도 찍힌다.
-const EFFECT_EPS = 1e-3;
+// 포화·한계 판정은 오프셋 크기에 대한 상대 기준이다(검토 턴 31). 절대 기준 1e-3 은 안개처럼 오프셋 자체가
+// 작은 축(로맨스 트랙 u 0.08 → −0.0005)을 실제로 다 움직였는데도 "포화" 로 찍었다. 잠정치.
+const EFFECT_REL = 0.05;   // 오프셋의 5% 도 못 움직이면 포화, 95% 에 못 미치면 한계
+const EFFECT_FLOOR = 1e-6; // 부동소수 오차 바닥
 
 /**
  * 오프셋이 0 이 아닌 축마다 실제로 움직인 양.
@@ -173,26 +176,30 @@ export function actuationEffect(base, offsets) {
       if (!Number.isFinite(base?.[k])) continue;
       value = applied[k]; delta = value - base[k];
     }
-    const saturated = Math.abs(delta) < EFFECT_EPS;
-    const clipped = !saturated && Math.abs(delta) < Math.abs(off) - EFFECT_EPS;
+    const tol = Math.max(EFFECT_FLOOR, Math.abs(off) * EFFECT_REL);
+    const saturated = Math.abs(delta) < tol;
+    const clipped = !saturated && Math.abs(delta) < Math.abs(off) - tol;
     out.push({ key: k, offset: r4(off), delta: r4(delta) || 0, value: r4(value), saturated, clipped });
   }
   return out;
 }
 
 const sgn = (v, d = 2) => (v > 0 ? "+" : "") + v.toFixed(d);
+// digits: 증감(fmt)을 적는 자릿수. 이 자릿수에서 0 이 되는 양은 줄에 적지 않는다(sessionCompare 의 shows 와 같은 규칙).
 const AXIS_TEXT = {
-  npcSilence: { label: "침묵", fmt: (v) => `${sgn(v)}s`, val: (v) => `${v.toFixed(2)}s` },
-  bgmGain: { label: "BGM", fmt: (v) => `×${(1 + v).toFixed(2)}`, val: (v) => `×${v.toFixed(2)}` },
-  lampOn: { label: "가로등", fmt: (v) => sgn(v), val: (v) => v.toFixed(2) },
-  fogDensity: { label: "안개", fmt: (v) => sgn(v, 3), val: (v) => v.toFixed(3) },
-  npcDistance: { label: "거리", fmt: (v) => `${sgn(v)}m`, val: (v) => `${v.toFixed(2)}m` },
-  npcGaze: { label: "시선", fmt: (v) => `${sgn(v * 100, 0)}%`, val: (v) => `${Math.round(v * 100)}%` },
+  npcSilence: { label: "침묵", fmt: (v) => `${sgn(v)}s`, val: (v) => `${v.toFixed(2)}s`, digits: 2 },
+  bgmGain: { label: "BGM", fmt: (v) => `×${(1 + v).toFixed(2)}`, val: (v) => `×${v.toFixed(2)}`, digits: 2 },
+  lampOn: { label: "가로등", fmt: (v) => sgn(v), val: (v) => v.toFixed(2), digits: 2 },
+  fogDensity: { label: "안개", fmt: (v) => sgn(v, 3), val: (v) => v.toFixed(3), digits: 3 },
+  npcDistance: { label: "거리", fmt: (v) => `${sgn(v)}m`, val: (v) => `${v.toFixed(2)}m`, digits: 2 },
+  npcGaze: { label: "시선", fmt: (v) => `${sgn(v * 100, 0)}%`, val: (v) => `${Math.round(v * 100)}%`, digits: 0, scale: 100 },
 };
+const shows = (t, v) => Number(Math.abs((v || 0) * (t.scale || 1)).toFixed(t.digits)) !== 0;
 
 /**
  * 디렉터 모니터 "연속 구동" 한 줄(B116). base 를 주면 실제로 움직인 양을 적는다:
  *   움직인 축 "침묵 +0.58s", 범위 끝에 닿아 일부만 움직인 축 "침묵 +0.40s(한계)", 못 움직인 축 "가로등 포화(1.00)".
+ * 오프셋이나 움직인 양이 표시 자릿수에서 0 이 되는 축은 적지 않는다("안개 +0.000"·"안개 포화" 대신 생략).
  * base 가 없으면(구버전 호출) 종전처럼 오프셋을 적는다.
  */
 export function actuationText(offsets, base) {
@@ -200,11 +207,11 @@ export function actuationText(offsets, base) {
   const effects = base ? Object.fromEntries(actuationEffect(base, o).map((e) => [e.key, e])) : null;
   const parts = [];
   for (const [k, t] of Object.entries(AXIS_TEXT)) { // 표시 순서는 AXIS_TEXT 순(종전 모니터와 같다)
-    if (!effects) { if (o[k]) parts.push(`${t.label} ${t.fmt(o[k])}`); continue; }
+    if (!effects) { if (shows(t, o[k])) parts.push(`${t.label} ${t.fmt(o[k])}`); continue; }
     const e = effects[k];
-    if (!e) continue;
+    if (!e || !shows(t, e.offset)) continue;
     if (e.saturated) parts.push(`${t.label} 포화(${t.val(e.value)})`);
-    else parts.push(`${t.label} ${t.fmt(e.delta)}${e.clipped ? "(한계)" : ""}`);
+    else if (shows(t, e.delta)) parts.push(`${t.label} ${t.fmt(e.delta)}${e.clipped ? "(한계)" : ""}`);
   }
   return parts.length ? parts.join(" · ") : "오프셋 0";
 }
