@@ -44,7 +44,7 @@ import { estimateTensionSeries } from "@/lib/tensionEstimate";
 import DirectorMonitor from "@/components/DirectorMonitor";
 import { curveAt } from "@/lib/tensionCurve";
 import { runController, microDecision, nextAdvice } from "@/lib/slotController";
-import { decideSlot, CONTROLLED_SLOTS, DECIDE_AT } from "@/lib/slotActuate";
+import { decideSlot, CONTROLLED_SLOTS, DECIDE_AT, PROBE_DOSE } from "@/lib/slotActuate";
 import { actuationFor, bgmScale, ACTUATE_PARAMS } from "@/lib/controlActuate";
 import { selectTrack } from "@/lib/trackSelect";
 import { deriveBgmGains, TRIGGERS } from "@/lib/directionMap";
@@ -378,9 +378,9 @@ export default function FilmPage() {
           const series = estimateTensionSeries(eng).map((p) => (speed === 1 ? p : { ...p, t: Math.round(p.t * speed * 10) / 10 }));
           const last = series[series.length - 1];
           const tgt = curveAt(track, film.t);
-          const rec = runController(track, theta);
+          const rec = runController(track, theta, { fixed: PROBE_DOSE }); // 도입부 탐침은 중립 — 변형을 적지 않는다(B85)
           // 이미 확정된 슬롯(개구리·고양이, B78)은 계획 대신 실제로 고른 변형을 보인다 — 계획은 틱마다 다시 세워져 확정값과 어긋날 수 있다
-          const entries = rec.entries.map((e) => { const c = film.slotChoice?.[e.slotId]; return c ? { ...e, variantId: c.variantId ?? "중립", dose: c.dose, reason: `확정 · ${c.reason}` } : e; });
+          const entries = rec.entries.map((e) => { const c = film.slotChoice?.[e.slotId]; return c ? { ...e, variantId: c.variantId ?? "중립", dose: c.dose, reason: `확정 · ${c.reason}`, confirmed: true } : e; });
           // 다음 개입 — 남은 고정 슬롯이 없으면(고양이 0:45 뒤) 미세 자극의 발동 조건·대기 사유를 보인다(B66)
           const next = nextAdvice({ entries, tNow: film.t, verdict: !!film.dominant, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling,
             lastMicroAt: film.lastMicroAt ?? -Infinity, microCount: film.microCount || 0, controlOn: q.control === "1", sceneStart: T.npcSeated, sceneEnd: 150 });
@@ -765,7 +765,7 @@ export default function FilmPage() {
   function sessionData(extra = {}) {
     const d = directionRef.current;
     if (!d) return null;
-    // 궤적 추종 로그 — 관객모델 θ̂와 제어기의 사후 계획(plan: 종료 시점 θ̂ 로 다시 세운 참고값), 실제 구동 요약.
+    // 궤적 추종 로그 — 관객모델 θ̂와 제어기의 사후 계획(plan: 종료 시점 θ̂ 로 다시 세운 참고값 — 도입부 탐침은 neutral·variantId null, B85), 실제 구동 요약.
     // 실제로 움직인 것은 ?control=1 일 때의 슬롯 변형(slots · control:slot 이벤트, B78)·미세 자극(control:micro)·연속 파라미터(control:actuate 이벤트).
     let control;
     try {
@@ -776,7 +776,7 @@ export default function FilmPage() {
         const a = adjustRef.current;
         const slots = {};
         for (const [id, c] of Object.entries(filmRef.current.slotChoice || {})) slots[id] = { t: c.t, track: c.track, variantId: c.variantId, dose: c.dose, reason: c.reason, target: c.target ?? null, predTension: c.predTension ?? null, actuation: { sfx: c.actuation.sfx, volume: c.actuation.volume, plays: c.actuation.plays, gap: c.actuation.gap }, schedule: c.schedule || null };
-        control = { track, theta, mode: q.control === "1" ? "full" : "off", plan: runController(track, theta).entries, slots,
+        control = { track, theta, mode: q.control === "1" ? "full" : "off", plan: runController(track, theta, { fixed: PROBE_DOSE }).entries, slots,
           actuation: { on: q.control === "1", holdAfterMicro: q.hold ? Math.max(0, Number(q.hold) || 0) : ACTUATE_PARAMS.HOLD_AFTER_MICRO, ticks: filmRef.current.actuateLogCount || 0, micro: filmRef.current.microCount || 0, last: a ? { t: a.t, u: a.u, mode: a.mode, offsets: a.offsets } : null } };
       }
     } catch { /* 로그 실패는 무시 */ }

@@ -10,7 +10,7 @@
 // monitor 객체 모양(페이지가 250ms/200ms 틱마다 만든다):
 //   { track, theta:{g,L,tau,rho,confidence,nResp}, xhat, target?, tol?, ceiling?, series:[{t,tension}],
 //     nStim, sel?:{track,reach}, control?:bool, micro?:number, note?,
-//     next?:{kind:"slot"|"micro"|"done", slotId, variantId?, dose?, reason, count?, max?}   ← lib/slotController nextAdvice
+//     next?:{kind:"probe"|"slot"|"micro"|"done", slotId, variantId?, dose?, reason, count?, max?}   ← lib/slotController nextAdvice
 //     actuate?:{u,mode,offsets},     ← /film 연속 액추에이터(lib/controlActuate.js)의 현재 구동량·오프셋
 //     slots?:{frog?:{variantId,dose,actuation:{volume,plays}}, cat?:{…}} }   ← /film 슬롯 변형 확정값(lib/slotActuate.js, B78). variantId null = 고정 연출
 
@@ -72,10 +72,11 @@ function slotsText(slots, eventLabel) {
   }).join(" · ");
 }
 
-// "다음" 줄의 머리 — 고정 슬롯이면 계획 변형·용량, 고정 슬롯이 끝났으면 미세 자극 차례(B66), 장면 뒤면 없음
+// "다음" 줄의 머리 — 중립 탐침이면 변형 없음(B85), 고정 슬롯이면 계획 변형·용량, 고정 슬롯이 끝났으면 미세 자극 차례(B66), 장면 뒤면 없음
 function nextHeadline(next, eventLabel) {
   const label = eventLabel[next.slotId] || next.slotId;
   if (next.kind === "done") return <span style={{ opacity: 0.6 }}>다음 개입 없음</span>;
+  if (next.kind === "probe") return <span>다음 <b>{label}</b> · <span style={{ opacity: 0.75 }}>중립 탐침(변형 없음)</span></span>;
   if (next.kind === "micro") {
     return <span>다음 미세 자극 <b>{label}</b> {next.count ?? 0}/{next.max ?? 3}{next.dose != null && <> → <b>{next.variantId}</b> (용량 {next.dose})</>}</span>;
   }

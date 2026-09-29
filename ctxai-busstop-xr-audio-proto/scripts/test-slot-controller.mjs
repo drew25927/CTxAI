@@ -117,4 +117,54 @@ test("MICRO_PARAMS 로 옮긴 뒤에도 microDecision 기본값이 그대로(간
   assert.equal(microDecision({ xhat: 0.5, target: 0.6, tol: 0.05, tNow: 80 }).dose, 0.3);
 });
 
+// B85 — 도입부 중립 탐침(poster·figure·truck)은 계획·모니터에서 변형을 적지 않는다
+const FIXED = { poster: 0.7, figure: 0.55, truck: 0.9 }; // /film 이 실제로 울리는 용량(slotActuate PROBE_DOSE — test-slot-actuate 가 값을 고정)
+const TH = { g: 0.8, L: 0.5, tau: 2, rho: 0.1 };
+test("B85 runController fixed: 탐침은 neutral·variantId null·용량 고정, 개구리·고양이는 여전히 메뉴 안에서 고른다", () => {
+  for (const track of ["H", "R", "C"]) for (const th of [TH, { g: 0.2, L: 0.5, tau: 2, rho: 0.1 }, { g: 2.0, L: 0.5, tau: 2, rho: 0.05 }]) {
+    const r = runController(track, th, { fixed: FIXED });
+    assert.equal(r.entries.length, candidateSlots().length);
+    for (const e of r.entries) {
+      if (e.slotId in FIXED) {
+        assert.equal(e.neutral, true); assert.equal(e.variantId, null); assert.equal(e.dose, FIXED[e.slotId]);
+        assert.match(e.reason, /^중립 탐침 — 변형 없음/);
+        const p = r.plan.find((q) => q.slotId === e.slotId); assert.equal(p.neutral, true); assert.equal(p.variantId, null);
+      } else {
+        assert.equal(e.neutral, undefined); assert.ok(variantOf(slotById(e.slotId), e.variantId), `${track} ${e.slotId}/${e.variantId}`);
+      }
+    }
+  }
+});
+test("B85 runController fixed: 탐침 용량은 예측에 그대로 들어간다(물보라 0.9 가 0.4 보다 높은 봉우리) — 메뉴에서 고르지 않을 뿐 궤적 예측은 이어 간다", () => {
+  const hi = entry(runController("H", TH, { fixed: { ...FIXED, truck: 0.9 } }), "truck");
+  const lo = entry(runController("H", TH, { fixed: { ...FIXED, truck: 0.4 } }), "truck");
+  assert.ok(hi.predTension > lo.predTension, `0.9 → ${hi.predTension} vs 0.4 → ${lo.predTension}`);
+});
+test("B85 fixed 를 주지 않으면 종전과 같다(모든 슬롯에서 변형을 고르고 neutral 표시 없음 — sim-trajectory 규약)", () => {
+  const r = runController("H", TH);
+  assert.deepEqual(r.entries, planH);
+  for (const e of r.entries) { assert.equal(e.neutral, undefined); assert.ok(e.variantId); }
+});
+test("B85 nextAdvice: 0:00~0:29 은 어떤 시각에도 변형을 추천하지 않는다(kind probe · variantId null), 물보라 뒤(0:30)부터 개구리 계획", () => {
+  const planF = runController("H", TH, { fixed: FIXED }).entries;
+  const byT = { 0: "poster", 5.9: "poster", 6.1: "figure", 20: "truck", 28.9: "truck" };
+  for (let t = 0; t < 29; t += 0.25) {
+    const a = nextAdvice({ ...sceneArgs, entries: planF, tNow: t, verdict: false });
+    assert.equal(a.kind, "probe", `t=${t}`); assert.equal(a.variantId, null, `t=${t}`);
+    assert.ok(!/→/.test(a.reason), `t=${t} ${a.reason}`);
+  }
+  for (const [t, id] of Object.entries(byT)) assert.equal(nextAdvice({ ...sceneArgs, entries: planF, tNow: Number(t) }).slotId, id, `t=${t}`);
+  const frog = nextAdvice({ ...sceneArgs, entries: planF, tNow: 30 });
+  assert.equal(frog.kind, "slot"); assert.equal(frog.slotId, "frog"); assert.ok(frog.variantId);
+});
+test("B85 nextAdvice: 제어 OFF 면 슬롯 계획에 \"권고만\" 이 붙고(고정 연출이라 그 변형으로 울리지 않는다) 탐침에는 붙지 않는다", () => {
+  const planF = runController("H", TH, { fixed: FIXED }).entries;
+  assert.match(nextAdvice({ ...sceneArgs, entries: planF, tNow: 30, controlOn: false }).reason, /제어 OFF — 권고만\)$/);
+  assert.ok(!/권고만/.test(nextAdvice({ ...sceneArgs, entries: planF, tNow: 30 }).reason));
+  assert.ok(!/권고만/.test(nextAdvice({ ...sceneArgs, entries: planF, tNow: 20, controlOn: false }).reason));
+  // 페이지가 확정 슬롯을 confirmed 로 바꿔 넘기면(고정 연출로 이미 정해짐) "권고만" 을 덧붙이지 않는다
+  const confirmed = planF.map((e) => (e.slotId === "cat" ? { ...e, variantId: "중립", dose: 0.8, reason: "확정 · 제어 OFF — 고정 연출(중립)", confirmed: true } : e));
+  assert.equal(nextAdvice({ ...sceneArgs, entries: confirmed, tNow: 44, controlOn: false }).reason, "확정 · 제어 OFF — 고정 연출(중립)");
+});
+
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);

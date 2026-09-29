@@ -1,6 +1,7 @@
 // 슬롯 변형 액추에이터 회귀 테스트(B78) — 변형표 완결성·OFF=고정 연출·관객별로 다른 변형·고양이 동선·chooseSlotNow 규약
 import assert from "node:assert/strict";
-import { decideSlot, catSchedule, missingActuations, SLOT_ACTUATION, NEUTRAL_ACTUATION, NEUTRAL_DOSE, CONTROLLED_SLOTS, DECIDE_AT, CAT_TIMING_NEUTRAL } from "../lib/slotActuate.js";
+import { decideSlot, catSchedule, missingActuations, SLOT_ACTUATION, NEUTRAL_ACTUATION, NEUTRAL_DOSE, CONTROLLED_SLOTS, DECIDE_AT, CAT_TIMING_NEUTRAL, PROBE_DOSE } from "../lib/slotActuate.js";
+import { SIM_PARAMS } from "../lib/tensionSim.js";
 import { chooseSlotNow, runController, candidateSlots } from "../lib/slotController.js";
 import { slotById, variantOf } from "../lib/tensionCurve.js";
 import { CUES, T, evalActors } from "../lib/filmTimeline.js";
@@ -124,6 +125,24 @@ test("합성 관객 용량 배율: 용량 없음 == DOSE_REF(0.8) == 배율 1, 0
   const run = (dose) => { const s = createGazeSim("fearful", { seed: 3 }); for (let i = 0; i < 60; i++) s.step(0, 1 / 60); s.trigger({ name: "frog", azimuth: 135, dur: 3, kind: "probe", channel: "audio", dose }); let peak = 0; for (let i = 0; i < 120; i++) peak = Math.max(peak, Math.abs(s.step(1, 1 / 60).yaw)); return peak; };
   assert.ok(run(0.4) < run(0.9), `0.4 → ${run(0.4)} vs 0.9 → ${run(0.9)}`);
   assert.equal(run(null), run(0.8));
+});
+
+test("B85 PROBE_DOSE: 제어 슬롯이 아닌 시각 고정 슬롯 = 탐침 3개(tensionSim N_PROBE 와 같은 경계), 값은 onCue 가 레코드에 적는 큐 볼륨", () => {
+  assert.deepEqual(Object.keys(PROBE_DOSE), ["poster", "figure", "truck"]);
+  assert.equal(Object.keys(PROBE_DOSE).length, SIM_PARAMS.N_PROBE);
+  const fixedSlots = candidateSlots().map((s) => s.id);
+  assert.deepEqual([...Object.keys(PROBE_DOSE), ...CONTROLLED_SLOTS].sort(), fixedSlots.slice().sort()); // 빠진 슬롯·겹치는 슬롯 없음
+  for (const [id, d] of Object.entries(PROBE_DOSE)) assert.equal(d, cue(slotById(id).event).volume, id);
+  assert.deepEqual({ ...PROBE_DOSE }, { poster: 0.7, figure: 0.55, truck: 0.9 });
+});
+test("B85 /film 계획(runController fixed: PROBE_DOSE)의 개구리·고양이 변형은 메뉴 안이고, 탐침 세 줄은 변형이 없다", () => {
+  for (const th of [SENSITIVE, BLUNT]) {
+    const r = runController("H", th, { fixed: PROBE_DOSE });
+    for (const e of r.entries) {
+      if (CONTROLLED_SLOTS.includes(e.slotId)) assert.ok(variantOf(slotById(e.slotId), e.variantId), `${e.slotId}/${e.variantId}`);
+      else { assert.equal(e.variantId, null, e.slotId); assert.equal(e.neutral, true, e.slotId); }
+    }
+  }
 });
 
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);

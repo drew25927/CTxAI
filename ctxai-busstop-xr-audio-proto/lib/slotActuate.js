@@ -15,7 +15,7 @@
 //      용량을 알아야 이득을 바로 읽는다. 합성 관객(gazeSim)도 같은 용량 배율로 반응한다(DOSE_REF 기준).
 // 값은 전부 창작·잠정치 — 사운드·기획이 파일럿을 듣고 고친다.
 
-import { T } from "./filmTimeline.js";
+import { T, CUES } from "./filmTimeline.js";
 import { SLOTS, slotById } from "./tensionCurve.js";
 import { chooseSlotNow } from "./slotController.js";
 import { TENSION_PARAMS } from "./tensionEstimate.js";
@@ -25,6 +25,15 @@ export const NEUTRAL_DOSE = 0.8;
 
 /** 제어기가 실제로 변형을 고르는 슬롯 — 탐침 3개 뒤의 시각 고정 슬롯. 순서는 시각 순. */
 export const CONTROLLED_SLOTS = Object.freeze(["frog", "cat"]);
+
+/**
+ * 도입부 중립 탐침 → /film 이 실제로 울리는 용량(filmTimeline CUES 의 volume — onCue 가 engagementSense 레코드에 적는 값과 같다).
+ * 시각 고정 슬롯 중 CONTROLLED_SLOTS 가 아닌 것(poster·figure·truck). 제어기 계획(runController fixed)이 이 슬롯에는
+ * 변형을 적지 않게 하는 데 쓴다(B85) — 모니터·세션 plan 이 "물보라 → far" 처럼 일어나지 않은 변형을 보이던 문제.
+ */
+export const PROBE_DOSE = Object.freeze(Object.fromEntries(
+  SLOTS.filter((s) => s.t != null && !CONTROLLED_SLOTS.includes(s.id))
+    .map((s) => [s.id, CUES.find((c) => c.name === s.event)?.volume ?? null])));
 
 /** 결정 시각(영화 초) — 슬롯의 첫 자극(소리·동선)보다 앞. 잠정치. */
 export const DECIDE_AT = Object.freeze({ frog: T.frog - 0.5, cat: T.catIn - 1.0 });
