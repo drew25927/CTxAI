@@ -204,6 +204,7 @@ function XRProbe({ onChange }) {
 
 export default function InterimPage() {
   const q = useQuery();
+  const kiosk = q.kiosk === "1"; // ?kiosk=1 — 전시·녹화용: "← 대시보드"·"5분 버전" 링크를 숨긴다 (B122)
   const [phase, setPhase] = useState("gate"); // gate | running | greeting | end
   const [genre, setGenre] = useState(null);
   const [xrActive, setXrActive] = useState(false);
@@ -482,8 +483,8 @@ export default function InterimPage() {
       <video ref={videoRef} muted playsInline className={s.hiddenVideo} />
 
       <div className={s.topBar}>
-        <a className={s.homeLink} href="/todo">← 대시보드</a>
-        <span className={s.dim}>중간시연(2분20초 MVP) · <a href="/film" style={{ color: "inherit" }}>5분 버전(다음 단계)</a></span>
+        {kiosk ? <span /> : <a className={s.homeLink} href="/todo">← 대시보드</a>}
+        <span className={s.dim}>중간시연(2분20초 MVP){!kiosk && <> · <a href="/film" style={{ color: "inherit" }}>5분 버전(다음 단계)</a></>}</span>
         <div className={s.genreChip}>
           <button className={s.resetBtn} onClick={enterVr}>🥽 Enter VR</button>
           {genre && <><span className={s.genreDot} />{GENRE_META[genre].label}</>}

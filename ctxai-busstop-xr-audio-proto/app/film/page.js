@@ -279,6 +279,8 @@ export default function FilmPage() {
   const speed = Math.max(0.25, Math.min(6, Number(q.speed) || 1));
   const useCam = q.cam !== "0";
   const showHud = q.hud !== "0";
+  // ?kiosk=1 — 전시·녹화용: 개발용 내비("← 대시보드"·"이전 버전" 링크·상단 "처음으로"·세션 JSON 내려받기)를 숨긴다. Enter VR·종료 카드의 다시 앉기·처음으로는 남긴다 (B122)
+  const kiosk = q.kiosk === "1";
   const useRig = q.rig !== "0"; // ?rig=0 이면 리깅 캐릭터 대신 캡슐 실루엣
   const usePool = q.pool === "1"; // 대사 풀 모드 (lib/dialoguePool.js)
   const voiceFake = q.voicefake || null; // public/samples/<name>.m4a 를 마이크 대신 쓴다 (점검용)
@@ -955,14 +957,15 @@ export default function FilmPage() {
       <video ref={videoRef} muted playsInline className={s.hiddenVideo} />
 
       <div className={s.topBar}>
-        <a className={s.homeLink} href="/">← 대시보드</a>
-        <span className={s.dim}>반응형 실시간 영화 · 폐루프 연출 상태 · <a href="/story-vr" style={{ color: "inherit" }}>이전 버전(1회 판정)</a></span>
+        {/* kiosk 에서도 왼쪽 칸은 비워 둔다 — 링크를 빼기만 하면 제목이 왼쪽으로 밀려 디렉터 모니터 패널 밑에 겹친다 */}
+        {kiosk ? <span /> : <a className={s.homeLink} href="/">← 대시보드</a>}
+        <span className={s.dim}>반응형 실시간 영화 · 폐루프 연출 상태{!kiosk && <> · <a href="/story-vr" style={{ color: "inherit" }}>이전 버전(1회 판정)</a></>}</span>
         <div className={s.genreChip}>
           <button className={s.resetBtn} onClick={enterVr}>🥽 Enter VR</button>
           {phase !== "gate" && (
             <>
               {dominant && <><span className={s.genreDot} />{DIALOGUE_V2_GENRE_LABEL[dominant]}</>}
-              <button className={s.resetBtn} onClick={reset}>⟲ 처음으로</button>
+              {!kiosk && <button className={s.resetBtn} onClick={reset}>⟲ 처음으로</button>}
             </>
           )}
         </div>
@@ -1123,7 +1126,7 @@ export default function FilmPage() {
             </div>
             <div className={f.endActions}>
               <button className={`${f.endBtn} ${f.endBtnMain}`} onClick={() => { reset(); setTimeout(start, 50); }}>다시 앉기</button>
-              <button className={f.endBtn} onClick={downloadSession}>세션 기록 내려받기 (JSON)</button>
+              {!kiosk && <button className={f.endBtn} onClick={downloadSession}>세션 기록 내려받기 (JSON)</button>}
               <button className={f.endBtn} onClick={reset}>처음으로</button>
             </div>
           </div>
