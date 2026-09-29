@@ -83,7 +83,7 @@ export function catSchedule(timing = CAT_TIMING_NEUTRAL) {
  * @param {object} a
  * @param {"frog"|"cat"} a.slotId
  * @param {boolean} a.controlOn      ?control=1 인가. 아니면 고정 연출(중립)
- * @param {string}  a.track          잠정 우세 장르(판정 전) 또는 판정 결과
+ * @param {string|object} a.track   판정 결과 장르("H"·"R"·"C") 또는 판정 전 배합 {R,H,C} — 배합이면 curveAt 이 기대 곡선을 쓴다(B92)
  * @param {object|null} a.theta      관객 모델 θ̂(fitViewerModel). 없으면 중립
  * @param {number|null} a.xhat       현재 긴장 추정
  * @returns {{slotId, variantId:string|null, dose:number, reason:string, actuation:object, schedule?:object, target?:number, predTension?:number, nth?:number}}

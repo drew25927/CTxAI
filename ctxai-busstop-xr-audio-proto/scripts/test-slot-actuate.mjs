@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { decideSlot, catSchedule, missingActuations, SLOT_ACTUATION, NEUTRAL_ACTUATION, NEUTRAL_DOSE, CONTROLLED_SLOTS, DECIDE_AT, CAT_TIMING_NEUTRAL, PROBE_DOSE, previewSlotEntries } from "../lib/slotActuate.js";
 import { SIM_PARAMS } from "../lib/tensionSim.js";
 import { chooseSlotNow, runController, candidateSlots } from "../lib/slotController.js";
-import { slotById, variantOf } from "../lib/tensionCurve.js";
+import { slotById, variantOf, controlTrack, curveAt } from "../lib/tensionCurve.js";
 import { CUES, T, evalActors } from "../lib/filmTimeline.js";
 import { createGazeSim, doseFactor, DOSE_REF } from "../lib/gazeSim.js";
 
@@ -174,6 +174,35 @@ test("B106 previewSlotEntries: 확정 줄·중립 탐침 줄은 그대로, θ̂ 
   for (const id of CONTROLLED_SLOTS) { const e = none.find((p) => p.slotId === id); assert.equal(e.variantId, "중립"); assert.equal(e.dose, NEUTRAL_DOSE); assert.match(e.reason, /θ̂ 없음/); assert.ok(!/x̂/.test(e.reason)); }
   const zero = previewSlotEntries(plan, { track: "H", theta: { ...SENSITIVE, n: 0 }, xhat: 0.3 });
   assert.equal(zero.find((e) => e.slotId === "cat").variantId, "중립");
+});
+
+test("B92 판정 전 슬롯 결정은 배합 기대 곡선 — seed 1 공포형 입력(개구리 R44·H34, 고양이 H44·R39)에서 두 슬롯이 같은 규칙으로, 목표는 두 장르 곡선 사이", () => {
+  // 검토 턴 25 재완주 세션(review25/sessions/on-seed1-…_H.json)의 결정 순간 값 — 종전엔 개구리 track R(목표 0.315)·고양이 track H(0.549)
+  const th = { g: 1.156, rho: 0.172, n: 2, nResp: 2 };
+  const frogMix = controlTrack({ mix: { R: 0.443, H: 0.344, C: 0.213 } });
+  const catMix = controlTrack({ mix: { R: 0.388, H: 0.438, C: 0.174 } });
+  const f = decideSlot({ slotId: "frog", controlOn: true, track: frogMix, theta: th, xhat: 0.333 });
+  const c = decideSlot({ slotId: "cat", controlOn: true, track: catMix, theta: th, xhat: 0.273 });
+  const fR = decideSlot({ slotId: "frog", controlOn: true, track: "R", theta: th, xhat: 0.333 }).target, fH = decideSlot({ slotId: "frog", controlOn: true, track: "H", theta: th, xhat: 0.333 }).target;
+  const cR = decideSlot({ slotId: "cat", controlOn: true, track: "R", theta: th, xhat: 0.273 }).target, cH = decideSlot({ slotId: "cat", controlOn: true, track: "H", theta: th, xhat: 0.273 }).target;
+  assert.ok(f.target > fR && f.target < fH, `개구리 목표 ${f.target} ∈ (R ${fR}, H ${fH})`);
+  assert.ok(c.target > cR && c.target < cH, `고양이 목표 ${c.target} ∈ (R ${cR}, H ${cH})`);
+  // 이 입력에서는 변형 자체는 종전과 같다(once·playful) — B21 녹화의 소리는 그대로 대표성이 있다
+  assert.equal(f.variantId, "once"); assert.equal(c.variantId, "playful");
+  // 모니터 미리보기(B106)도 배합을 받으면 결정과 같다
+  const plan = runController(frogMix, th, { fixed: PROBE_DOSE }).entries;
+  assert.equal(plan.length, candidateSlots().length);
+  for (const e of plan) assert.ok(Number.isFinite(e.predTension) && Number.isFinite(e.target), `${e.slotId} 계획 값`);
+  for (const x of [0.05, 0.333, 0.7]) for (const id of CONTROLLED_SLOTS)
+    assert.equal(previewSlotEntries(plan, { track: frogMix, theta: th, xhat: x }).find((e) => e.slotId === id).variantId, decideSlot({ slotId: id, controlOn: true, track: frogMix, theta: th, xhat: x }).variantId, `${id} x̂ ${x}`);
+});
+test("B92 배합이 한 장르로 몰리면 그 장르 글자와 같은 결정(판정 뒤로 넘어갈 때 규칙이 이어진다)", () => {
+  for (const g of ["R", "H", "C"]) for (const id of CONTROLLED_SLOTS) for (const th of [SENSITIVE, BLUNT]) for (const x of [0.1, 0.4]) {
+    const a = decideSlot({ slotId: id, controlOn: true, track: controlTrack({ mix: { [g]: 1 } }), theta: th, xhat: x });
+    const b = decideSlot({ slotId: id, controlOn: true, track: g, theta: th, xhat: x });
+    assert.equal(a.variantId, b.variantId, `${g} ${id} g ${th.g} x ${x}`); assert.ok(Math.abs(a.target - b.target) < 1e-9);
+  }
+  assert.ok(Math.abs(curveAt(controlTrack({ mix: { H: 1 } }), 52).target - 0.72) < 1e-9);
 });
 
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);

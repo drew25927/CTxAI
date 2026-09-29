@@ -9,12 +9,13 @@
 //
 // monitor 객체 모양(페이지가 250ms/200ms 틱마다 만든다):
 //   { track, theta:{g,L,tau,rho,confidence,nResp}, xhat, target?, tol?, ceiling?, series:[{t,tension}],
+//     (track = "H"|"R"|"C" 또는 판정 전 배합 {R,H,C} — 점선은 배합 가중 기대 곡선, 머리글은 "잠정 R44 H34 C21", B92)
 //     nStim, sel?:{track,reach}, control?:bool, micro?:number, note?,
 //     next?:{kind:"probe"|"slot"|"micro"|"done", slotId, variantId?, dose?, reason, count?, max?}   ← lib/slotController nextAdvice
 //     actuate?:{u,mode,offsets,base?}, ← /film 연속 액추에이터(lib/controlActuate.js)의 현재 구동량·오프셋. base = 오프셋을 얹기 전 값(B116)
 //     slots?:{frog?:{variantId,dose,actuation:{volume,plays}}, cat?:{…}} }   ← /film 슬롯 변형 확정값(lib/slotActuate.js, B78). variantId null = 고정 연출
 
-import { curveAt } from "@/lib/tensionCurve";
+import { curveAt, trackLabel } from "@/lib/tensionCurve";
 import { actuationText } from "@/lib/controlActuate";
 
 // 작은 그래프 — 작가 목표 곡선(점선)과 관객 긴장 추정 x̂(실선), 현재 시각 표시, 사건 눈금.
@@ -89,7 +90,7 @@ export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTar
   return (
     <div style={{ position: "fixed", top: 12, left: 12, zIndex: 40, width: 320, padding: "12px 14px", borderRadius: 10, background: "rgba(12,14,20,0.82)", color: "#e6e9f0", font: "12px/1.5 ui-monospace, monospace", border: "1px solid rgba(255,255,255,0.12)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-        <b>{title}</b><span style={{ opacity: 0.6 }}>트랙 {monitor.track || "-"} · 자극 {monitor.nStim}</span>
+        <b>{title}</b><span style={{ opacity: 0.6 }}>트랙 {trackLabel(monitor.track)} · 자극 {monitor.nStim}</span>
       </div>
       <MonitorChart series={monitor.series} track={monitor.track || "H"} tNow={tNow} ceiling={monitor.ceiling ?? 1} tMax={tMax} showTarget={showTarget} marks={marks} />
       <div style={{ display: "flex", justifyContent: "space-between", margin: "6px 0" }}>

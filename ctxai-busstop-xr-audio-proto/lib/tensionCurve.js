@@ -73,8 +73,55 @@ export const SLOTS = [
 
 function clamp01(x) { return Number.isFinite(x) ? Math.max(0, Math.min(1, x)) : 0; }
 
-/** 트랙 곡선의 시각 t 목표값과 허용폭. 키프레임 사이는 선형 보간. */
+const GENRES = ["R", "H", "C"];
+
+/**
+ * 판정 전 잠정 트랙(B92) — 장르 배합 {R,H,C} 를 트랙 자리에 그대로 넘기는 값인가.
+ * 판정(0:58) 전에는 어느 장르 곡선을 따를지 아직 모른다. 그때 선두 장르(snap.dominant) 하나를 고르면 확신 0.04 짜리
+ * 선두가 바뀔 때마다 목표 곡선이 통째로 갈아탄다 — seed 1 공포형은 개구리(0:36.5)를 로맨스 곡선으로, 고양이(0:42)를
+ * 공포 곡선으로 정했다. 배합을 넘기면 curveAt 이 지금 믿음으로 가중한 기대 곡선을 돌려주므로 목표가 연속으로 움직인다.
+ */
+export function isMixTrack(track) {
+  return !!track && typeof track === "object" && GENRES.some((g) => Number.isFinite(track[g]));
+}
+
+/** 배합을 합 1 로 정규화(음수·비수는 0). 전부 0 이면 균등. 소수 셋째 자리. */
+export function normalizeMix(mix) {
+  const w = GENRES.map((g) => Math.max(0, Number.isFinite(mix?.[g]) ? mix[g] : 0));
+  const sum = w.reduce((a, b) => a + b, 0);
+  const r3 = (x) => Math.round(x * 1000) / 1000;
+  return sum > 0 ? { R: r3(w[0] / sum), H: r3(w[1] / sum), C: r3(w[2] / sum) } : { R: 0.333, H: 0.333, C: 0.333 };
+}
+
+/**
+ * 제어기가 쓸 트랙(B92). 강제 트랙(?track=) > 판정 결과 > 판정 전 배합(기대 곡선) 순.
+ * @param {{forced?:string|null, verdict?:string|null, mix?:object|null}} a
+ * @returns {string|{R:number,H:number,C:number}}
+ */
+export function controlTrack({ forced = null, verdict = null, mix = null } = {}) {
+  if (forced) return String(forced).toUpperCase();
+  if (verdict) return verdict;
+  return mix ? normalizeMix(mix) : "H";
+}
+
+/** 모니터·세션용 짧은 표기 — 장르 트랙은 그대로 "H", 배합은 "잠정 R44 H34 C21"(큰 순). */
+export function trackLabel(track) {
+  if (!isMixTrack(track)) return track || "-";
+  const m = normalizeMix(track);
+  return "잠정 " + [...GENRES].sort((a, b) => m[b] - m[a]).map((g) => `${g}${Math.round(m[g] * 100)}`).join(" ");
+}
+
+/**
+ * 트랙 곡선의 시각 t 목표값과 허용폭. 키프레임 사이는 선형 보간.
+ * track 이 배합 {R,H,C} 이면(판정 전, B92) 세 곡선의 목표·허용폭·상한을 배합으로 가중 평균한 기대 곡선.
+ */
 export function curveAt(track, t) {
+  if (isMixTrack(track)) {
+    const m = normalizeMix(track);
+    const acc = { target: 0, tol: 0, ceiling: 0 };
+    for (const g of GENRES) { const c = curveAt(g, t); acc.target += m[g] * c.target; acc.tol += m[g] * c.tol; acc.ceiling += m[g] * c.ceiling; }
+    return { target: clamp01(acc.target), tol: acc.tol, ceiling: acc.ceiling };
+  }
   const c = TRACK_CURVES[track];
   if (!c) return { target: 0, tol: 0.15, ceiling: 1 };
   const kf = c.keyframes;
@@ -106,8 +153,7 @@ export function variantOf(slot, variantId) { return (slot?.variants || []).find(
  */
 export function evaluatePlan(track, plan) {
   const v = [];
-  const c = TRACK_CURVES[track];
-  const ceiling = c?.ceiling ?? 1;
+  const ceiling = isMixTrack(track) ? curveAt(track, 0).ceiling : (TRACK_CURVES[track]?.ceiling ?? 1);
   const sorted = [...plan].sort((a, b) => a.t - b.t);
   // 순서
   for (let i = 0; i < plan.length; i++) if (plan[i].t !== sorted[i].t) { v.push("순서 위반: 슬롯이 시각 순이 아니다"); break; }

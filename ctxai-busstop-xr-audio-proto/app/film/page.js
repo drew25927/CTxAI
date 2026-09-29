@@ -42,7 +42,7 @@ import { createGazeSim, isGazeProfile, GAZE_PROFILES } from "@/lib/gazeSim";
 import { fitViewerModel } from "@/lib/viewerModel";
 import { estimateTensionSeries } from "@/lib/tensionEstimate";
 import DirectorMonitor from "@/components/DirectorMonitor";
-import { curveAt } from "@/lib/tensionCurve";
+import { curveAt, controlTrack, isMixTrack } from "@/lib/tensionCurve";
 import { runController, microDecision, nextAdvice } from "@/lib/slotController";
 import { decideSlot, CONTROLLED_SLOTS, DECIDE_AT, PROBE_DOSE, previewSlotEntries } from "@/lib/slotActuate";
 import { actuationFor, actuationEffect, bgmScale, ACTUATE_PARAMS, ACTUATED_KEYS } from "@/lib/controlActuate";
@@ -387,7 +387,9 @@ export default function FilmPage() {
       // 디렉터 모니터 — 관객모델 θ̂·긴장 추정 x̂·목표 곡선·다음 개입 안내 (표시만 한다. 실제 구동은 아래 ?control=1 블록)
       if (q.monitor === "1") {
         const eng = engagementRef.current?.data?.();
-        const track = (q.track || film.dominant || snap.dominant || "H").toUpperCase();
+        // 판정 전에는 선두 장르 하나가 아니라 지금 배합으로 가중한 기대 곡선을 목표로 한다(B92) — 확신 0.04 짜리 선두가
+        // 바뀔 때마다 모니터 트랙이 R↔H 로 깜빡이고, 개구리·고양이가 서로 다른 장르 곡선으로 정해지던 문제. 판정 뒤에는 그 장르.
+        const track = controlTrack({ forced: q.track, verdict: film.dominant, mix: snap.current });
         if (eng) {
           const theta = fitViewerModel(eng.stimuli);
           // 센서 시각은 실제 경과 초, 모니터의 목표 곡선·현재 시각은 영화 시간 — 배속이면 환산해 겹친다
@@ -532,12 +534,16 @@ export default function FilmPage() {
     const series = eng && eng.stimuli.length ? estimateTensionSeries(eng) : [];
     const xhat = series.length ? series[series.length - 1].tension : null;
     const snap = d.snapshot();
-    const track = (q.track || film.dominant || snap.dominant || "H").toUpperCase();
-    const choice = { ...decideSlot({ slotId, controlOn, track, theta, xhat }), t: Math.round(film.t * 10) / 10, track };
+    // 개구리(0:36.5)·고양이(0:42)는 판정(0:58) 전이라 배합 가중 기대 곡선으로 정한다(B92, 모니터와 같은 controlTrack).
+    // 세션에는 track "mix" + 그때 배합(mix)으로 남긴다 — ?track= 강제나 판정 뒤 결정이면 장르 글자 그대로.
+    const trk = controlTrack({ forced: q.track, verdict: film.dominant, mix: snap.current });
+    const track = isMixTrack(trk) ? "mix" : trk;
+    const mix = isMixTrack(trk) ? trk : null;
+    const choice = { ...decideSlot({ slotId, controlOn, track: trk, theta, xhat }), t: Math.round(film.t * 10) / 10, track, mix };
     film.slotChoice = { ...(film.slotChoice || {}), [slotId]: choice };
     const r3 = (v) => (Number.isFinite(v) ? Math.round(v * 1000) / 1000 : null);
     d.markEvent("control:slot", {
-      t: choice.t, active: controlOn, slotId, variantId: choice.variantId, dose: choice.dose, reason: choice.reason, track,
+      t: choice.t, active: controlOn, slotId, variantId: choice.variantId, dose: choice.dose, reason: choice.reason, track, mix,
       xhat: r3(xhat), target: r3(choice.target), predTension: r3(choice.predTension), theta: theta ? { g: theta.g, rho: theta.rho, nResp: theta.nResp, n: theta.n } : null,
       actuation: { sfx: choice.actuation.sfx, volume: choice.actuation.volume, plays: choice.actuation.plays, gap: choice.actuation.gap }, schedule: choice.schedule || null,
     });
@@ -844,7 +850,7 @@ export default function FilmPage() {
         const theta = fitViewerModel(eng.stimuli);
         const a = adjustRef.current;
         const slots = {};
-        for (const [id, c] of Object.entries(filmRef.current.slotChoice || {})) slots[id] = { t: c.t, track: c.track, variantId: c.variantId, dose: c.dose, reason: c.reason, target: c.target ?? null, predTension: c.predTension ?? null, actuation: { sfx: c.actuation.sfx, volume: c.actuation.volume, plays: c.actuation.plays, gap: c.actuation.gap }, schedule: c.schedule || null };
+        for (const [id, c] of Object.entries(filmRef.current.slotChoice || {})) slots[id] = { t: c.t, track: c.track, mix: c.mix ?? null, variantId: c.variantId, dose: c.dose, reason: c.reason, target: c.target ?? null, predTension: c.predTension ?? null, actuation: { sfx: c.actuation.sfx, volume: c.actuation.volume, plays: c.actuation.plays, gap: c.actuation.gap }, schedule: c.schedule || null };
         control = { track, theta, mode: q.control === "1" ? "full" : "off", plan: runController(track, theta, { fixed: PROBE_DOSE }).entries, slots,
           actuation: { on: q.control === "1", holdAfterMicro: q.hold ? Math.max(0, Number(q.hold) || 0) : ACTUATE_PARAMS.HOLD_AFTER_MICRO, ticks: filmRef.current.actuateLogCount || 0, micro: filmRef.current.microCount || 0, last: a ? { t: a.t, u: a.u, mode: a.mode, offsets: a.offsets } : null } };
       }
