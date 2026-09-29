@@ -23,6 +23,8 @@
 //           ?scene=240 (캐릭터 장면 목표 길이 초 — 대사 사이 침묵을 늘려 안내방송의 "5분 후 도착"에 가깝게. 기본 0 = 자연 길이)
 //           ?voice=1 (음성 채널 — 안내방송 뒤 "당신은 무엇을 기다리고 있습니까?"를 묻고 답을 STT·톤 분석해 증거로 넣고,
 //                     답에서 뽑은 명사를 정류장 이름 표지판에 쓴다. 요청서 v5.0 §2.6) · ?voicefake=romance (마이크 대신 샘플 파일)
+//           ?viewer=fearful|curious|calm (합성 관객, lib/gazeSim.js — 헤드셋·드래그 없이 지어낸 관객의 고개 움직임을 센서에 넣고
+//                     카메라도 그쪽으로 돌린다. 시연·증거용이며 화면에 배지를 항상 띄운다) · ?seed=N (합성 관객 난수 시드, 기본 1)
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
@@ -35,6 +37,7 @@ import ReactiveStage from "@/components/ReactiveStage";
 import { createDirectionState, rank } from "@/lib/directionState";
 import { createHeadPoseSensor } from "@/lib/headPoseSense";
 import { createEngagementSensor } from "@/lib/engagementSense";
+import { createGazeSim, isGazeProfile, GAZE_PROFILES } from "@/lib/gazeSim";
 import { fitViewerModel } from "@/lib/viewerModel";
 import { estimateTensionSeries } from "@/lib/tensionEstimate";
 import DirectorMonitor from "@/components/DirectorMonitor";
@@ -81,9 +84,10 @@ function useQuery() {
 }
 
 // 캔버스 안에서 도는 디렉터 — 카메라 포즈를 센서에 넣고, 상태를 tick 하고, 타임라인을 밀고, 큐를 쏜다.
-function FilmDirector({ directionRef, sensorRef, engagementRef, actorsRef, filmRef, onCue, speed, debugBus = false, debugTruck = false }) {
+function FilmDirector({ directionRef, sensorRef, engagementRef, actorsRef, filmRef, onCue, speed, debugBus = false, debugTruck = false, viewerSimRef, controlsRef }) {
   const session = useXR((xr) => xr.session);
   const euler = useMemo(() => new Euler(), []);
+  const dir = useMemo(() => new Vector3(), []);
   useFrame((state, dt) => {
     const d = directionRef.current;
     const film = filmRef.current;
@@ -96,13 +100,28 @@ function FilmDirector({ directionRef, sensorRef, engagementRef, actorsRef, filmR
     euler.setFromQuaternion(state.camera.quaternion, "YXZ");
     let yaw = -MathUtils.radToDeg(euler.y);
     let pitch = MathUtils.radToDeg(euler.x);
-    const roll = MathUtils.radToDeg(euler.z);
+    let roll = MathUtils.radToDeg(euler.z);
     if (film.autoGaze && film.autoGazeHold) { yaw = film.autoGazeHold.yaw; pitch = film.autoGazeHold.pitch; }
-    const z = session ? state.camera.position.z : 0;
+    const cp = state.camera.position;
+    let x = session ? cp.x : 0, y = session ? cp.y : 0, z = session ? cp.z : 0;
+    // 합성 관객(?viewer=, lib/gazeSim.js) — 헤드셋 세션이 아니면 카메라 대신 합성 자세를 센서에 넣고, 카메라도 같은
+    // 방위로 돌려 프레임에 시선이 보이게 한다(DesktopGaze 와 같은 방식이며, 그쪽은 이때 마운트되지 않는다).
+    const sim = viewerSimRef?.current;
+    const simOn = !!sim && !session;
+    if (simOn) {
+      const p = sim.step(film.t, clamped);
+      yaw = p.yaw; pitch = p.pitch; roll = p.roll; x = p.x; y = p.y; z = p.z;
+      const c = controlsRef?.current;
+      if (c) {
+        const r = dir.copy(c.target).sub(cp).length() || 0.01;
+        const ry = MathUtils.degToRad(yaw), rp = MathUtils.degToRad(pitch);
+        dir.set(Math.sin(ry) * Math.cos(rp), Math.sin(rp), -Math.cos(ry) * Math.cos(rp)).multiplyScalar(r);
+        cp.copy(c.target).sub(dir);
+      }
+    }
     sensorRef.current?.update(yaw, pitch, z, clamped);
     // 집중도·잔움직임·탐침 반응 — 같은 자세 스트림에서 데이터 세 층을 뽑는다(파일럿·모델·제작 도구용)
-    const cp = state.camera.position;
-    engagementRef.current?.update({ yaw, pitch, roll, x: session ? cp.x : 0, y: session ? cp.y : 0, z }, clamped);
+    engagementRef.current?.update({ yaw, pitch, roll, x, y, z }, clamped);
 
     // 영화 시간
     film.t += clamped * speed;
@@ -117,6 +136,13 @@ function FilmDirector({ directionRef, sensorRef, engagementRef, actorsRef, filmR
     if (debugBus) actors.bus = { visible: true, x: -1.2, z: -4.75, stopped: true, doorOpen: true, headlight: 0.6 }; // ?bus=1 — 정차한 버스를 바로 본다 (디자인 점검용)
     if (debugTruck) actors.truck = { visible: true, x: 1.0, z: -4.6 }; // ?truck=1 — 트럭을 물웅덩이 앞에 세운다
     actorsRef.current = actors;
+
+    // 합성 관객이 쉴 때 보는 곳 — 버스가 오면 정면 약간 오른쪽, 옆사람이 앉아 있으면 그쪽(얼굴이 화면을 채우지 않게 DesktopGaze 와 같은 63° 상한)
+    if (simOn) {
+      if (film.busAt != null) sim.setRest(MathUtils.radToDeg(AUTO_GAZE_BUS));
+      else if (actors.npc?.visible && actors.npc.seated) sim.setRest(Math.min(MathUtils.radToDeg(AUTO_GAZE_NPC), MathUtils.radToDeg(Math.atan2(actors.npc.x - cp.x, -(actors.npc.z - cp.z)))));
+      else sim.setRest(0);
+    }
 
     // 옆사람이 앉아 있으면 그 방향을 센서에 알려 "사람에 대한 관심"을 잰다
     if (actors.npc?.visible && actors.npc.seated && !film.autoGaze) {
@@ -248,6 +274,10 @@ export default function FilmPage() {
   // ?bias=H (또는 H:1.5) — 시작 시 그 장르 증거를 미리 넣어 배합을 기울인다. 발표·QA용:
   // 같은 장면을 강제 배합으로 비교해 볼 때 쓴다. 실제 관객 세션에서는 쓰지 않는다.
   const bias = useMemo(() => { const [g, w] = String(q.bias || "").split(":"); return ["R", "H", "C"].includes(g) ? { g, w: Number(w) || 1.2 } : null; }, [q.bias]);
+  // ?viewer=fearful|curious|calm — 합성 관객(lib/gazeSim.js). 시연·증거용이라 켜져 있으면 화면에 배지를 항상 띄우고 세션에 synthetic 표기를 남긴다.
+  const viewerSim = isGazeProfile(q.viewer) ? q.viewer : null;
+  const viewerSeed = Math.max(1, Math.floor(Number(q.seed) || 1));
+  const viewerSimRef = useRef(null);
   const poolRef = useRef(null);
   useEffect(() => { if (usePool) loadDialoguePool().then((p) => { poolRef.current = p; }); }, [usePool]);
 
@@ -358,6 +388,7 @@ export default function FilmPage() {
           if (fire) {
             playSfx("13", { volume: 0.12 + 0.22 * dose }); // 먼 기척(클래터) — 은은하게
             engagementRef.current?.beginStimulus({ name: `micro-${(film.microCount || 0) + 1}`, azimuth: -60, dur: 1.5 / speed, kind: "probe", channel: "audio", dose, tail: 3 / speed });
+            viewerSimRef.current?.trigger({ name: `micro-${(film.microCount || 0) + 1}`, azimuth: -60, dur: 1.5 / speed, kind: "probe", channel: "audio" });
             d.markEvent("control:micro", { t: Math.round(film.t * 10) / 10, xhat, target: tgt.target, dose });
             film.lastMicroAt = film.t; film.microCount = (film.microCount || 0) + 1;
           }
@@ -391,6 +422,8 @@ export default function FilmPage() {
     directionRef.current = d;
     sensorRef.current = createHeadPoseSensor({ push: d.pushEvidence, mark: d.markEvent });
     engagementRef.current = createEngagementSensor({ mark: d.markEvent });
+    viewerSimRef.current = viewerSim ? createGazeSim(viewerSim, { seed: viewerSeed, speed }) : null; // 합성 관객은 영화 시간을 산다(배속이면 반응도 압축)
+    if (viewerSimRef.current) d.markEvent("viewer:synthetic", { profile: viewerSim, seed: viewerSeed });
     paramsRef.current = null;
     filmRef.current = { running: true, t: 0, dominant: null, npcDistance: 0.9, busAt: null, onFrame: null, lastMicroAt: -999, microCount: 0 };
     setDominant(null); setLine(null); setCaption(""); setAskStatus(null);
@@ -428,6 +461,8 @@ export default function FilmPage() {
       sensorRef.current?.beginEvent(cue.name, cue.sense.azimuth, cue.sense.dur / speed, { kind: cue.sense.kind, tail: 4 / speed });
       // 탐침 반응 기록 — 채널·용량은 잠정(오디오 큐는 소리, 그 밖은 시청각). 궤적 추종 기획에서 정식화한다.
       engagementRef.current?.beginStimulus({ name: cue.name, azimuth: cue.sense.azimuth, dur: cue.sense.dur / speed, kind: cue.sense.kind, channel: cue.sfx ? "audio" : "av", dose: cue.volume ?? null, tail: 4 / speed });
+      // 합성 관객도 같은 사건을 듣는다 — 방위·종류로 반응한다(채널은 기록용)
+      viewerSimRef.current?.trigger({ name: cue.name, azimuth: cue.sense.azimuth, dur: cue.sense.dur / speed, kind: cue.sense.kind, channel: cue.sfx ? "audio" : "av" });
     }
     d.markEvent("cue", cue.name);
 
@@ -653,7 +688,9 @@ export default function FilmPage() {
         control = { track, theta, plan: runController(track, theta).entries };
       }
     } catch { /* 로그 실패는 무시 */ }
-    return d.exportSession({ dominant: filmRef.current.dominant, speed, headPose: sensorRef.current?.report?.(), engagement: engagementRef.current?.report?.(), control, ...extra });
+    const vs = viewerSimRef.current;
+    const viewer = vs ? { synthetic: true, profile: vs.profile, label: vs.label, seed: vs.seed } : undefined; // 합성 관객 세션은 파일에도 표기
+    return d.exportSession({ dominant: filmRef.current.dominant, speed, viewer, headPose: sensorRef.current?.report?.(), engagement: engagementRef.current?.report?.(), control, ...extra });
   }
 
   // 종료 시 자동 저장 (data/sessions/, Supabase 아님). 실패해도 체험은 영향 없다.
@@ -707,8 +744,8 @@ export default function FilmPage() {
             <ReactiveStage directionRef={directionRef} actorsRef={actorsRef} dominant={dominant} paramsOut={paramsRef} cueRef={filmRef} useRig={useRig} rigTest={q.rigtest === "1"} signText={signText} reflect={fx && !xrActive} benchYaw={Number(q.benchyaw) || 0} />
             <XRProbe onChange={setXrActive} />
             <Effects enabled={fx} />
-            <FilmDirector directionRef={directionRef} sensorRef={sensorRef} engagementRef={engagementRef} actorsRef={actorsRef} filmRef={filmRef} onCue={onCue} speed={speed} debugBus={q.bus === "1"} debugTruck={q.truck === "1"} />
-            {q.gaze !== "0" && <DesktopGaze controlsRef={controlsRef} actorsRef={actorsRef} filmRef={filmRef} />}
+            <FilmDirector directionRef={directionRef} sensorRef={sensorRef} engagementRef={engagementRef} actorsRef={actorsRef} filmRef={filmRef} onCue={onCue} speed={speed} debugBus={q.bus === "1"} debugTruck={q.truck === "1"} viewerSimRef={viewerSimRef} controlsRef={controlsRef} />
+            {q.gaze !== "0" && !viewerSim && <DesktopGaze controlsRef={controlsRef} actorsRef={actorsRef} filmRef={filmRef} />}
           </XR>
           {/* 드래그 = 제자리에서 고개 돌리기. 타깃을 카메라 바로 앞 1cm 에 두면 궤도 회전이 머리 회전처럼 된다
               (타깃이 멀면 카메라가 반대편으로 돌아가 도로 한가운데서 정류장을 보게 된다). */}
@@ -734,6 +771,8 @@ export default function FilmPage() {
       </div>
 
       {xrError && <p className={s.introSub} style={{ position: "absolute", top: 70, width: "100%", textAlign: "center", zIndex: 6 }}>{xrError}</p>}
+
+      {viewerSim && <div className={f.synthBadge}>합성 관객(시연용) · {GAZE_PROFILES[viewerSim].label} · seed {viewerSeed} — 실제 관객의 반응이 아닙니다</div>}
 
       {showHud && snap && phase !== "gate" && phase !== "end" && (
         <div className={f.hud} style={{ "--accent": accent }}>

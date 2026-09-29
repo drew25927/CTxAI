@@ -52,7 +52,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, PerspectiveCamera } from "@react-three/drei";
 import { XR, createXRStore, useXR } from "@react-three/xr";
-import { Euler, MathUtils } from "three";
+import { Euler, MathUtils, Vector3 } from "three";
 import ReactiveStage from "@/components/ReactiveStage";
 import { CUES, evalActors } from "@/lib/interimTimeline";
 import { createInterimDrift } from "@/lib/interimDrift";
@@ -66,6 +66,7 @@ import {
   gradeS2FromWebcam, gradeS4FromWebcam,
 } from "@/lib/interimGrader";
 import { createEngagementSensor } from "@/lib/engagementSense";
+import { createGazeSim, isGazeProfile, GAZE_PROFILES } from "@/lib/gazeSim";
 import { fitViewerModel } from "@/lib/viewerModel";
 import { estimateTensionSeries } from "@/lib/tensionEstimate";
 import { selectTrack } from "@/lib/trackSelect";
@@ -106,9 +107,10 @@ function useQuery() {
 // 드리프트를 tick하고, 판정 시점에 judge()를 부른다. 렌더는 순수하게 actorsRef/driftRef를
 // 프레임마다 갱신하는 것뿐이라 React 상태로 만들지 않는다 — 화면 전환이 필요한 지점만
 // onCue로 페이지에 알린다.
-function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, engagementRef, trajRef, observationsRef, onCue, speed = 1 }) {
+function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, engagementRef, trajRef, observationsRef, onCue, speed = 1, viewerSimRef, controlsRef }) {
   const session = useXR((xr) => xr.session);
   const euler = useMemo(() => new Euler(), []);
+  const dir = useMemo(() => new Vector3(), []);
   const tRef = useRef(0);
   const cueIdxRef = useRef(0);
   const judgedRef = useRef(false);
@@ -120,14 +122,32 @@ function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, engagemen
     // 카메라 포즈 → 헤드 포즈 센서. 헤드셋이든 데스크톱 드래그든 카메라 방향 자체가
     // 신호라 똑같이 동작한다 (film/page.js의 FilmDirector와 같은 패턴).
     euler.setFromQuaternion(state.camera.quaternion, "YXZ");
-    const yaw = -MathUtils.radToDeg(euler.y);
-    const pitch = MathUtils.radToDeg(euler.x);
-    const z = session ? state.camera.position.z : 0;
-    sensorRef.current?.update(yaw, pitch, z, clamped);
-    standUpRef.current?.update(state.camera.position.y, clamped, !!session);
-    // 같은 자세 스트림을 집중도·탐침 센서에도 — 관객 응답 모델 θ̂·긴장 추정 x̂ 의 원천(film/page.js 와 동일)
+    let yaw = -MathUtils.radToDeg(euler.y);
+    let pitch = MathUtils.radToDeg(euler.x);
+    let roll = MathUtils.radToDeg(euler.z);
     const cp = state.camera.position;
-    engagementRef.current?.update({ yaw, pitch, roll: MathUtils.radToDeg(euler.z), x: session ? cp.x : 0, y: session ? cp.y : 0, z }, clamped);
+    let x = session ? cp.x : 0, y = session ? cp.y : 0, z = session ? cp.z : 0;
+    let headY = cp.y;
+    // 합성 관객(?viewer=, lib/gazeSim.js) — 헤드셋 세션이 아니면 카메라 대신 합성 자세를 센서에 넣고 카메라도 같은
+    // 방위로 돌린다(/film 의 FilmDirector 와 같은 방식). 팀의 판정 로직은 그대로고 입력만 바뀐다.
+    const sim = viewerSimRef?.current;
+    const simOn = !!sim && !session;
+    if (simOn) {
+      const p = sim.step(tRef.current, clamped);
+      yaw = p.yaw; pitch = p.pitch; roll = p.roll; x = p.x; y = p.y; z = p.z; headY = p.y;
+      const c = controlsRef?.current;
+      if (c) {
+        const r = dir.copy(c.target).sub(cp).length() || 0.01;
+        const ry = MathUtils.degToRad(yaw), rp = MathUtils.degToRad(pitch);
+        dir.set(Math.sin(ry) * Math.cos(rp), Math.sin(rp), -Math.cos(ry) * Math.cos(rp)).multiplyScalar(r);
+        cp.copy(c.target).sub(dir);
+      }
+    }
+    sensorRef.current?.update(yaw, pitch, z, clamped);
+    // 기립 감지는 헤드셋 높이만 믿는다 — 합성 관객은 지어낸 높이를 세션처럼 넣어 S5:A(벌떡) 갈래도 화면에서 시연할 수 있게 한다
+    standUpRef.current?.update(headY, clamped, !!session || simOn);
+    // 같은 자세 스트림을 집중도·탐침 센서에도 — 관객 응답 모델 θ̂·긴장 추정 x̂ 의 원천(film/page.js 와 동일)
+    engagementRef.current?.update({ yaw, pitch, roll, x, y, z }, clamped);
 
     tRef.current += clamped * speed;
     const t = tRef.current;
@@ -139,6 +159,7 @@ function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, engagemen
       // 다섯 사건 모두를 탐침으로 기록 — S2·S4(웹캠 담당)도 방위 보조 메타로 반응 크기·지연을 잰다
       const probe = probeFor(cue.name, speed);
       if (probe) engagementRef.current?.beginStimulus(probe);
+      if (probe && simOn) sim.trigger(probe); // 합성 관객도 같은 사건을 듣는다
       if (cue.signal && !judgedRef.current) {
         // 부분 관측치로 "지금까지의 선두 장르"를 뽑아 드리프트에 알린다 (§4 "선두가
         // 바뀌면 방향도 바뀐다"). 최종 판정과 같은 엔진을 재사용 — 별도 로직 없음.
@@ -155,6 +176,11 @@ function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, engagemen
 
     driftRef.current.tick(dt);
     actorsRef.current = evalActors(t, { dominant: driftRef.current.st.finalGenre });
+    // 합성 관객이 쉴 때 보는 곳 — 옆사람이 앉으면 그쪽(얼굴이 화면을 채우지 않게 63° 상한), 아니면 정면
+    if (simOn) {
+      const npc = actorsRef.current.npc;
+      sim.setRest(npc?.visible && npc.seated ? Math.min(63, MathUtils.radToDeg(Math.atan2(npc.x - cp.x, -(npc.z - cp.z)))) : 0);
+    }
 
     // 세션 저장용 궤적 — 드리프트 배합을 0.5초(영화 시간)마다 표본화 (/film 의 trajectory 와 같은 모양)
     if (trajRef && t - lastSampleRef.current >= TRAJ_SAMPLE_SEC) {
@@ -201,6 +227,8 @@ export default function InterimPage() {
   const startedAtRef = useRef(null);
   const [monitor, setMonitor] = useState(null); // 디렉터 모니터(?monitor=1)
   const [savedId, setSavedId] = useState(null);
+  const viewerSimRef = useRef(null);  // 합성 관객(?viewer=, lib/gazeSim.js) — start() 에서 만든다
+  const controlsRef = useRef(null);   // OrbitControls — 합성 관객이 카메라를 돌릴 때 target 이 필요하다
 
   if (!driftRef.current) driftRef.current = createInterimDrift();
   if (!standUpRef.current) standUpRef.current = createStandUpSensor();
@@ -241,6 +269,9 @@ export default function InterimPage() {
   const useCam = q.cam !== "0";
   const useMic = q.mic !== "0";
   const monitorOn = q.monitor === "1";
+  // ?viewer=fearful|curious|calm — 합성 관객. 시연·증거용이라 켜져 있으면 배지를 항상 띄우고 세션에 synthetic 표기를 남긴다.
+  const viewerSim = isGazeProfile(q.viewer) ? q.viewer : null;
+  const viewerSeed = Math.max(1, Math.floor(Number(q.seed) || 1));
   // ?auto=1 — 마운트 직후 자동 시작 (관찰·리허설용. 웹캠·마이크 권한 프롬프트는 브라우저 정책을 따른다)
   const autoStart = q.auto === "1";
   useEffect(() => {
@@ -335,6 +366,8 @@ export default function InterimPage() {
 
   async function start() {
     startedAtRef.current = performance.now();
+    viewerSimRef.current = viewerSim ? createGazeSim(viewerSim, { seed: viewerSeed, speed }) : null; // 합성 관객은 영화 시간을 산다(배속이면 반응도 압축)
+    if (viewerSimRef.current) eventsRef.current.push({ t: 0, name: "viewer:synthetic", detail: { profile: viewerSim, seed: viewerSeed } });
     setPhase("running");
     if (useCam) {
       try {
@@ -386,6 +419,7 @@ export default function InterimPage() {
       debugSignals: Object.keys(debugObsRef.current),
       judge: judgeRef.current,
       sensors: { cam: camStatus, mic: micStatus, xr: xrActive, stoodUp: !!standUpRef.current?.stoodUp },
+      viewer: viewerSimRef.current ? { synthetic: true, profile: viewerSimRef.current.profile, label: viewerSimRef.current.label, seed: viewerSimRef.current.seed } : undefined,
       headPose: sensorRef.current?.report?.(),
       engagement: engagementRef.current?.report?.(),
       control,
@@ -420,10 +454,10 @@ export default function InterimPage() {
             <ReactiveStage actorsRef={actorsRef} directionRef={driftRef} dominant={genre} reflect={!xrActive} />
             <XRProbe onChange={setXrActive} />
             {phase !== "gate" && (
-              <InterimDirector actorsRef={actorsRef} driftRef={driftRef} sensorRef={sensorRef} standUpRef={standUpRef} engagementRef={engagementRef} trajRef={trajRef} observationsRef={observationsRef} onCue={onCue} speed={speed} />
+              <InterimDirector actorsRef={actorsRef} driftRef={driftRef} sensorRef={sensorRef} standUpRef={standUpRef} engagementRef={engagementRef} trajRef={trajRef} observationsRef={observationsRef} onCue={onCue} speed={speed} viewerSimRef={viewerSimRef} controlsRef={controlsRef} />
             )}
           </XR>
-          <OrbitControls target={[0, 1.15, 0.34]} enableZoom={false} enablePan={false} enableDamping dampingFactor={0.08} rotateSpeed={-0.35} />
+          <OrbitControls ref={controlsRef} target={[0, 1.15, 0.34]} enableZoom={false} enablePan={false} enableDamping dampingFactor={0.08} rotateSpeed={-0.35} />
         </Canvas>
         <div className={s.vignette} />
       </div>
@@ -440,6 +474,8 @@ export default function InterimPage() {
       </div>
 
       {xrError && <p className={s.introSub} style={{ position: "absolute", top: 70, width: "100%", textAlign: "center", zIndex: 6 }}>{xrError}</p>}
+
+      {viewerSim && <div className={f.synthBadge}>합성 관객(시연용) · {GAZE_PROFILES[viewerSim].label} · seed {viewerSeed} — 실제 관객의 반응이 아닙니다</div>}
 
       {gateShown && (
         <div className={s.intro}>
@@ -485,7 +521,7 @@ export default function InterimPage() {
             센서 — 헤드셋/드래그 <b style={{ color: "#8fd68f" }}>연결됨</b> · 웹캠 <b style={{ color: okColor(camStatus) }}>{CAM_LABEL[camStatus]}</b> · 마이크 <b style={{ color: okColor(micStatus) }}>{MIC_LABEL[micStatus]}</b>
           </div>
           <div className={f.hudMeta} style={{ opacity: 0.85 }}>
-            기립 감지(S5:A) <b style={{ color: hud.stoodUp ? "#8fd68f" : "#c9c9c9" }}>{!xrActive ? "헤드셋 필요(데스크톱)" : hud.stoodUp ? "감지됨" : "대기 중"}</b>
+            기립 감지(S5:A) <b style={{ color: hud.stoodUp ? "#8fd68f" : "#c9c9c9" }}>{!xrActive && !viewerSim ? "헤드셋 필요(데스크톱)" : hud.stoodUp ? (viewerSim ? "감지됨(합성)" : "감지됨") : "대기 중"}</b>
           </div>
           <div className={f.hudMeta} style={{ opacity: 0.6 }}>
             미연결 — 외부 몸 카메라 (S2·S4는 얼굴 웹캠으로 근사 중)
