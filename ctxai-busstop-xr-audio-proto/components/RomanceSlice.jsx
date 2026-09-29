@@ -40,6 +40,21 @@ const QUICK = [
   "그건 좀 캐묻는 거 아닌가요?",
 ];
 
+// 마이크가 막혔을 때(voiceErr)의 폴백 — 관객이 감정 반응을 버튼으로 직접
+// 고르면 submit()을 그대로 태운다. 각 문구는 lib/dialogueEngine.js의
+// PATTERNS 정규식과 정확히 매칭되도록 골랐다 — classifyIntent·step 등
+// 판정 로직은 손대지 않고, 음성 인식이 성공했을 때와 동일한 경로를 탄다.
+const VOICE_FALLBACK_REACTIONS = [
+  { intent: "interest", text: "더 듣고 싶어요" },
+  { intent: "question", text: "왜 그런 거예요?" },
+  { intent: "empathy", text: "그랬겠어요, 힘들었겠다" },
+  { intent: "advice", text: "그렇게 해보세요" },
+  { intent: "joke", text: "농담이었어요 ㅋㅋ" },
+  { intent: "confession", text: "사실 저도 처음이라 그래요" },
+  { intent: "refusal", text: "그건 좀 별로예요" },
+  { intent: "aggression", text: "됐어요, 신경 쓰지 마세요" },
+];
+
 function mmss(sec) {
   const s = Math.max(0, Math.floor(sec));
   return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
@@ -902,6 +917,21 @@ export default function RomanceSlice({ onClose }) {
                   <button className={styles.chip} onClick={() => setVoiceErr(null)}>
                     닫고 타이핑으로 계속
                   </button>
+                </div>
+                <div className={styles.errWhat} style={{ marginTop: 10 }}>
+                  또는 마이크 대신 지금 느끼는 반응을 바로 골라도 됩니다:
+                </div>
+                <div className={styles.chips}>
+                  {VOICE_FALLBACK_REACTIONS.map((r) => (
+                    <button
+                      key={r.intent}
+                      className={styles.chip}
+                      disabled={!canTalk || awaiting}
+                      onClick={() => submit(r.text)}
+                    >
+                      {INTENT_LABEL[r.intent]}
+                    </button>
+                  ))}
                 </div>
                 {diag && (
                   <div className={styles.diag}>

@@ -1,0 +1,14 @@
+node_modules
+.next
+out
+.vercel
+.env*.local
+.env.production
+.env.production.local
+npm-debug.log*
+storage/
+assets/
+data/
+ct_ai_office1_apartment1_assets.zip
+.vercel-token
+.env*

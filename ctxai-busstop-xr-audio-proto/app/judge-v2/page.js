@@ -125,6 +125,12 @@ export default function JudgeV2Dashboard() {
             ? `얼굴 감지됨 — dx ${live.dx?.toFixed(3)} · dy ${live.dy?.toFixed(3)} · scale ${live.scaleRatio?.toFixed(3)}`
             : "얼굴 없음"}
         </div>
+        {live.faceFound && typeof live.fear === "number" && (
+          <div className="info-block" style={{ fontFamily: "monospace" }}>
+            표정 실시간값 — 공포 {live.fear.toFixed(3)} · 웃음 {live.amusement.toFixed(3)}
+            {" "}(무서운 표정을 지으면 공포가, 웃으면 웃음이 올라가야 정상 — S2·S4 판정이 실제로 쓰는 값)
+          </div>
+        )}
         <div className="cta" style={{ marginTop: 10 }}>
           <button onClick={run} disabled={state === "running"}>
             {state === "running" ? "관찰 중... (11초)" : "판정 실행"}

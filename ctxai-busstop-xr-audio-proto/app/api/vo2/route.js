@@ -7,7 +7,7 @@
 // 46개 고정 슬롯이라 assetSpec.js의 큰 SLOTS 표에는 넣지 않았습니다 —
 // 8월 시연 체크리스트와는 다른 목록입니다.
 
-import { addVariant, readRecords } from "../../../lib/store";
+import { addVariant, chooseVariant, readRecords } from "../../../lib/store";
 import { DIALOGUE_V2_LINES, DIALOGUE_V2_SLOT_ID } from "../../../lib/dialogueV2Lines";
 
 export const runtime = "nodejs";
@@ -45,7 +45,14 @@ export async function POST(req) {
 
   const bytes = Buffer.from(await file.arrayBuffer());
   const slotId = DIALOGUE_V2_SLOT_ID(genre, seq);
-  await addVariant(slotId, line.file, bytes, {});
+  const slotRec = await addVariant(slotId, line.file, bytes, {});
+
+  // /vo 페이지에는 여러 샘플 중 고르는 UI가 없다 — /upload 의 일반 에셋과
+  // 달리, 이 슬롯은 다시 올리면 그게 곧 "최신"이어야 한다. addVariant()는
+  // 처음 올릴 때만 자동 선택하므로, 재업로드 시엔 방금 올라온 샘플을
+  // 명시적으로 선택 상태로 바꿔준다.
+  const newVariantId = slotRec.variants[slotRec.variants.length - 1].id;
+  await chooseVariant(slotId, newVariantId);
 
   return Response.json({ ok: true, slotId });
 }

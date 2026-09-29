@@ -1,11 +1,17 @@
 {
   "version": "0.0.1",
+  "autoPort": true,
   "configurations": [
     {
       "name": "romance-slice",
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev", "--prefix", "ctxai-busstop-xr-audio-proto"],
       "port": 3000
+    },
+    {
+      "name": "film-main-check",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "film", "--prefix", "ctxai-busstop-xr-audio-proto"]
     }
   ]
 }

@@ -13,8 +13,8 @@
 .pageHead h1 { font-size: 24px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.02em; }
 
 .block {
-  margin-bottom: 32px;
-  padding-bottom: 28px;
+  margin-bottom: 26px;
+  padding-bottom: 20px;
   border-bottom: 1px solid #23262c;
 }
 .blockTitle { font-size: 15px; font-weight: 700; margin: 0 0 14px; letter-spacing: -0.01em; }
@@ -54,7 +54,22 @@
 .screenCard:hover { border-color: #5a6270; }
 .screenCardHead { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
 .screenCardHead b { font-size: 13.5px; font-weight: 600; }
-.screenCard p { margin: 0; font-size: 12px; color: #8c9098; line-height: 1.55; }
+.screenCard p {
+  margin: 0; font-size: 12px; color: #8c9098; line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+
+.legacySection { margin-top: 18px; }
+.legacySection summary {
+  cursor: pointer; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase;
+  color: #8c9098; list-style: none;
+}
+.legacySection summary::-webkit-details-marker { display: none; }
+.legacySection summary::before { content: "▸ "; color: #767c86; }
+.legacySection[open] summary::before { content: "▾ "; }
+.legacySection .screenGrid { margin-top: 10px; }
+.legacySection .screenCard { opacity: .7; }
+.legacySection .screenCard:hover { opacity: 1; }
 
 .tag {
   font-size: 10.5px; font-weight: 700; letter-spacing: .02em; padding: 2px 7px;
@@ -74,17 +89,16 @@
 }
 .reportCard:hover { border-color: #5a6270; }
 .reportCard b { display: block; font-size: 13.5px; font-weight: 600; margin-bottom: 6px; }
-.reportCard p { margin: 0; font-size: 12px; color: #8c9098; line-height: 1.55; }
+.reportCard p {
+  margin: 0; font-size: 12px; color: #8c9098; line-height: 1.5;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
 
 .head {
   display: flex; justify-content: space-between; align-items: flex-start;
   gap: 24px; flex-wrap: wrap; margin-bottom: 20px;
 }
 .head h1 { font-size: 22px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.02em; }
-
-.count { text-align: right; }
-.count b { display: block; font-size: 26px; font-weight: 700; line-height: 1.1; }
-.count span { font-size: 11.5px; color: #8c9098; }
 
 .addForm {
   display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 24px;

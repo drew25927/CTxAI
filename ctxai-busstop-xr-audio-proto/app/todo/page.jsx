@@ -92,6 +92,12 @@ export default function TodoPage() {
     }).filter((r) => r.total > 0);
   }, [tasks]);
 
+  // V2/신규 버전이 따로 있는 옛 화면은 메인 그리드에서 빼서 아래 접이식
+  // 섹션에 모아 보여준다 — lib/dashboardData.js 의 legacy: true 항목.
+  const legacyScreens = DEV_SCREENS.flatMap((g) =>
+    g.items.filter((it) => it.legacy).map((it) => ({ ...it, group: g.group }))
+  );
+
   return (
     <main className={s.wrap}>
       <header className={s.pageHead}>
@@ -130,11 +136,32 @@ export default function TodoPage() {
       {/* ── 개발 중인 화면 ───────────────────────────────── */}
       <section className={s.block}>
         <h2 className={s.blockTitle}>🎬 개발 중인 화면</h2>
-        {DEV_SCREENS.map((g) => (
-          <div key={g.group} className={s.screenGroup}>
-            <h3 className={s.screenGroupTitle}>{g.group}</h3>
+        {DEV_SCREENS.map((g) => {
+          const items = g.items.filter((it) => !it.legacy);
+          if (!items.length) return null;
+          return (
+            <div key={g.group} className={s.screenGroup}>
+              <h3 className={s.screenGroupTitle}>{g.group}</h3>
+              <div className={s.screenGrid}>
+                {items.map((it) => (
+                  <a key={it.href} href={it.href} className={s.screenCard}>
+                    <div className={s.screenCardHead}>
+                      <span className={`${s.tag} ${s["tag_" + it.tagKind]}`}>{it.tag}</span>
+                      <b>{it.title}</b>
+                    </div>
+                    <p>{it.desc}</p>
+                  </a>
+                ))}
+              </div>
+            </div>
+          );
+        })}
+
+        {legacyScreens.length > 0 && (
+          <details className={s.legacySection}>
+            <summary>이전 버전 <span className={s.dim}>{legacyScreens.length}개</span></summary>
             <div className={s.screenGrid}>
-              {g.items.map((it) => (
+              {legacyScreens.map((it) => (
                 <a key={it.href} href={it.href} className={s.screenCard}>
                   <div className={s.screenCardHead}>
                     <span className={`${s.tag} ${s["tag_" + it.tagKind]}`}>{it.tag}</span>
@@ -144,8 +171,8 @@ export default function TodoPage() {
                 </a>
               ))}
             </div>
-          </div>
-        ))}
+          </details>
+        )}
       </section>
 
       {/* ── 발표 자료 ───────────────────────────────────── */}
@@ -172,7 +199,6 @@ export default function TodoPage() {
               {" · "}<a href={`/guide?doc=${SCRIPT_V2_DOC_SLUG}`}>{SCRIPT_V2_DOC_LABEL} 보기 →</a>
             </p>
           </div>
-          {tasks && <div className={s.count}><b>{doneCount}</b><span>/{tasks.length} 완료</span></div>}
         </header>
 
       <form className={s.addForm} onSubmit={submit}>

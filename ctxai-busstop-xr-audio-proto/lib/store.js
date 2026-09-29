@@ -349,3 +349,49 @@ export async function removeTask(id) {
   const tasks = await listTasks();
   await writeTasks(tasks.filter((t) => t.id !== id));
 }
+
+// ── 웹캠 표정 인식 자가진단 기록 (/facecheck) ──────────────
+//
+// 팀원 각자가 "무표정/무서운 표정/웃는 표정"을 지어보고, 그 순간 화면에 뜬
+// 판정(공포/웃음/무표정)이 맞았는지 직접 체크한 기록을 쌓는다 — 표정 인식
+// 정확도를 숫자(데이터)로 남기기 위함. lib/interimGrader.js가 참고하는 0.5
+// 문턱값과 이 페이지가 쓰는 문턱값은 별개일 수 있으니 fear/amusement 원값도
+// 같이 남긴다.
+
+const FACECHECK_KEY = "facecheck-results.json";
+
+export async function listFacecheckResults() {
+  const raw = await get(FACECHECK_KEY);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw.toString("utf8"));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+export async function addFacecheckResult({ name, intended, judged, correct, fear, amusement }) {
+  const results = await listFacecheckResults();
+  const rec = {
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    name: (name || "").slice(0, 40),
+    intended,
+    judged,
+    correct: !!correct,
+    fear: Number(fear) || 0,
+    amusement: Number(amusement) || 0,
+  };
+  results.push(rec);
+  await put(FACECHECK_KEY, Buffer.from(JSON.stringify(results, null, 2)), "application/json");
+  return rec;
+}
+
+/** 잘못 기록한 항목(오클릭, 테스트용 더미 등)을 지운다. */
+export async function removeFacecheckResult(id) {
+  const results = await listFacecheckResults();
+  const next = results.filter((r) => r.id !== id);
+  await put(FACECHECK_KEY, Buffer.from(JSON.stringify(next, null, 2)), "application/json");
+  return next;
+}

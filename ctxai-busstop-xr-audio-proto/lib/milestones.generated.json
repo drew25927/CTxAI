@@ -1,34 +1,34 @@
 [
   {
-    "date": "2026-08-25",
-    "text": "Wrap the horizon in a full 360° forest ring, not just scripted-event angles"
+    "date": "2026-09-26",
+    "text": "Add /facecheck: team-wide webcam expression check, no local server needed"
   },
   {
-    "date": "2026-08-25",
-    "text": "Lay out the blockout scene's full 360° to match the original script, not guesswork"
+    "date": "2026-09-26",
+    "text": "Add webcam facial-expression sanity gate to self-test, before behavior calibration"
   },
   {
-    "date": "2026-08-25",
-    "text": "Redesign the blockout scene to match the actual reference art"
+    "date": "2026-09-14",
+    "text": "Add /interim synthetic simulation + team self-test checklist"
   },
   {
-    "date": "2026-08-25",
-    "text": "Make /story-vr's 3D scene actually look-aroundable, not just 3D-shaped"
+    "date": "2026-09-14",
+    "text": "Update handover doc: unrelated CT-AI course files cleared out"
   },
   {
-    "date": "2026-08-25",
-    "text": "Add a dedicated URL for the /story-vr prototype"
+    "date": "2026-09-14",
+    "text": "Show raw head-pose numbers (velocity, retreat, recovery) in /film HUD"
   },
   {
-    "date": "2026-08-25",
-    "text": "Replace flat-image /story-vr backdrop with real 3D blockout geometry"
+    "date": "2026-09-14",
+    "text": "Prep /interim for threshold calibration: raw-score HUD + regression tests"
   },
   {
-    "date": "2026-08-25",
-    "text": "Show the real story art in /story-vr instead of GLB wireframe placeholders"
+    "date": "2026-09-14",
+    "text": "Update dev handover doc for /film + /interim (2026-09-14)"
   },
   {
-    "date": "2026-08-25",
-    "text": "Add /story-vr — web VR version of the judgment/reveal experience"
+    "date": "2026-09-12",
+    "text": "Wire stand-up detection into /interim's S5 grade A"
   }
 ]
