@@ -71,6 +71,73 @@ export function estimateTensionSeries({ windows = [], stimuli = [] } = {}, param
   });
 }
 
+// 관측 범위(B149) — x̂ 는 사건(탐침·미세 자극)에 대한 순간 반응만 잰다. 사건 기여(fromStim)가 OBS_EPS 보다 작은 창은
+// 바닥 긴장 + 잔움직임뿐이라, 작가 곡선이 장면 구간에 적은 "지속 긴장"(대사·안개·침묵이 만드는 분위기)과 견줄 관측이 아니다.
+// 1배속 공포형 bias=H 재완주에서 장면 39창 중 목표 허용폭 안 0 — 그중 사건 반응이 있던 창은 몇 개뿐이었다(review31/scene-gap.txt).
+// 그래서 모니터는 사건 사이 창을 "추종 실패" 가 아니라 "측정 밖" 으로 보이고, 연속 구동(개루프)의 효과는 x̂ 로 주장하지 않는다.
+// 연속 채널 효과를 x̂ 에 더하는 모형(B77 가정 B)은 파일럿에서 이득을 재기 전에는 넣지 않는다(B20 결론).
+export const OBS_EPS = 0.03; // 잠정치 — 봉우리 A·e^-3 (회복 시정수 세 배 지난 꼬리) 수준
+
+/** 이 창의 x̂ 가 사건 반응에 근거하는가. fromStim 이 없는 계열(외부에서 만든 {t,tension})은 관측으로 본다. */
+export function isObserved(p, eps = OBS_EPS) {
+  return !(p && Number.isFinite(p.fromStim)) || p.fromStim >= eps;
+}
+
+/**
+ * 계열을 관측 구간·사건 사이 구간으로 가른다 — 모니터가 두 모양으로 그린다.
+ * 구간이 바뀌는 자리에서는 앞 구간의 마지막 점을 뒤 구간 첫 점으로도 넣어 선이 끊기지 않게 한다.
+ * @returns {Array<{observed:boolean, points:Array}>}
+ */
+export function observedSegments(series = [], eps = OBS_EPS) {
+  const out = [];
+  for (const p of series) {
+    const obs = isObserved(p, eps);
+    const cur = out[out.length - 1];
+    if (cur && cur.observed === obs) { cur.points.push(p); continue; }
+    out.push({ observed: obs, points: cur ? [cur.points[cur.points.length - 1], p] : [p] });
+  }
+  return out;
+}
+
+/**
+ * 모니터의 x̂ 읽기 — 목표와 견줄 수 있는 관측인가, 견주면 위·안·아래 중 어디인가.
+ * 사건 사이(관측 아님)는 목표가 있어도 "between" — 허용폭 밖으로 칠하지 않는다.
+ * @returns {{state:"between"|"above"|"in"|"below"|"none", label:string}}
+ */
+export function xhatReading(p, { target, tol = 0, eps = OBS_EPS } = {}) {
+  if (!p || !Number.isFinite(p.tension)) return { state: "none", label: "" };
+  if (!isObserved(p, eps)) return { state: "between", label: "사건 사이" };
+  if (!Number.isFinite(target)) return { state: "none", label: "" };
+  if (p.tension > target + tol) return { state: "above", label: "" };
+  if (p.tension < target - tol) return { state: "below", label: "" };
+  return { state: "in", label: "" };
+}
+
+/** 장면 구간에서 모니터가 붙이는 한 줄 — 무엇을 재지 않는지 밝힌다(B149). 장면 밖이면 null. */
+export function xhatScopeNote({ scene = false, control = false } = {}) {
+  if (!scene) return null;
+  // 모니터 폭(292px · 11px) 한 줄에 들어가는 길이 — "(개루프)" 까지 넣으면 단어 중간에서 줄이 바뀐다(턴 32 프레임)
+  return control ? "x̂ 는 사건 반응만 잰다 · 연속 구동 효과는 측정 밖" : "x̂ 는 사건 반응만 잰다 · 장면의 지속 긴장은 측정 밖";
+}
+
+/**
+ * 추종 요약(B149) — 구간 [t0,t1] 창 중 목표 허용폭 안 창 수를 전체·관측 창으로 나눠 센다. 세션·기술 요약용.
+ * 사건 사이 창의 "허용폭 밖" 은 추종 실패가 아니라 측정 밖이므로 observedInTol/observed 를 따로 본다.
+ * @param targetAt (t) => {target, tol}
+ */
+export function trackingStats(series = [], targetAt, { t0 = -Infinity, t1 = Infinity, eps = OBS_EPS } = {}) {
+  let n = 0, inTol = 0, observed = 0, observedInTol = 0, sumT = 0, sumX = 0, maxObs = null;
+  for (const p of series) {
+    if (!(p.t >= t0 && p.t <= t1) || !Number.isFinite(p.tension)) continue;
+    const { target, tol = 0 } = targetAt(p.t) || {};
+    if (!Number.isFinite(target)) continue;
+    const ok = Math.abs(p.tension - target) <= tol;
+    n++; sumT += target; sumX += p.tension; if (ok) inTol++;
+    if (isObserved(p, eps)) { observed++; if (ok) observedInTol++; maxObs = maxObs == null ? p.tension : Math.max(maxObs, p.tension); }
+  }
+  return { n, inTol, observed, observedInTol, meanTarget: n ? r3(sumT / n) : null, meanXhat: n ? r3(sumX / n) : null, maxObservedXhat: maxObs == null ? null : r3(maxObs) };
+}
+
 /** 봉우리 목록 — 국소 최댓값(앞뒤보다 큰 창)과 가까운 자극 이름. 분석·모니터용. */
 export function peaks(series, stimuli = [], minProm = 0.1) {
   const out = [];

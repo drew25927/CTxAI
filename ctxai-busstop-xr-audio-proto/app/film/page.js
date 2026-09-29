@@ -40,7 +40,7 @@ import { createHeadPoseSensor } from "@/lib/headPoseSense";
 import { createEngagementSensor } from "@/lib/engagementSense";
 import { createGazeSim, isGazeProfile, GAZE_PROFILES } from "@/lib/gazeSim";
 import { fitViewerModel } from "@/lib/viewerModel";
-import { estimateTensionSeries } from "@/lib/tensionEstimate";
+import { estimateTensionSeries, trackingStats, OBS_EPS } from "@/lib/tensionEstimate";
 import DirectorMonitor from "@/components/DirectorMonitor";
 import { curveAt, controlTrack, isMixTrack } from "@/lib/tensionCurve";
 import { runController, microDecision, nextAdvice } from "@/lib/slotController";
@@ -384,6 +384,9 @@ export default function FilmPage() {
       // 착석 뒤 옆사람의 거리는 상태가 정한다 (요청서 v5.0 §2.7: 0.5~1.4m)
       film.npcDistance = paramsRef.current?.npcDistance ?? 0.9;
 
+      // 판정 뒤 장면(착석~150초) — 연속 구동·미세 자극이 도는 구간. 모니터는 여기서 x̂ 의 측정 범위를 밝힌다(B149)
+      const inScene = !!film.dominant && film.t >= T.npcSeated && film.t <= 150;
+
       // 디렉터 모니터 — 관객모델 θ̂·긴장 추정 x̂·목표 곡선·다음 개입 안내 (표시만 한다. 실제 구동은 아래 ?control=1 블록)
       if (q.monitor === "1") {
         const eng = engagementRef.current?.data?.();
@@ -406,7 +409,7 @@ export default function FilmPage() {
           const next = nextAdvice({ entries, tNow: film.t, verdict: !!film.dominant, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling,
             lastMicroAt: film.lastMicroAt ?? -Infinity, microCount: film.microCount || 0, controlOn: q.control === "1", sceneStart: T.npcSeated, sceneEnd: 150 });
           const sel = theta.nResp >= 1 ? selectTrack(theta, { genrePrior: snap.current, priorWeight: 0.3 }) : null;
-          setMonitor({ track, theta, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, series, next, nStim: eng.stimuli.length, sel, control: q.control === "1", micro: film.microCount || 0, actuate: adjustRef.current ? { ...adjustRef.current, base: actBase(snap) } : null, slots: film.slotChoice || null });
+          setMonitor({ track, theta, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, series, next, nStim: eng.stimuli.length, sel, scene: inScene, control: q.control === "1", micro: film.microCount || 0, actuate: adjustRef.current ? { ...adjustRef.current, base: actBase(snap) } : null, slots: film.slotChoice || null });
         }
       }
       // 실제 제어(?control=1) — 판정 뒤 장면에서만. 도입부 다섯 사건은 관객을 공정히 읽기 위한
@@ -418,7 +421,6 @@ export default function FilmPage() {
       //   (2) 미세 자극(slotController.microDecision) — 곡선 아래로 처지면 먼 기척 소리를 한 번(3회 한도).
       // 기록: 2초(영화 시간)마다 control:actuate 이벤트 — 제어 OFF 세션에도 남겨 ON/OFF 궤적을 비교할 수 있게.
       const controlOn = q.control === "1";
-      const inScene = !!film.dominant && film.t >= T.npcSeated && film.t <= 150;
       if (inScene) {
         const eng = engagementRef.current?.data?.();
         const theta = eng && eng.stimuli.length ? fitViewerModel(eng.stimuli) : null;
@@ -851,7 +853,11 @@ export default function FilmPage() {
         const a = adjustRef.current;
         const slots = {};
         for (const [id, c] of Object.entries(filmRef.current.slotChoice || {})) slots[id] = { t: c.t, track: c.track, mix: c.mix ?? null, variantId: c.variantId, dose: c.dose, reason: c.reason, target: c.target ?? null, predTension: c.predTension ?? null, actuation: { sfx: c.actuation.sfx, volume: c.actuation.volume, plays: c.actuation.plays, gap: c.actuation.gap }, schedule: c.schedule || null };
-        control = { track, theta, mode: q.control === "1" ? "full" : "off", plan: runController(track, theta, { fixed: PROBE_DOSE }).entries, slots,
+        // 장면 구간 추종 요약(B149) — 목표 허용폭 안 창을 전체·관측(사건 반응이 있는 창)으로 나눠 센다. 센서 시각은 실제 초라 배속이면 영화 초로 환산
+        const dom = filmRef.current.dominant;
+        const tracking = dom ? { track: dom, t0: T.npcSeated, t1: 150, eps: OBS_EPS,
+          ...trackingStats(estimateTensionSeries(eng).map((p) => ({ ...p, t: p.t * speed })), (t) => curveAt(dom, t), { t0: T.npcSeated, t1: 150 }) } : null;
+        control = { track, theta, mode: q.control === "1" ? "full" : "off", plan: runController(track, theta, { fixed: PROBE_DOSE }).entries, slots, tracking,
           actuation: { on: q.control === "1", holdAfterMicro: q.hold ? Math.max(0, Number(q.hold) || 0) : ACTUATE_PARAMS.HOLD_AFTER_MICRO, ticks: filmRef.current.actuateLogCount || 0, micro: filmRef.current.microCount || 0, last: a ? { t: a.t, u: a.u, mode: a.mode, offsets: a.offsets } : null } };
       }
     } catch { /* 로그 실패는 무시 */ }

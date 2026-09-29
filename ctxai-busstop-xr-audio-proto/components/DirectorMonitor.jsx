@@ -8,7 +8,7 @@
 //   /interim showTarget=false — 도입부 다섯 사건은 중립 탐침이라 목표 곡선이 없다. 대신 사건 눈금(S1~S5)을 찍는다.
 //
 // monitor 객체 모양(페이지가 250ms/200ms 틱마다 만든다):
-//   { track, theta:{g,L,tau,rho,confidence,nResp}, xhat, target?, tol?, ceiling?, series:[{t,tension}],
+//   { track, theta:{g,L,tau,rho,confidence,nResp}, xhat, target?, tol?, ceiling?, series:[{t,tension,fromStim?}], scene?:bool(판정 뒤 장면 구간, B149),
 //     (track = "H"|"R"|"C" 또는 판정 전 배합 {R,H,C} — 점선은 배합 가중 기대 곡선, 머리글은 "잠정 R44 H34 C21", B92)
 //     nStim, sel?:{track,reach}, control?:bool, micro?:number, note?,
 //     next?:{kind:"probe"|"slot"|"micro"|"done", slotId, variantId?, dose?, reason, count?, max?}   ← lib/slotController nextAdvice
@@ -17,8 +17,11 @@
 
 import { curveAt, trackLabel } from "@/lib/tensionCurve";
 import { actuationText } from "@/lib/controlActuate";
+import { observedSegments, xhatReading, xhatScopeNote } from "@/lib/tensionEstimate";
 
 // 작은 그래프 — 작가 목표 곡선(점선)과 관객 긴장 추정 x̂(실선), 현재 시각 표시, 사건 눈금.
+// x̂ 는 사건 반응이 있는 구간만 진한 실선, 사건 사이(바닥 긴장 + 잔움직임뿐)는 흐린 가는 선(B149) — 사건 사이가 목표 아래에
+// 붙어 있는 것은 추종 실패가 아니라 측정 밖이다. fromStim 이 없는 계열은 전부 진한 선(lib/tensionEstimate isObserved).
 export function MonitorChart({ series = [], track = "H", tNow = 0, ceiling = 1, tMax: tMaxProp = 180, showTarget = true, marks = [], width = 292, height = 60 }) {
   const W = width, H = height, PAD = 4; // 기본 292×60 은 모니터 패널 폭. /interim 종료 카드는 더 넓게 그린다(B14a)
   const tMax = Math.max(tMaxProp, tNow, series.length ? series[series.length - 1].t : 0);
@@ -28,7 +31,7 @@ export function MonitorChart({ series = [], track = "H", tNow = 0, ceiling = 1, 
   if (showTarget && track) {
     for (let t = 0; t <= tMax; t += 6) target.push(`${t === 0 ? "M" : "L"}${x(t).toFixed(1)},${y(curveAt(track, t).target).toFixed(1)}`);
   }
-  const xhat = series.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.tension).toFixed(1)}`).join(" ");
+  const segs = observedSegments(series).map((g) => ({ observed: g.observed, d: g.points.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.tension).toFixed(1)}`).join(" ") }));
   return (
     <svg width={W} height={H} style={{ display: "block", background: "rgba(255,255,255,0.04)", borderRadius: 6 }}>
       {showTarget && <line x1={PAD} x2={W - PAD} y1={y(ceiling)} y2={y(ceiling)} stroke="rgba(224,168,106,0.4)" strokeDasharray="2 3" />}
@@ -39,7 +42,7 @@ export function MonitorChart({ series = [], track = "H", tNow = 0, ceiling = 1, 
         </g>
       ))}
       {target.length > 0 && <path d={target.join(" ")} fill="none" stroke="rgba(255,255,255,0.45)" strokeDasharray="4 3" strokeWidth="1.5" />}
-      {xhat && <path d={xhat} fill="none" stroke="#7fd1ff" strokeWidth="2" />}
+      {segs.map((g, i) => <path key={i} d={g.d} fill="none" stroke={g.observed ? "#7fd1ff" : "rgba(127,209,255,0.38)"} strokeWidth={g.observed ? 2 : 1.2} />)}
       <line x1={x(tNow)} x2={x(tNow)} y1={PAD} y2={H - PAD} stroke="rgba(255,255,255,0.3)" />
     </svg>
   );
@@ -84,9 +87,12 @@ export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTar
   if (!monitor) return null;
   const { theta } = monitor;
   const hasTarget = showTarget && Number.isFinite(monitor.target);
-  const xhatColor = hasTarget
-    ? (monitor.xhat > monitor.target + monitor.tol ? "#e0a86a" : monitor.xhat < monitor.target - monitor.tol ? "#8fae95" : "#cfe")
-    : "#7fd1ff";
+  // 사건 사이의 x̂ 는 목표와 견주지 않는다(B149) — 회색 + "사건 사이". 사건 반응이 있을 때만 위(주황)·아래(초록)·안(흰)으로 칠한다
+  const last = monitor.series?.length ? monitor.series[monitor.series.length - 1] : null;
+  const reading = xhatReading(last ?? (Number.isFinite(monitor.xhat) ? { tension: monitor.xhat } : null), hasTarget ? { target: monitor.target, tol: monitor.tol } : {});
+  const XHAT_COLOR = { above: "#e0a86a", below: "#8fae95", in: "#cfe", between: "rgba(230,233,240,0.55)" };
+  const xhatColor = XHAT_COLOR[reading.state] || "#7fd1ff";
+  const scopeNote = showTarget ? xhatScopeNote({ scene: !!monitor.scene, control: !!monitor.control }) : null;
   return (
     <div style={{ position: "fixed", top: 12, left: 12, zIndex: 40, width: 320, padding: "12px 14px", borderRadius: 10, background: "rgba(12,14,20,0.82)", color: "#e6e9f0", font: "12px/1.5 ui-monospace, monospace", border: "1px solid rgba(255,255,255,0.12)" }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
@@ -95,8 +101,9 @@ export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTar
       <MonitorChart series={monitor.series} track={monitor.track || "H"} tNow={tNow} ceiling={monitor.ceiling ?? 1} tMax={tMax} showTarget={showTarget} marks={marks} />
       <div style={{ display: "flex", justifyContent: "space-between", margin: "6px 0" }}>
         {hasTarget ? <span>목표 <b>{fmt2(monitor.target)}</b></span> : <span style={{ opacity: 0.6 }}>목표 곡선 없음(중립 탐침)</span>}
-        <span>추정 x̂ <b style={{ color: xhatColor }}>{fmt2(monitor.xhat)}</b></span>
+        <span>추정 x̂ <b style={{ color: xhatColor }}>{fmt2(monitor.xhat)}</b>{reading.label && <span style={{ opacity: 0.6 }}> · {reading.label}</span>}</span>
       </div>
+      {scopeNote && <div style={{ opacity: 0.6, fontSize: 11, marginTop: -4, marginBottom: 4, wordBreak: "keep-all" }}>{scopeNote}</div>}
       {theta && (
         <div style={{ opacity: 0.85 }}>관객모델 θ̂: 이득 {theta.g} · 지연 {theta.L}s · 회복 {theta.tau}s · 습관화 {theta.rho} <span style={{ opacity: 0.5 }}>(모델 신뢰도 {Math.round((theta.confidence || 0) * 100)}% · 응답 {theta.nResp}/{theta.n})</span></div>
       )}
