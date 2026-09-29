@@ -52,7 +52,7 @@ import { CUES, evalActors, T } from "@/lib/filmTimeline";
 import { DIALOGUE_V2_LINES, DIALOGUE_V2_GENRE_LABEL } from "@/lib/dialogueV2Lines";
 import { observe, judgeFromBehavior } from "@/lib/behaviorSense";
 import { loadDialoguePool, pickPoolLine, poolCoverage } from "@/lib/dialoguePool";
-import { beatOf, gazeFor, playsLine, playedCount, beatsTotalSec, answerWatchStart, answerWatchUpdate, answerWatchResult } from "@/lib/dialogueBeats";
+import { beatOf, gazeFor, playsLine, playedCount, beatsTotalSec, nextPlayedBeat, subtitleHoldSec, splitLead, silenceAfter, dialogueQuiet, answerWatchStart, answerWatchUpdate, answerWatchResult } from "@/lib/dialogueBeats";
 import { scoresFromMoodApi } from "@/lib/textKeywords";
 import { analyzeProsody } from "@/lib/voiceProsody";
 import { mixLines, mmss, fingerprintText, focusText, filmTimeEvents, STIMULUS_LABEL } from "@/lib/viewerText";
@@ -137,9 +137,16 @@ function FilmDirector({ directionRef, sensorRef, engagementRef, actorsRef, filmR
 
     // 합성 관객이 쉴 때 보는 곳 — 버스가 오면 정면 약간 오른쪽, 옆사람이 앉아 있으면 그쪽(얼굴이 화면을 채우지 않게 DesktopGaze 와 같은 63° 상한)
     if (simOn) {
-      if (film.busAt != null) sim.setRest(MathUtils.radToDeg(AUTO_GAZE_BUS));
-      // 옆사람이 말하는 동안(질문 뒤 기다림 포함)은 화자 쪽을 본다(B67, gazeSim TALK) — 공포형의 곁눈질(0.35)로는 화자가 화면 밖이었다
-      else if (actors.npc?.visible && actors.npc.seated) sim.setRest(Math.min(MathUtils.radToDeg(AUTO_GAZE_NPC), MathUtils.radToDeg(Math.atan2(actors.npc.x - cp.x, -(actors.npc.z - cp.z)))), { talk: film.talkLook && film.talking });
+      const npcAz = actors.npc?.visible ? Math.min(MathUtils.radToDeg(AUTO_GAZE_NPC), MathUtils.radToDeg(Math.atan2(actors.npc.x - cp.x, -(actors.npc.z - cp.z)))) : null;
+      const npcRest = npcAz != null && actors.npc.seated ? npcAz : null;
+      // 옆사람이 말하는 동안(질문 뒤 기다림 포함)은 화자 쪽을 본다(B67, gazeSim TALK) — 공포형의 곁눈질(0.35)로는 화자가 화면 밖이었다.
+      // 보는 창은 자막 창에 맞춘다(B118): 줄이 뜨기 조금 전(lookAhead)부터 자막이 지워질 때(lookUntil)까지. 버스가 온 뒤의
+      // 마지막 말("먼저 가세요.")도 이 동안은 화자 쪽 — 그 밖에는 종전대로 버스가 우선이다.
+      const talkLook = film.talkLook && (film.talking || film.lookAhead || film.t < film.lookUntil);
+      // 말하는 쪽은 앉아 있지 않아도 본다 — 버스가 서면(busAt+7) 옆사람은 seated:false 가 되는데 마지막 말은 그 직후다
+      if (npcAz != null && talkLook) sim.setRest(npcAz, { talk: true });
+      else if (film.busAt != null) sim.setRest(MathUtils.radToDeg(AUTO_GAZE_BUS));
+      else if (npcRest != null) sim.setRest(npcRest);
       else sim.setRest(0);
     }
 
@@ -292,6 +299,7 @@ export default function FilmPage() {
   const [hud, setHud] = useState(null);
   const [caption, setCaption] = useState("");
   const [line, setLine] = useState(null);
+  const [talkStarted, setTalkStarted] = useState(false); // 첫 대사가 떴는가 — 자막이 줄 사이에 지워져도 HUD 접힘은 장면 내내 유지(B118)
   const [dominant, setDominant] = useState(null);
   const [verdict, setVerdict] = useState(null); // 판정 순간의 배합 — 종료 카드의 주 문장(B86)
   const [xrError, setXrError] = useState("");
@@ -396,7 +404,7 @@ export default function FilmPage() {
       // 중립 탐침이라 건드리지 않는다(용량을 바꾸면 그 사건이 만드는 θ 추정이 오염된다). 판정 뒤에는
       // 장르가 정해졌으니 두 손으로 관객 긴장 x̂ 을 작가 곡선 쪽으로 몬다:
       //   (1) 연속 액추에이터(lib/controlActuate.js) — 침묵·BGM·가로등·안개·거리·시선을 양방향으로 은은하게.
-      //       결과는 adjustRef 에 두고 ReactiveStage 가 매 프레임 deriveParams 값 위에 얹는다(대사 간격 gapMs
+      //       결과는 adjustRef 에 두고 ReactiveStage 가 매 프레임 deriveParams 값 위에 얹는다(대사 간격 gapSec
       //       와 옆사람 거리는 paramsRef 를 읽으므로 따라온다). 제어 OFF 면 오프셋 0(항등).
       //   (2) 미세 자극(slotController.microDecision) — 곡선 아래로 처지면 먼 기척 소리를 한 번(3회 한도).
       // 기록: 2초(영화 시간)마다 control:actuate 이벤트 — 제어 OFF 세션에도 남겨 ON/OFF 궤적을 비교할 수 있게.
@@ -426,7 +434,10 @@ export default function FilmPage() {
           });
           film.lastActuateLogAt = film.t; film.actuateLogCount = (film.actuateLogCount || 0) + 1;
         }
-        if (controlOn && eng && eng.stimuli.length) {
+        // 대사를 밟지 않는다(B118, lib/dialogueBeats.js dialogueQuiet) — 옆사람이 말하거나 질문 뒤 기다리는 동안, 자막이 남아 있는
+        // 동안, 다음 줄까지 3초가 안 남은 틈에는 미세 자극을 미룬다. 1차 완주에서 질문 03 기다림 중(92.4s)에 울려 합성 관객이
+        // −50° 로 돌아섰고(자막 6.5초 중 45% 화자 화면 밖), 기다림 창의 고개 폭(answerWatch)도 그 회전이 오염시켰다.
+        if (controlOn && eng && eng.stimuli.length && dialogueQuiet(film, film.t)) {
           const { fire, dose } = microDecision({ xhat, target: tgt.target, tol: tgt.tol, tNow: film.t, lastAt: film.lastMicroAt ?? -Infinity, count: film.microCount || 0 });
           if (fire) {
             playSfx("13", { volume: 0.12 + 0.22 * dose }); // 먼 기척(클래터) — 은은하게
@@ -472,9 +483,9 @@ export default function FilmPage() {
     if (viewerSimRef.current) d.markEvent("viewer:synthetic", { profile: viewerSim, seed: viewerSeed });
     paramsRef.current = null;
     adjustRef.current = null;
-    filmRef.current = { running: true, t: 0, dominant: null, npcDistance: 0.9, busAt: null, onFrame: null, lastMicroAt: -999, microCount: 0, lastActuateLogAt: null, actuateLogCount: 0, slotChoice: {}, talking: false, talkLook: q.talk !== "0" };
+    filmRef.current = { running: true, t: 0, dominant: null, npcDistance: 0.9, busAt: null, onFrame: null, lastMicroAt: -999, microCount: 0, lastActuateLogAt: null, actuateLogCount: 0, slotChoice: {}, talking: false, talkLook: q.talk !== "0", lookAhead: false, lookUntil: -1, quietUntil: Infinity, subSeq: null, subFrom: 0, subGen: 0 };
     if (typeof window !== "undefined") window.__sfxLog = [];
-    setDominant(null); setVerdict(null); setLine(null); setCaption(""); setAskStatus(null);
+    setDominant(null); setVerdict(null); setLine(null); setTalkStarted(false); setCaption(""); setAskStatus(null);
     if (bias) d.pushEvidence({ [bias.g]: 1 }, bias.w, "bias", `?bias=${bias.g}`);
     d.setPhase("intro");
     setPhase("intro");
@@ -652,7 +663,7 @@ export default function FilmPage() {
     const poolOk = !!pool?.ok && poolCoverage(pool, dom).base === base.length;
     // ?scene= 목표 길이: (목표 − 대사 오디오 추정 합 − 비트 쉼 합) / 줄 수 만큼을 각 줄 뒤 침묵에 더한다.
     const extraGap = sceneTarget > 0 ? Math.max(0, (sceneTarget - base.length * 3.5 - beatsTotalSec(base)) / base.length) : 0;
-    const gapMs = (p) => ((Math.max(p?.npcSilence ?? 1.2, 0) + extraGap) * 1000) / speed;
+    const gapSec = (p) => Math.max(p?.npcSilence ?? 1.2, 0) + extraGap;
     const sec = (s) => wait((s * 1000) / speed);
     // 영화 시간 기준 대기 — 버스 안무(filmTimeline)는 film.t 를 따르므로, fps 가 낮아 film.t 가 벽시계보다 느리게 갈 때도 어긋나지 않게
     const waitFilm = async (s) => { const t0 = film.t; while (!token.aborted && film.t - t0 < s) await wait(40); };
@@ -660,13 +671,28 @@ export default function FilmPage() {
     let answered = false, played = 0, busStarted = false;
     // 말하는 구간(B67) — 줄 재생 시작부터 재생 끝(질문이면 기다림 끝)까지. 합성 관객은 이 동안 화자를 보고(FilmDirector),
     // 세션에는 구간마다 "talk" 이벤트(from = 시작 영화 초, t = 끝)를 남겨 화자가 화면에 들어왔는지 raw 자세로 따질 수 있게 한다.
-    const talkBegin = (seq) => { film.talking = true; film.talkFrom = film.t; film.talkSeq = seq; };
+    const talkBegin = (seq) => { film.talking = true; film.lookAhead = false; film.quietUntil = film.t; film.talkFrom = film.t; film.talkSeq = seq; };
     const talkEnd = () => { if (!film.talking) return; film.talking = false; d.markEvent("talk", { seq: film.talkSeq, from: Math.round(film.talkFrom * 10) / 10 }); };
+    // 자막 창(B118) — 줄이 뜨면 subOn, 말이 끝나면(talkEnd 뒤) subHold 가 읽을 시간(subtitleHoldSec)만큼 두었다가 지운다.
+    // 그 사이 다음 줄이 뜨면 새 줄이 덮고 예약은 무효(subGen). 합성 관객은 자막이 지워질 때(lookUntil)까지 화자를 계속 본다.
+    // 지울 때 "sub" 이벤트(from = 뜬 영화 초, t = 지운 시각)를 남겨 자막이 떠 있는 동안 화자가 화면 안이었는지 raw 자세로 센다.
+    const subMark = () => { if (film.subSeq == null) return; d.markEvent("sub", { seq: film.subSeq, from: Math.round(film.subFrom * 10) / 10 }); film.subSeq = null; };
+    const subOn = (obj, seq) => { subMark(); film.subGen++; film.subSeq = seq; film.subFrom = film.t; setLine(obj); setTalkStarted(true); };
+    const subOff = () => { subMark(); setLine(null); };
+    const subHold = (text) => {
+      const hold = subtitleHoldSec(text, film.t - film.subFrom);
+      const gen = film.subGen;
+      film.lookUntil = film.t + hold;
+      waitFilm(hold).then(() => { if (!token.aborted && film.subGen === gen && film.subSeq != null) subOff(); });
+    };
+    // 줄 앞 기다림 — 끝의 lookLead 초는 화자 쪽을 보며 기다린다(돌아보는 데 걸리는 시간만큼 먼저). 기다림 길이는 그대로다.
+    const waitThenLook = async (s) => { const [rest, lead] = splitLead(s); if (rest > 0) await sec(rest); if (token.aborted) return; film.lookAhead = true; if (lead > 0) await sec(lead); };
     // 지난 질문의 응답 표기는 다음 줄이 시작되면 흐리게 둔다 — "질문 10 · 응답 없음" 이 끝까지 선명하게 남던 문제 (B110)
     const staleAsk = () => setAskStatus((a) => (a && !a.listening ? { ...a, stale: true } : a));
 
     // 272 도착 — 버스가 커브를 돌아 들어와 정면(앞문 x≈1.2)에 서기까지 7.2초, 그 다음 문
-    const arriveBus = async () => {
+    // lead: 도착 뒤 바로 마지막 말이 이어지면 문이 열리기 lookLead 초 전부터 화자 쪽을 본다(B118)
+    const arriveBus = async (lead = false) => {
       busStarted = true;
       film.lineGaze = null;
       film.busAt = film.t;
@@ -675,17 +701,21 @@ export default function FilmPage() {
       setAskStatus(null); // 질문 표기는 버스 장면부터 지운다 (B110)
       playSfx("07", { volume: 0.7 });
       setCaption("272");
-      await waitFilm(7.2); if (token.aborted) return;
+      const [busRest, busLead] = lead ? splitLead(7.2) : [7.2, 0];
+      await waitFilm(busRest); if (token.aborted) return;
+      if (busLead > 0) { film.lookAhead = true; await waitFilm(busLead); if (token.aborted) return; }
       playSfx("08", { volume: 0.5 }); setCaption("");
     };
 
+    // 첫 줄 앞 — 조용한 시간은 첫 줄의 before 에서 lookLead 를 뺀 만큼(dialogueQuiet · 미세 자극은 그 안에서만)
+    film.quietUntil = film.t + silenceAfter(null, nextPlayedBeat(base, -1, answered), 0);
     for (let i = 0; i < base.length; i++) {
       if (token.aborted) return;
       const l = base[i];
       const b = beatOf(l);
       if (!playsLine(b, answered)) { d.markEvent("skip", { seq: l.seq, branch: b.branch }); continue; } // 갈래 중 하나만
-      if (b.atBus) { await arriveBus(); if (token.aborted) return; }
-      if (b.before) await sec(b.before);
+      if (b.atBus) { await arriveBus(!b.before); if (token.aborted) return; }
+      if (b.before) await waitThenLook(b.before);
       if (token.aborted) return;
       const p = paramsRef.current || {};
       const { secondary, secondaryWeight } = rank(d.st.current);
@@ -699,11 +729,13 @@ export default function FilmPage() {
           film.lineGaze = 0.5;
           // 콜백은 줄 수(total)에 들어가지 않는다 — 진행 막대는 직전 줄에 머물고 자막 줄에는 번호 대신 "배합 콜백" 만 적는다 (B91)
           staleAsk();
-          setLine({ ...cb, flavor: true, index: Math.max(0, played - 1), total });
+          subOn({ ...cb, flavor: true, index: Math.max(0, played - 1), total }, `${cb.genre}-${cb.seq}`);
           talkBegin(`${cb.genre}-${cb.seq}`);
           await playFile(cb.file, Math.min(1, (p.npcVolume ?? 1) * 0.9));
           talkEnd();
-          await wait(gapMs(p));
+          subHold(cb.text);
+          film.quietUntil = film.t + silenceAfter(null, {}, gapSec(p));
+          await waitThenLook(gapSec(p)); // 콜백 바로 뒤에 이 줄이 온다
         }
       }
 
@@ -718,7 +750,7 @@ export default function FilmPage() {
       }
       film.lineGaze = gazeFor(b);
       staleAsk();
-      setLine({ ...l, text, tinted, to: b.to, index: played, total });
+      subOn({ ...l, text, tinted, to: b.to, index: played, total }, l.seq);
       played++;
       talkBegin(l.seq);
       await playFile(file, Math.min(1, (p.npcVolume ?? 1) * (b.vol ?? 1)));
@@ -737,19 +769,31 @@ export default function FilmPage() {
         d.markEvent("ask", { seq: l.seq, answered, how });
       }
       talkEnd(); // 질문이면 기다림까지 — 기다리는 동안 시선을 돌려 버리면 그 회전이 가로젓기로 읽힐 수 있다
+      subHold(text);
+      const nb = nextPlayedBeat(base, i, answered);
+      const gap = gapSec(paramsRef.current);
+      film.quietUntil = film.t + silenceAfter(b, nb, gap);
       if (b.after) await sec(b.after);
-      if (!b.atBus) await wait(gapMs(paramsRef.current));
+      if (!b.atBus) {
+        // 다음 줄이 앞 쉼(before) 없이 바로 오면 이 침묵의 끝에서 화자 쪽으로 먼저 돈다. 앞 쉼이 있거나 버스 장면이면 그쪽에서 돈다.
+        if (nb && !nb.atBus && !nb.before) await waitThenLook(gap);
+        else await sec(gap);
+      }
     }
+    film.quietUntil = Infinity;
     if (token.aborted) return;
     if (!busStarted) await arriveBus();
     if (token.aborted) return;
     film.lineGaze = null;
     // 마지막 말이 끝난 뒤 → 버스 출발(기본 busAt+16, 말이 더 길었으면 1초 뒤) → 암전(출발 +3~+7). 인물 퇴장은 busAt+8 부터 (filmTimeline)
     film.leaveAt = Math.max(film.t + 1.0, film.busAt + 16);
-    // 마지막 자막("먼저 가세요." 는 오디오가 1초)은 버스가 떠날 때까지 둔다 — 재생 직후 지우면 "13 / 13줄" 이 한 프레임도 안 보인다 (B91)
+    // 마지막 자막("먼저 가세요." 는 오디오가 1초)도 다른 줄처럼 읽을 시간(subHold, 최소 0.7초)만큼 남았다가 지워진다(B118) —
+    // B91 의 "13 / 13줄" 이 한 프레임도 안 보이던 문제는 이것으로 막힌다. 버스가 떠날 때까지 두면(8.8초) 그동안 화자는 일어나
+    // 떠나고(공포 트랙은 벤치 뒤 풀숲으로 나가 화면 밖), 합성 관객은 버스 쪽을 본다(B21 녹화에서 이 자막 동안 화자 화면 안 0%).
+    // 혹시 남아 있으면 출발 때 지운다.
     await waitFilm(Math.max(0, film.leaveAt - film.t));
     if (token.aborted) return;
-    setLine(null);
+    subOff();
     await waitFilm(Math.max(2, film.leaveAt + 7.2 - film.t));
     if (token.aborted) return;
     d.setPhase("end");
@@ -775,7 +819,7 @@ export default function FilmPage() {
     streamRef.current = null;
     micRef.current?.getTracks().forEach((t) => t.stop());
     micRef.current = null;
-    setPhase("gate"); setHud(null); setLine(null); setCaption(""); setDominant(null); setVerdict(null); setCamStatus("off");
+    setPhase("gate"); setHud(null); setLine(null); setTalkStarted(false); setCaption(""); setDominant(null); setVerdict(null); setCamStatus("off");
   }
 
   function sessionData(extra = {}) {
@@ -841,9 +885,10 @@ export default function FilmPage() {
   const accent = dominant ? GENRE_META[dominant].accent : "#cfd8e3";
   const lineAccent = line?.flavor ? GENRE_META[line.genre].accent : accent;
   const snap = hud;
-  // HUD 접힘(B104) — 옆사람이 말하는 동안(첫 줄부터 버스가 떠날 때까지 line 이 남는다) 오른쪽 HUD 의 사건 목록·마지막 증거 줄을 접어
+  // HUD 접힘(B104) — 옆사람이 말하기 시작한 뒤(첫 줄부터 버스 장면까지) 오른쪽 HUD 의 사건 목록·마지막 증거 줄을 접어
   // 화자(x≈1120~1350px)를 가리지 않게 한다. 사건 목록은 판정(0:58) 전 탐침 여섯 개라 대사 중에는 더 늘지 않는다.
-  const hudFold = !!line || phase === "bus";
+  // 자막은 줄 사이에 지워지므로(B118) line 이 아니라 talkStarted 로 접는다 — 줄마다 펼쳤다 접히며 깜빡이지 않게.
+  const hudFold = (phase === "scene" && talkStarted) || phase === "bus";
   const hudEvents = snap?.events || [];
   const lastEvent = hudEvents.length ? hudEvents[hudEvents.length - 1] : null;
   const lastEventTop = lastEvent ? ["R", "H", "C"].sort((a, b) => lastEvent[b] - lastEvent[a])[0] : null;

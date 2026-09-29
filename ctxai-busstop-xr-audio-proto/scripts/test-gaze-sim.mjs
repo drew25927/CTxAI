@@ -3,7 +3,8 @@
 // 같은 시드가 같은 궤적을 재현하는지, 자세값이 물리적으로 말이 되는 범위인지 본다.
 import assert from "node:assert/strict";
 import { createGazeSim, GAZE_PROFILE_NAMES, GAZE_PROFILES, isGazeProfile, SEAT_Y, TALK } from "../lib/gazeSim.js";
-import { answerWatchStart, answerWatchUpdate, answerWatchResult } from "../lib/dialogueBeats.js";
+import { answerWatchStart, answerWatchUpdate, answerWatchResult, beatOf, playsLine, nextPlayedBeat, subtitleHoldSec, splitLead, dialogueQuiet } from "../lib/dialogueBeats.js";
+import { DIALOGUE_V2_LINES } from "../lib/dialogueV2Lines.js";
 import { createEngagementSensor } from "../lib/engagementSense.js";
 import { fitViewerModel } from "../lib/viewerModel.js";
 import { CUES as INTERIM_CUES, T as IT } from "../lib/interimTimeline.js";
@@ -197,6 +198,91 @@ test("B67 가짜 응답 없음: 줄 시작에 화자 쪽으로 돌아도 질문 
   }
   console.log(`    가짜 응답 — talk 켬 ${fake.true.length}/96 · talk 끔(B67 이전) ${fake.false.length}/96 ${fake.false.slice(0, 4).join(" ")}`);
   assert.equal(fake.true.length, 0, fake.true.join(" "));
+});
+
+// B118 — 자막 창과 화자 보기 창. /film 공포 트랙 대사 장면(버스 전 12줄, 질문 무응답 갈래)을 runScene 의 순서대로 시간표로 펴서
+// 합성 관객을 돌리고, 자막이 떠 있는 표본 중 화자가 화면 안(|옆사람 방위 − yaw| ≤ 40°)인 비율을 센다.
+// 줄마다 말 길이(초)는 B21 ON 녹화 세션(work/evidence/b21/sessions/on-2026-09-29T17-22-40-716Z_H.json)의 talk 구간에서 질문 기다림을 뺀 값.
+// 정책 "b67": 보는 창 = 말하는 동안(+질문 기다림), 자막 = 다음 줄이 뜰 때까지(B118 이전 페이지).
+// 정책 "b118": 보는 창 = 줄 앞 lookLead 초 + 말하는 동안 + 자막 유지(subtitleHoldSec), 자막 = 말 끝 + 유지 시간(다음 줄이 뜨면 덮임).
+const H_AUDIO = { "01": 2.6, "02": 3.3, "03": 3.0, "04": 2.8, "05": 2.5, "06": 4.3, "08": 1.2, "09": 2.6, "10": 1.6, "11": 1.1, "12": 2.9, "13": 1.6 };
+function sceneSchedule(policy, gap) {
+  const lines = DIALOGUE_V2_LINES.filter((l) => l.genre === "H");
+  const subs = [], looks = [], asks = [];
+  const lead = (w) => { const [r, l] = splitLead(w); t += r; looks.push([t, t + l]); t += l; };
+  let t = 5; // 장면 전 5초는 쉬는 자세(곁눈질)
+  for (let i = 0; i < lines.length; i++) {
+    const l = lines[i], b = beatOf(l);
+    if (!playsLine(b, false)) continue;
+    if (b.atBus) break;
+    if (b.before) { if (policy === "b118") lead(b.before); else t += b.before; }
+    const from = t;
+    t += H_AUDIO[l.seq];
+    if (b.to === "ask") { asks.push([t, t + (b.wait ?? 2.5)]); t += b.wait ?? 2.5; }
+    looks.push([from, t]);
+    if (policy === "b118") { const hold = subtitleHoldSec(l.text, t - from); subs.push({ from, to: t + hold }); looks.push([t, t + hold]); }
+    else subs.push({ from, to: null });
+    if (b.after) t += b.after;
+    const nb = nextPlayedBeat(lines, i, false);
+    if (policy === "b118" && nb && !nb.atBus && !nb.before) lead(gap); else t += gap;
+  }
+  subs.forEach((x, k) => { const next = subs[k + 1]?.from ?? t; x.to = x.to == null ? next : Math.min(x.to, next); });
+  return { subs, looks, asks, end: t };
+}
+// micro: null(미세 자극 없음) | "every"(12초마다 무조건 — B118 이전) | "quiet"(12초 간격 + dialogueQuiet 가 허락할 때만 — B118)
+const MICRO_EVERY = 12;
+function runSceneView(profile, seed, policy, gap, micro = null) {
+  const sch = sceneSchedule(policy, gap);
+  const sim = createGazeSim(profile, { seed });
+  const lookStarts = sch.looks.map(([a]) => a).sort((a, b) => a - b);
+  let inSub = 0, nSub = 0, w = null, wAsk = null, lastMicro = -Infinity, micros = 0;
+  const fake = [];
+  for (let t = 0; t < sch.end; t += DT) {
+    const looking = sch.looks.some(([a, b]) => t >= a && t < b);
+    if (micro && t - lastMicro >= MICRO_EVERY && t > 5) {
+      const quietUntil = lookStarts.find((a) => a > t) ?? Infinity;
+      if (micro === "every" || dialogueQuiet({ talking: looking, lookAhead: false, lookUntil: -1, quietUntil }, t)) {
+        sim.trigger({ name: `micro-${++micros}`, azimuth: -60, dur: 1.5, kind: "probe", channel: "audio" }); lastMicro = t;
+      }
+    }
+    sim.setRest(REST_CAP, { talk: looking });
+    const q = sim.step(t, DT);
+    if (sch.subs.some((x) => t >= x.from && t < x.to)) { nSub++; if (Math.abs(NPC_AZ - q.yaw) <= 40) inSub++; }
+    const ask = sch.asks.find(([a, b]) => t >= a && t < b);
+    if (ask && ask !== wAsk) { w = answerWatchStart(q.yaw, q.pitch, NPC_AZ); wAsk = ask; }
+    else if (ask) answerWatchUpdate(w, q.yaw, q.pitch);
+    else if (w) { const r = answerWatchResult(w); if (r.answered) fake.push(r.how); w = null; }
+  }
+  return { ratio: inSub / nSub, subSec: sch.subs.reduce((a, x) => a + x.to - x.from, 0), fake, micros };
+}
+test("B118 자막이 떠 있는 동안 화자가 화면 안 ≥ 90% — 공포 트랙 대사 장면 · 3 프로필 × 시드 1~8 × 줄 사이 침묵 0.4/1.2/2.2s, 질문 기다림 가짜 응답 0", () => {
+  const stat = { b67: { min: 1, sum: 0, n: 0, worst: "" }, b118: { min: 1, sum: 0, n: 0, worst: "", fake: [] } };
+  for (const policy of ["b67", "b118"]) for (const p of GAZE_PROFILE_NAMES) for (let seed = 1; seed <= 8; seed++) for (const gap of [0.4, 1.2, 2.2]) {
+    const r = runSceneView(p, seed, policy, gap), st = stat[policy];
+    st.sum += r.ratio; st.n++;
+    if (r.ratio < st.min) { st.min = r.ratio; st.worst = `${p}/s${seed}/침묵 ${gap}s`; }
+    if (policy === "b118") st.fake.push(...r.fake.map((h) => `${p}/s${seed}/${gap}:${h}`));
+  }
+  const f = (st) => `최저 ${Math.round(st.min * 100)}% (${st.worst}) · 평균 ${Math.round((st.sum / st.n) * 100)}%`;
+  console.log(`    자막이 떠 있는 동안 화자가 화면 안 — B118 이전 ${f(stat.b67)} → B118 ${f(stat.b118)}`);
+  const fearful = { b67: runSceneView("fearful", 1, "b67", 1.2), b118: runSceneView("fearful", 1, "b118", 1.2) };
+  console.log(`    공포형 seed 1 침묵 1.2s: 자막 합 ${fearful.b67.subSec.toFixed(1)}s ${Math.round(fearful.b67.ratio * 100)}% → ${fearful.b118.subSec.toFixed(1)}s ${Math.round(fearful.b118.ratio * 100)}%`);
+  assert.ok(stat.b118.min >= 0.9, `B118 최저 ${stat.b118.min.toFixed(3)} (${stat.b118.worst})`);
+  assert.ok(fearful.b67.ratio < 0.6, `B118 이전 공포형이 이미 ${fearful.b67.ratio.toFixed(2)} — 시간표 모형이 페이지와 다르다`);
+  assert.equal(stat.b118.fake.length, 0, `가짜 응답 ${stat.b118.fake.join(" ")}`);
+});
+
+test("B118 미세 자극은 대사를 밟지 않는다 — 12초마다 울려도 dialogueQuiet 가 막으면 자막 창 비율 ≥ 90%, 가짜 응답 0, 장면에서 2번 이상은 울린다", () => {
+  const st = { every: { min: 1, worst: "" }, quiet: { min: 1, worst: "", minMicro: Infinity, fake: [] } };
+  for (const mode of ["every", "quiet"]) for (const p of GAZE_PROFILE_NAMES) for (let seed = 1; seed <= 8; seed++) for (const gap of [0.4, 1.2, 2.2]) {
+    const r = runSceneView(p, seed, "b118", gap, mode), x = st[mode];
+    if (r.ratio < x.min) { x.min = r.ratio; x.worst = `${p}/s${seed}/침묵 ${gap}s`; }
+    if (mode === "quiet") { x.minMicro = Math.min(x.minMicro, r.micros); x.fake.push(...r.fake.map((h) => `${p}/s${seed}/${gap}:${h}`)); }
+  }
+  console.log(`    미세 자극 12초마다 — 막지 않으면 최저 ${Math.round(st.every.min * 100)}% (${st.every.worst}) · dialogueQuiet 로 막으면 최저 ${Math.round(st.quiet.min * 100)}% (${st.quiet.worst}), 장면 중 울린 수 최소 ${st.quiet.minMicro}`);
+  assert.ok(st.quiet.min >= 0.9, `막았는데 최저 ${st.quiet.min.toFixed(3)} (${st.quiet.worst})`);
+  assert.ok(st.quiet.minMicro >= 2, `장면 중 미세 자극이 ${st.quiet.minMicro}번뿐 — 조용한 창이 너무 좁다`);
+  assert.equal(st.quiet.fake.length, 0, st.quiet.fake.join(" "));
 });
 
 test("/film 도입부(t=60s 까지): 공포형 θ̂ 확신 ≥ 60%, 세 프로필 이득 순서 유지", () => {
