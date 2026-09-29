@@ -1,6 +1,6 @@
-// 연속 파라미터 액추에이터 회귀 테스트 — 범위·데드밴드·방향·슬루·관객별 이득·상한·OFF=항등
+// 연속 파라미터 액추에이터 회귀 테스트 — 범위·데드밴드·방향·슬루·관객별 이득·상한·OFF=항등·실제로 움직인 양(B116)
 import assert from "node:assert/strict";
-import { actuationFor, applyActuation, bgmScale, offsetsFor, AXES, RANGES, ACTUATED_KEYS, ACTUATE_PARAMS } from "../lib/controlActuate.js";
+import { actuationFor, applyActuation, bgmScale, offsetsFor, actuationEffect, actuationText, AXES, RANGES, ACTUATED_KEYS, ACTUATE_PARAMS } from "../lib/controlActuate.js";
 import { deriveParams, ANCHORS } from "../lib/directionMap.js";
 import { curveAt } from "../lib/tensionCurve.js";
 
@@ -216,6 +216,69 @@ test("B75 멈춤 창: 비활성(OFF·트랙 없음)은 창 안에서도 즉시 0
   assert.equal(off.mode, "off"); assert.equal(off.u, 0);
   for (const k of ACTUATED_KEYS) assert.equal(off.offsets[k], 0);
   assert.equal(actuationFor({ ...SPIKE, track: null, prev: warm, tNow: 91, lastMicroAt: 90 }).mode, "off");
+});
+
+// B116 — 모니터 "연속 구동" 줄은 오프셋이 아니라 무대가 받은 양을 적는다. 공포 트랙은 판정 뒤 lampEarlyOn 이
+// base 가로등을 1.0 으로 켜 두므로 각성 오프셋 +0.6 이 전부 잘린다(bias=H 녹화 2:22 에 "가로등 +0.58" 이 찍혔던 자리).
+test("B116 포화 축: 공포 트랙(lampEarlyOn 켜짐)에서 각성하면 가로등은 '포화(1.00)', 나머지 축은 실제 Δ", () => {
+  const base = deriveParams(STATES.H, 1);
+  assert.equal(base.triggers.lampEarlyOn, true, "대표 H 상태에서 트리거가 켜져 있어야 이 테스트가 뜻이 있다");
+  assert.equal(base.lampOn, 1);
+  const off = offsetsFor("H", 1);
+  const eff = Object.fromEntries(actuationEffect(base, off).map((e) => [e.key, e]));
+  assert.equal(eff.lampOn.saturated, true);
+  assert.equal(eff.lampOn.delta, 0);
+  assert.equal(eff.lampOn.offset, AXES.H.lampOn);
+  for (const k of ["npcSilence", "fogDensity", "npcDistance", "npcGaze"]) {
+    assert.equal(eff[k].saturated, false, k);
+    assert.ok(Math.abs(eff[k].delta - applyActuation(base, off)[k] + base[k]) < 1e-9, `${k} Δ = 적용 − 기준`);
+  }
+  const text = actuationText(off, base);
+  assert.match(text, /가로등 포화\(1\.00\)/);
+  assert.doesNotMatch(text, /가로등 \+/, "포화 축에 + 값을 적지 않는다");
+  assert.match(text, /BGM ×1\.35/);
+  console.log(`    공포 u=+1 → ${text}`);
+  console.log(`    (종전 오프셋 표기 → ${actuationText(off)})`);
+});
+
+test("B116 비포화 축: 가로등이 아직 덜 켜진 상태(트리거 전)면 같은 오프셋이 실제 Δ 로 적힌다 — 같은 문구가 한쪽에서만 참이던 문제", () => {
+  // 무편향 seed 2 처럼 판정은 H 인데 H 가중이 lampEarlyOn 문턱(0.42) 아래인 순간
+  const state = { R: 0.35, H: 0.4, C: 0.25 };
+  const base = deriveParams(state, 1);
+  assert.equal(base.triggers.lampEarlyOn, false);
+  assert.ok(base.lampOn < 0.5, `기준 가로등 ${base.lampOn}`);
+  const off = offsetsFor("H", 0.5);
+  const lamp = actuationEffect(base, off).find((e) => e.key === "lampOn");
+  assert.equal(lamp.saturated, false);
+  assert.equal(lamp.clipped, false);
+  assert.ok(Math.abs(lamp.delta - off.lampOn) < 1e-9);
+  assert.match(actuationText(off, base), /가로등 \+0\.30/);
+});
+
+test("B116 일부만 움직인 축은 '(한계)' — 범위 끝에 닿으면 Δ 가 오프셋보다 작다", () => {
+  const base = { npcSilence: 2.3, npcDistance: 0.9, npcGaze: 0.5, lampOn: 0.2, fogDensity: 0.05 };
+  const off = { ...offsetsFor("H", 0), npcSilence: 0.6 };
+  const e = actuationEffect(base, off);
+  assert.equal(e.length, 1);
+  assert.equal(e[0].clipped, true);
+  assert.ok(Math.abs(e[0].delta - (RANGES.npcSilence[1] - 2.3)) < 1e-9);
+  assert.equal(actuationText(off, base), "침묵 +0.20s(한계)");
+  // 이미 범위 밖인 기준값(작가 앵커)은 더 밀지 않는다 → 포화
+  assert.equal(actuationText({ ...off, npcSilence: 0.3 }, { ...base, npcSilence: 2.8 }), "침묵 포화(2.80s)");
+});
+
+test("B116 표기 규칙: 오프셋 0 이면 '오프셋 0', base 없이 부르면 종전 오프셋 표기, 음수 이완도 실제 Δ", () => {
+  const base = deriveParams(STATES.H, 1);
+  assert.equal(actuationText(offsetsFor("H", 0), base), "오프셋 0");
+  assert.equal(actuationText(null, base), "오프셋 0");
+  assert.equal(actuationText(offsetsFor("H", 1)), "침묵 +0.60s · BGM ×1.35 · 가로등 +0.60 · 안개 +0.020 · 거리 +0.20m · 시선 -10%");
+  // 이완(u −1): 가로등 1.0 → 0.4 로 실제로 내려간다 — 포화는 각성 쪽에서만
+  const relax = actuationText(offsetsFor("H", -1), base);
+  assert.match(relax, /가로등 -0\.60/);
+  assert.doesNotMatch(relax, /포화/);
+  // 로맨스·코미디 트랙은 가로등 축이 없다 — 줄에 가로등이 나오지 않는다
+  for (const tr of ["R", "C"]) assert.doesNotMatch(actuationText(offsetsFor(tr, 1), deriveParams(STATES[tr], 1)), /가로등/, tr);
+  console.log(`    공포 u=−1 → ${relax}`);
 });
 
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);

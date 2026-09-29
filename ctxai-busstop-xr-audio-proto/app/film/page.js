@@ -45,9 +45,9 @@ import DirectorMonitor from "@/components/DirectorMonitor";
 import { curveAt } from "@/lib/tensionCurve";
 import { runController, microDecision, nextAdvice } from "@/lib/slotController";
 import { decideSlot, CONTROLLED_SLOTS, DECIDE_AT, PROBE_DOSE, previewSlotEntries } from "@/lib/slotActuate";
-import { actuationFor, bgmScale, ACTUATE_PARAMS } from "@/lib/controlActuate";
+import { actuationFor, actuationEffect, bgmScale, ACTUATE_PARAMS, ACTUATED_KEYS } from "@/lib/controlActuate";
 import { selectTrack } from "@/lib/trackSelect";
-import { deriveBgmGains, TRIGGERS } from "@/lib/directionMap";
+import { deriveBgmGains, deriveParams, TRIGGERS } from "@/lib/directionMap";
 import { CUES, evalActors, T } from "@/lib/filmTimeline";
 import { DIALOGUE_V2_LINES, DIALOGUE_V2_GENRE_LABEL } from "@/lib/dialogueV2Lines";
 import { observe, judgeFromBehavior } from "@/lib/behaviorSense";
@@ -70,6 +70,13 @@ const GENRE_META = {
 const CAM_WINDOW_MS = 8000;
 const EVENT_LABEL = STIMULUS_LABEL; // 사건 이름표는 종료 카드·비교 화면·/interim 과 한 표(lib/viewerText.js)
 // 관객 반응 지문(fingerprintText)·집중한 순간(focusText)도 lib/viewerText.js — 비교 화면과 사본이 갈라졌던 문제(B84·B108)
+
+// 연속 액추에이터의 기준값(B116) — ReactiveStage 가 오프셋을 얹기 전의 deriveParams 값 중 구동 축만.
+// 모니터·control:actuate 가 "밀려고 한 양(오프셋)" 이 아니라 "무대가 받은 양(적용 − 기준)" 을 적게 한다.
+function actBase(snap) {
+  const p = deriveParams(snap.current, snap.settled);
+  return Object.fromEntries(ACTUATED_KEYS.filter((k) => Number.isFinite(p[k])).map((k) => [k, p[k]]));
+}
 
 // URL 옵션은 마운트 뒤에 읽는다 — 서버 렌더와 첫 클라이언트 렌더가 같아야 하이드레이션 오류가 없다.
 function useQuery() {
@@ -397,7 +404,7 @@ export default function FilmPage() {
           const next = nextAdvice({ entries, tNow: film.t, verdict: !!film.dominant, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling,
             lastMicroAt: film.lastMicroAt ?? -Infinity, microCount: film.microCount || 0, controlOn: q.control === "1", sceneStart: T.npcSeated, sceneEnd: 150 });
           const sel = theta.nResp >= 1 ? selectTrack(theta, { genrePrior: snap.current, priorWeight: 0.3 }) : null;
-          setMonitor({ track, theta, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, series, next, nStim: eng.stimuli.length, sel, control: q.control === "1", micro: film.microCount || 0, actuate: adjustRef.current, slots: film.slotChoice || null });
+          setMonitor({ track, theta, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, series, next, nStim: eng.stimuli.length, sel, control: q.control === "1", micro: film.microCount || 0, actuate: adjustRef.current ? { ...adjustRef.current, base: actBase(snap) } : null, slots: film.slotChoice || null });
         }
       }
       // 실제 제어(?control=1) — 판정 뒤 장면에서만. 도입부 다섯 사건은 관객을 공정히 읽기 위한
@@ -431,6 +438,8 @@ export default function FilmPage() {
             ...(act.mode === "settle" ? { settleLeft: act.settleLeft } : {}),
             xhat: r3(xhat), target: r3(tgt.target), offsets: act.offsets, bgm: r3(bgmScale(act.offsets)),
             applied: { npcSilence: r3(p.npcSilence), lampOn: r3(p.lampOn), fogDensity: r3(p.fogDensity), npcDistance: r3(p.npcDistance), npcGaze: r3(p.npcGaze) },
+            // 실제로 움직인 양(B116) — 오프셋 중 범위·트리거에 잘리지 않고 무대에 닿은 몫. 포화 축(공포 트랙 가로등)은 0
+            delta: Object.fromEntries(actuationEffect(actBase(snap), act.offsets).map((e) => [e.key, e.delta])),
           });
           film.lastActuateLogAt = film.t; film.actuateLogCount = (film.actuateLogCount || 0) + 1;
         }

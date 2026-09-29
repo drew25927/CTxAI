@@ -11,10 +11,11 @@
 //   { track, theta:{g,L,tau,rho,confidence,nResp}, xhat, target?, tol?, ceiling?, series:[{t,tension}],
 //     nStim, sel?:{track,reach}, control?:bool, micro?:number, note?,
 //     next?:{kind:"probe"|"slot"|"micro"|"done", slotId, variantId?, dose?, reason, count?, max?}   ← lib/slotController nextAdvice
-//     actuate?:{u,mode,offsets},     ← /film 연속 액추에이터(lib/controlActuate.js)의 현재 구동량·오프셋
+//     actuate?:{u,mode,offsets,base?}, ← /film 연속 액추에이터(lib/controlActuate.js)의 현재 구동량·오프셋. base = 오프셋을 얹기 전 값(B116)
 //     slots?:{frog?:{variantId,dose,actuation:{volume,plays}}, cat?:{…}} }   ← /film 슬롯 변형 확정값(lib/slotActuate.js, B78). variantId null = 고정 연출
 
 import { curveAt } from "@/lib/tensionCurve";
+import { actuationText } from "@/lib/controlActuate";
 
 // 작은 그래프 — 작가 목표 곡선(점선)과 관객 긴장 추정 x̂(실선), 현재 시각 표시, 사건 눈금.
 export function MonitorChart({ series = [], track = "H", tNow = 0, ceiling = 1, tMax: tMaxProp = 180, showTarget = true, marks = [], width = 292, height = 60 }) {
@@ -47,17 +48,10 @@ const fmt2 = (v) => (Number.isFinite(v) ? v.toFixed(2) : "-");
 const sgn = (v, d = 2) => (v > 0 ? "+" : "") + v.toFixed(d);
 const ACT_MODE = { arouse: "각성", relax: "이완", hold: "유지", settle: "자극 뒤 멈춤", off: "대기" };
 
-// 연속 액추에이터 한 줄 — 0 이 아닌 축만. (BGM 은 배율, 나머지는 deriveParams 값에 더한 오프셋)
+// 연속 액추에이터 한 줄 — 0 이 아닌 축만. 페이지가 a.base(오프셋을 얹기 전 deriveParams 값)를 주면 실제로 움직인 양을,
+// 이미 끝까지 밀린 축은 "포화" 로 적는다(B116 — 공포 트랙 가로등은 lampEarlyOn 이 1.0 으로 켜 둬서 +0.60 이 하나도 안 먹는다).
 function actuateText(a) {
-  const o = a.offsets || {};
-  const parts = [];
-  if (o.npcSilence) parts.push(`침묵 ${sgn(o.npcSilence)}s`);
-  if (o.bgmGain) parts.push(`BGM ×${(1 + o.bgmGain).toFixed(2)}`);
-  if (o.lampOn) parts.push(`가로등 ${sgn(o.lampOn)}`);
-  if (o.fogDensity) parts.push(`안개 ${sgn(o.fogDensity, 3)}`);
-  if (o.npcDistance) parts.push(`거리 ${sgn(o.npcDistance)}m`);
-  if (o.npcGaze) parts.push(`시선 ${sgn(o.npcGaze * 100, 0)}%`);
-  return parts.length ? parts.join(" · ") : "오프셋 0";
+  return actuationText(a.offsets, a.base);
 }
 
 // 슬롯 변형 확정 한 줄(B78) — 개구리·고양이가 실제로 어떤 변형으로 울렸는가. 제어 OFF 는 "고정" 으로 표시.
