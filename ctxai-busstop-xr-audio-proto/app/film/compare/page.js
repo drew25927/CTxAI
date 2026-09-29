@@ -11,6 +11,7 @@
 import { useEffect, useMemo, useState } from "react";
 import s from "../../story/story.module.css";
 import f from "../film.module.css";
+import { mixLines, verdictOf } from "@/lib/viewerText";
 
 const GENRE = { R: { label: "로맨스", accent: "#f2a7c0" }, H: { label: "공포", accent: "#8fae95" }, C: { label: "블랙코미디", accent: "#e0a86a" } };
 const EVENT_LABEL = { poster: "포스터", cafeBell: "우비 인물", truckSplash: "물보라", frog: "개구리", cat: "고양이", catScream: "비명" };
@@ -28,8 +29,15 @@ function Chart({ a, b }) {
   const y = (v) => H - PAD - v * (H - PAD * 2);
   const path = (tr, g) => tr.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p[g]).toFixed(1)}`).join(" ");
   const marks = (a?.events || []).filter((e) => e.kind === "event" && e.name === "event:start");
+  const judge = (a?.events || []).find((e) => e.kind === "event" && e.name === "cue" && e.detail === "judge");
   return (
     <svg className={f.chart} style={{ height: 220 }} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+      {judge && (
+        <g>
+          <line x1={x(judge.t)} x2={x(judge.t)} y1={PAD} y2={H - PAD} stroke="rgba(255,255,255,0.5)" strokeWidth="1.2" />
+          <text x={x(judge.t) + 3} y={H - PAD - 4} fill="rgba(255,255,255,0.7)" fontSize="9">판정</text>
+        </g>
+      )}
       {marks.map((m, i) => (
         <g key={i}>
           <line x1={x(m.t)} x2={x(m.t)} y1={PAD} y2={H - PAD} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
@@ -48,12 +56,13 @@ function Chart({ a, b }) {
 
 function describe(sess) {
   if (!sess) return "";
-  const fin = sess.final?.current || {};
-  const top = ["R", "H", "C"].sort((p, q) => (fin[q] || 0) - (fin[p] || 0));
+  // 배합은 판정 때 것이 주 문장, 끝 배합은 "판정 뒤 흐름" — 종료 카드와 같은 규칙(lib/viewerText.js, B86).
+  // B86 이전 세션은 verdict 가 없어 judge 큐 시각의 궤적 표본으로 되살린다.
+  const mix = mixLines({ verdict: verdictOf(sess), final: sess.final });
   const ev = (sess.headPose?.events || []);
   const looked = ev.filter((e) => e.feats?.looked).map((e) => EVENT_LABEL[e.name] || e.name);
   const notLooked = ev.filter((e) => !e.feats?.looked).map((e) => EVENT_LABEL[e.name] || e.name);
-  return `옆에 앉은 사람 ${GENRE[sess.dominant]?.label || "-"} · 마지막 배합 ${top.map((g) => `${GENRE[g].label} ${Math.round((fin[g] || 0) * 100)}%`).join(" · ")}`
+  return `옆에 앉은 사람 ${GENRE[sess.dominant]?.label || "-"} · ${mix.main}` + (mix.after ? ` · ${mix.after}` : "")
     + (looked.length ? ` · 본 것: ${looked.join(", ")}` : "") + (notLooked.length ? ` · 안 본 것: ${notLooked.join(", ")}` : "")
     + (sess.selfReport ? ` · 본인 느낌: ${GENRE[sess.selfReport]?.label}` : "");
 }

@@ -55,6 +55,7 @@ import { loadDialoguePool, pickPoolLine, poolCoverage } from "@/lib/dialoguePool
 import { beatOf, gazeFor, playsLine, playedCount, beatsTotalSec, answerWatchStart, answerWatchUpdate, answerWatchResult } from "@/lib/dialogueBeats";
 import { scoresFromMoodApi } from "@/lib/textKeywords";
 import { analyzeProsody } from "@/lib/voiceProsody";
+import { mixLines } from "@/lib/viewerText";
 import s from "../story/story.module.css";
 import f from "./film.module.css";
 
@@ -240,8 +241,16 @@ function TrajectoryChart({ trajectory, events }) {
   const y = (v) => H - PAD - v * (H - PAD * 2);
   const path = (g) => trajectory.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p[g]).toFixed(1)}`).join(" ");
   const marks = (events || []).filter((e) => e.kind === "event" && e.name === "event:start");
+  // 판정 시각 — 그 뒤로도 배합이 흐른다는 것을 카드의 두 줄(판정 때 · 끝)과 함께 보이게 한다(B86).
+  const judge = (events || []).find((e) => e.kind === "event" && e.name === "cue" && e.detail === "judge");
   return (
     <svg className={f.chart} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+      {judge && (
+        <g>
+          <line x1={x(judge.t)} x2={x(judge.t)} y1={PAD} y2={H - PAD} stroke="rgba(255,255,255,0.55)" strokeWidth="1.2" />
+          <text x={x(judge.t) + 3} y={H - PAD - 4} fill="rgba(255,255,255,0.7)" fontSize="9">판정</text>
+        </g>
+      )}
       {marks.map((m, i) => (
         <g key={i}>
           <line x1={x(m.t)} x2={x(m.t)} y1={PAD} y2={H - PAD} stroke="rgba(255,255,255,0.15)" strokeDasharray="3 3" />
@@ -293,6 +302,7 @@ export default function FilmPage() {
   const [caption, setCaption] = useState("");
   const [line, setLine] = useState(null);
   const [dominant, setDominant] = useState(null);
+  const [verdict, setVerdict] = useState(null); // 판정 순간의 배합 — 종료 카드의 주 문장(B86)
   const [xrError, setXrError] = useState("");
   const [camStatus, setCamStatus] = useState("off");
   const [askStatus, setAskStatus] = useState(null); // 질문 뒤 기다림·응답 결과 (HUD — 헤드셋 파일럿에서 고개 응답이 잡히는지 보는 용도)
@@ -470,7 +480,7 @@ export default function FilmPage() {
     adjustRef.current = null;
     filmRef.current = { running: true, t: 0, dominant: null, npcDistance: 0.9, busAt: null, onFrame: null, lastMicroAt: -999, microCount: 0, lastActuateLogAt: null, actuateLogCount: 0, slotChoice: {}, talking: false, talkLook: q.talk !== "0" };
     if (typeof window !== "undefined") window.__sfxLog = [];
-    setDominant(null); setLine(null); setCaption(""); setAskStatus(null);
+    setDominant(null); setVerdict(null); setLine(null); setCaption(""); setAskStatus(null);
     if (bias) d.pushEvidence({ [bias.g]: 1 }, bias.w, "bias", `?bias=${bias.g}`);
     d.setPhase("intro");
     setPhase("intro");
@@ -549,7 +559,10 @@ export default function FilmPage() {
       // 이산 결정 하나 — 누가 앉는가. 그 뒤로도 상태는 계속 흐른다.
       const { dominant: dom } = rank(d.st.current);
       film.dominant = dom;
+      // 판정 때 배합을 따로 남긴다 — 판정 뒤에도 증거는 쌓여 끝 배합은 다른 장르가 앞설 수 있다(B86).
+      film.verdict = { dominant: dom, mix: { ...d.st.current }, t: Math.round(film.t * 10) / 10, confidence: d.st.confidence };
       setDominant(dom);
+      setVerdict(film.verdict);
       d.setPhase("judged");
       setCaption("");
     }
@@ -759,7 +772,7 @@ export default function FilmPage() {
     streamRef.current = null;
     micRef.current?.getTracks().forEach((t) => t.stop());
     micRef.current = null;
-    setPhase("gate"); setHud(null); setLine(null); setCaption(""); setDominant(null); setCamStatus("off");
+    setPhase("gate"); setHud(null); setLine(null); setCaption(""); setDominant(null); setVerdict(null); setCamStatus("off");
   }
 
   function sessionData(extra = {}) {
@@ -782,7 +795,7 @@ export default function FilmPage() {
     } catch { /* 로그 실패는 무시 */ }
     const vs = viewerSimRef.current;
     const viewer = vs ? { synthetic: true, profile: vs.profile, label: vs.label, seed: vs.seed } : undefined; // 합성 관객 세션은 파일에도 표기
-    return d.exportSession({ dominant: filmRef.current.dominant, speed, viewer, headPose: sensorRef.current?.report?.(), engagement: engagementRef.current?.report?.(), control, ...extra });
+    return d.exportSession({ dominant: filmRef.current.dominant, verdict: filmRef.current.verdict || null, speed, viewer, headPose: sensorRef.current?.report?.(), engagement: engagementRef.current?.report?.(), control, ...extra });
   }
 
   // 종료 시 자동 저장 (data/sessions/, Supabase 아님). 실패해도 체험은 영향 없다.
@@ -825,6 +838,8 @@ export default function FilmPage() {
   const accent = dominant ? GENRE_META[dominant].accent : "#cfd8e3";
   const lineAccent = line?.flavor ? GENRE_META[line.genre].accent : accent;
   const snap = hud;
+  // 종료 카드 배합 두 줄 — 판정 때 배합이 주 문장, 끝 배합은 "판정 뒤 흐름"(lib/viewerText.js, 비교 화면과 같은 규칙)
+  const endMix = phase === "end" ? mixLines({ verdict, final: snap?.current || null }) : null;
   const trig = snap?.params?.triggers || {};
 
   return (
@@ -971,8 +986,9 @@ export default function FilmPage() {
             <h2 className={f.endTitle}>오늘의 정류장은 이렇게 흘렀습니다</h2>
             <p className={f.endSub}>
               옆에 앉은 사람: <b style={{ color: accent }}>{dominant ? GENRE_META[dominant].label : "-"}</b> ·
-              마지막 배합 {snap ? ["R", "H", "C"].map((g) => `${GENRE_META[g].label} ${Math.round(snap.current[g] * 100)}%`).join(" · ") : ""}
+              {" "}{endMix.main}
             </p>
+            {endMix.after && <p className={f.endSub} style={{ marginTop: -4, fontSize: 12.5, opacity: 0.75 }}>{endMix.after}</p>}
             <TrajectoryChart trajectory={directionRef.current?.st.trajectory} events={directionRef.current?.st.events} />
             <div className={f.legend}>
               {["R", "H", "C"].map((g) => <span key={g}><i style={{ background: GENRE_META[g].accent }} />{GENRE_META[g].label}</span>)}

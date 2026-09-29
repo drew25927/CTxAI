@@ -5,7 +5,7 @@
 // 저장소는 Supabase가 아니라 프로젝트 안 data/sessions/ (gitignore). 전시 PC 로컬 실행 전제.
 //
 //   POST /api/session  { ...exportSession() 결과, selfReport?: "R"|"H"|"C", route?: "interim" }
-//   GET  /api/session  → 저장된 파일 목록과 요약(마지막 배합·앉은 인물·자기보고)
+//   GET  /api/session  → 저장된 파일 목록과 요약(판정 때 배합·마지막 배합·앉은 인물·자기보고)
 
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -49,6 +49,7 @@ export async function GET(req) {
       items.push({
         id: j.id, savedAt: j.savedAt, dominant: j.dominant ?? null, selfReport: j.selfReport ?? null,
         final: j.final?.current ?? null, settled: j.final?.settled ?? null, confidence: j.final?.confidence ?? null,
+        verdict: j.verdict ? { mix: j.verdict.mix ?? null, t: j.verdict.t ?? null } : null, // 판정 때 배합(B86 이후 /film 세션). final 은 끝 배합이라 판정과 1위가 다를 수 있다
         durationSec: j.trajectory?.length ? j.trajectory[j.trajectory.length - 1].t : null,
       });
     } catch { /* 깨진 파일은 건너뜀 */ }
