@@ -74,6 +74,8 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 지난 질문의 응답 표기 — 다음 줄이 시작되면 흐리게 (B110) */
+.stale { opacity: 0.45; }
 
 .caption {
   position: absolute;

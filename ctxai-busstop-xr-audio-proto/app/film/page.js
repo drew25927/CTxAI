@@ -671,6 +671,8 @@ export default function FilmPage() {
     // 세션에는 구간마다 "talk" 이벤트(from = 시작 영화 초, t = 끝)를 남겨 화자가 화면에 들어왔는지 raw 자세로 따질 수 있게 한다.
     const talkBegin = (seq) => { film.talking = true; film.talkFrom = film.t; film.talkSeq = seq; };
     const talkEnd = () => { if (!film.talking) return; film.talking = false; d.markEvent("talk", { seq: film.talkSeq, from: Math.round(film.talkFrom * 10) / 10 }); };
+    // 지난 질문의 응답 표기는 다음 줄이 시작되면 흐리게 둔다 — "질문 10 · 응답 없음" 이 끝까지 선명하게 남던 문제 (B110)
+    const staleAsk = () => setAskStatus((a) => (a && !a.listening ? { ...a, stale: true } : a));
 
     // 272 도착 — 버스가 커브를 돌아 들어와 정면(앞문 x≈1.2)에 서기까지 7.2초, 그 다음 문
     const arriveBus = async () => {
@@ -679,6 +681,7 @@ export default function FilmPage() {
       film.busAt = film.t;
       d.setPhase("bus");
       setPhase("bus");
+      setAskStatus(null); // 질문 표기는 버스 장면부터 지운다 (B110)
       playSfx("07", { volume: 0.7 });
       setCaption("272");
       await waitFilm(7.2); if (token.aborted) return;
@@ -704,6 +707,7 @@ export default function FilmPage() {
           d.markEvent("callback", { genre: secondary, weight: secondaryWeight });
           film.lineGaze = 0.5;
           // 콜백은 줄 수(total)에 들어가지 않는다 — 진행 막대는 직전 줄에 머물고 자막 줄에는 번호 대신 "배합 콜백" 만 적는다 (B91)
+          staleAsk();
           setLine({ ...cb, flavor: true, index: Math.max(0, played - 1), total });
           talkBegin(`${cb.genre}-${cb.seq}`);
           await playFile(cb.file, Math.min(1, (p.npcVolume ?? 1) * 0.9));
@@ -722,6 +726,7 @@ export default function FilmPage() {
         }
       }
       film.lineGaze = gazeFor(b);
+      staleAsk();
       setLine({ ...l, text, tinted, to: b.to, index: played, total });
       played++;
       talkBegin(l.seq);
@@ -845,6 +850,12 @@ export default function FilmPage() {
   const accent = dominant ? GENRE_META[dominant].accent : "#cfd8e3";
   const lineAccent = line?.flavor ? GENRE_META[line.genre].accent : accent;
   const snap = hud;
+  // HUD 접힘(B104) — 옆사람이 말하는 동안(첫 줄부터 버스가 떠날 때까지 line 이 남는다) 오른쪽 HUD 의 사건 목록·마지막 증거 줄을 접어
+  // 화자(x≈1120~1350px)를 가리지 않게 한다. 사건 목록은 판정(0:58) 전 탐침 여섯 개라 대사 중에는 더 늘지 않는다.
+  const hudFold = !!line || phase === "bus";
+  const hudEvents = snap?.events || [];
+  const lastEvent = hudEvents.length ? hudEvents[hudEvents.length - 1] : null;
+  const lastEventTop = lastEvent ? ["R", "H", "C"].sort((a, b) => lastEvent[b] - lastEvent[a])[0] : null;
   // 종료 카드 배합 두 줄 — 판정 때 배합이 주 문장, 끝 배합은 "판정 뒤 흐름"(lib/viewerText.js, 비교 화면과 같은 규칙)
   const endMix = phase === "end" ? mixLines({ verdict, final: snap?.current || null }) : null;
   const trig = snap?.params?.triggers || {};
@@ -904,7 +915,7 @@ export default function FilmPage() {
             <span>장르 확신 <b>{Math.round(snap.confidence * 100)}%</b></span>
             <span>웹캠 <b>{camStatus}</b></span>
             {useVoice && <span>음성 <b>{voiceStatus}</b></span>}
-            {askStatus && <span>질문 {askStatus.seq} · <b>{askStatus.listening ? "응답 기다리는 중" : askStatus.answered ? `응답 ${{ nod: "끄덕임", turn: "돌림", shake: "가로젓기", forced: "강제" }[askStatus.how] || "있음"}` : "응답 없음"}</b></span>}
+            {askStatus && <span className={askStatus.stale ? f.stale : undefined}>질문 {askStatus.seq} · <b>{askStatus.listening ? "응답 기다리는 중" : askStatus.answered ? `응답 ${{ nod: "끄덕임", turn: "돌림", shake: "가로젓기", forced: "강제" }[askStatus.how] || "있음"}` : "응답 없음"}</b></span>}
             {signText && <span>표지판 <b>{signText}</b></span>}
             <span>거리 <b>{snap.params ? snap.params.npcDistance.toFixed(2) : "-"}m</b></span>
             <span>시선 <b>{snap.params ? Math.round(snap.params.npcGaze * 100) : "-"}%</b></span>
@@ -915,10 +926,13 @@ export default function FilmPage() {
             <span className={`${f.trig} ${trig.sunBreak ? f.trigOn : ""}`}>구름 갈라짐</span>
             <span className={`${f.trig} ${trig.flatLight ? f.trigOn : ""}`}>그림자 소멸</span>
           </div>
-          {snap.lastEvidence && (
+          {!hudFold && snap.lastEvidence && (
             <div className={f.lastEv}>↳ {snap.lastEvidence.source} {snap.lastEvidence.note ? `· ${snap.lastEvidence.note}` : ""}</div>
           )}
-          {snap.events?.length > 0 && (
+          {hudFold && lastEvent && (
+            <div className={f.lastEv}>사건 {hudEvents.length}건 접힘 · 마지막 {EVENT_LABEL[lastEvent.name] || lastEvent.name} → <span style={{ color: GENRE_META[lastEventTop].accent }}>{GENRE_META[lastEventTop].label} {Math.round(lastEvent[lastEventTop] * 100)}</span></div>
+          )}
+          {!hudFold && snap.events?.length > 0 && (
             <div className={f.evList}>
               {snap.events.map((e) => {
                 const top = ["R", "H", "C"].sort((a, b) => e[b] - e[a])[0];
