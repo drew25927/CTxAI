@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import s from "../../story/story.module.css";
 import f from "../film.module.css";
 import { mixLines, verdictOf, mmss, fingerprintText, MOMENT_TEXT, MOMENT_BASIS } from "@/lib/viewerText";
-import { pairHeadline, gapText, lengthNote, labelRows, LABEL_LAYOUT, sessionRoute, sessionBadges, directionChangeText, xhatSeries, eventMarks, judgeTime, judgeLine, lookResponses, lookText, momentsOf, peakText, NO_PEAK_TEXT, xhatGap, pairWarning, biasOf, movieTrajectory, markBefore, eventPeaks, leaderBands, sessionOptionLabel, pickerOptions } from "@/lib/sessionCompare";
+import { pairHeadline, gapText, lengthNote, labelRows, LABEL_LAYOUT, sessionRoute, sessionBadges, directionChangeText, xhatSeries, eventMarks, judgeTime, judgeLine, lookResponses, lookText, momentsOf, peakText, NO_PEAK_TEXT, xhatGap, pairWarning, biasOf, movieTrajectory, markBefore, eventPeaks, leaderBands, sessionOptionLabel, pickerOptions, xhatLegendText } from "@/lib/sessionCompare";
 import { observedSegments } from "@/lib/tensionEstimate";
 
 const GENRE = { R: { label: "로맨스", accent: "#f2a7c0" }, H: { label: "공포", accent: "#8fae95" }, C: { label: "블랙코미디", accent: "#e0a86a" } };
@@ -263,7 +263,8 @@ export default function ComparePage() {
             <div className={f.legend}>
               <span><i style={{ background: XHAT_COLOR.a }} />A 실선</span>
               <span><i style={{ background: XHAT_COLOR.b }} />B 점선</span>
-              <span className={s.dim}>● 가장 크게 반응 · ▬ 가장 차분히 집중 · 흐린 선 = 사건 사이(잔움직임만)</span>
+              {/* 범례는 두 카드에 실제로 그린 것만(B198 · xhatLegendText) — 반응 0 관객끼리면 "●" 이 빠진다 */}
+              <span className={s.dim}>{xhatLegendText(ma, mb)}</span>
               {gap && <span className={s.dim}>{gapText(gap, gapAt)}</span>}
             </div>
           </div>

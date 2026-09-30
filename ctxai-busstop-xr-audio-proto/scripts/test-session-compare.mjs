@@ -5,7 +5,7 @@ import {
   sessionRoute, biasOf, movieEvents, movieTrajectory, sessionBadges, directionChangeText, actuationStats,
   xhatSeries, eventMarks, markBefore, MARK_NEAR_SEC, judgeTime, judgeLine, lookResponses, lookText, xhatPeak, xhatGap, pairWarning,
   momentsOf, peakText, NO_PEAK_TEXT, leaderBands, labelRows, labelWidth, labelOverlaps, LABEL_LAYOUT, eventPeaks, EVENT_PEAK_SPAN_SEC, lengthNote,
-  pairHeadline, gapText, conditionDiff, SAME_NIGHT_EPS, sessionOptionLabel, pickerOptions,
+  pairHeadline, gapText, conditionDiff, SAME_NIGHT_EPS, sessionOptionLabel, pickerOptions, xhatLegendText, XHAT_LEGEND,
 } from "../lib/sessionCompare.js";
 import { interimAdapt } from "../lib/interimAdapt.js";
 
@@ -506,5 +506,28 @@ test("sessionOptionLabel·pickerOptions(B239): kiosk 의 세션 선택 상자는
   assert.equal(shown.length, 2);
   assert.doesNotMatch(shown.join("\n"), /호기심형|06:11/);
   assert.equal(["on", "x3"].flatMap((id) => pickerOptions(items, id)).length, 6, "개발 화면은 상자마다 3줄");
+});
+
+test("xhatLegendText(B198): 비교 화면 x̂ 범례는 두 카드에 실제로 그린 것만 — 반응 0 관객끼리면 '● 가장 크게 반응' 이 빠진다", () => {
+  const none = interimSession({ id: "2026-09-30T00-00-00-000Z-nopeak_interim_R", genre: "R", profile: "calm", totals: { R: 5, H: 0, C: 0 }, breakdown: [],
+    stimuli: [stim("figureApproach", 15, 0, { kind: "track" }), stim("truckSplash", 35, 0)] });
+  const mNone = momentsOf(none), mPeak = momentsOf(FEARFUL);
+  assert.equal(mNone.peak, null); assert.equal(mNone.noPeak, true); assert.ok(mPeak.peak, "공포형은 봉우리가 있다");
+  // 종전 문구 그대로(b239 비교 화면 텍스트와 같음) — 한쪽이라도 봉우리·차분 구간이 있으면. 줄인 고정 세션은 집중도 요약이 없어 calm 이 없으므로 차분 구간은 손으로 붙인다
+  const full = "● 가장 크게 반응 · ▬ 가장 차분히 집중 · 흐린 선 = 사건 사이(잔움직임만)";
+  const calm = { text: "S1 우비 인물 (0:16)", t0: 14, t1: 16 };
+  assert.equal(xhatLegendText({ ...mPeak, calm }, { ...mPeak, calm }), full);
+  assert.equal(xhatLegendText({ ...mPeak, calm }, mNone), full, "A 에만 봉우리·차분 구간이 있어도 범례는 붙는다");
+  assert.equal(xhatLegendText(mNone, { ...mPeak, calm }), full);
+  assert.equal(xhatLegendText(mPeak, mNone), `${XHAT_LEGEND.peak} · ${XHAT_LEGEND.between}`, "봉우리만 있고 차분 구간이 없으면 ▬ 도 빠진다");
+  // 반응 0 관객끼리 — 점이 없으니 "●" 도 없다. 차분 구간(▬)은 집중도 창이 있으면 그대로
+  const both = xhatLegendText(mNone, mNone);
+  assert.doesNotMatch(both, /●/);
+  assert.equal(both, [mNone.calm ? XHAT_LEGEND.calm : null, XHAT_LEGEND.between].filter(Boolean).join(" · "));
+  // 두 순간이 다 없으면(계열만 있는 아주 옛 세션) 흐린 선 설명만
+  assert.equal(xhatLegendText({ peak: null, calm: null }, null), XHAT_LEGEND.between);
+  assert.equal(xhatLegendText(null, null), XHAT_LEGEND.between);
+  // /interim 종료 카드와 같은 규칙 — 봉우리가 있을 때만 "●"(app/interim/page.js 는 endEngine.moments?.peak 로 같은 판단)
+  assert.equal(xhatLegendText({ peak: mPeak.peak, calm: null }, null), `${XHAT_LEGEND.peak} · ${XHAT_LEGEND.between}`);
 });
 console.log(`\n${n} passed`);

@@ -416,6 +416,23 @@ export function peakText(pk) {
   return `${when} · x̂ ${pk.tension.toFixed(2)}${pk.capped ? `(상한에 닿은 ${pk.capped}곳 중 최대)` : ""}`;
 }
 
+/**
+ * 비교 화면 x̂ 그래프 범례(B198) — 두 카드 중 봉우리(●)가 하나도 없으면 "● 가장 크게 반응" 을, 차분 구간(▬)이 하나도 없으면 "▬ 가장 차분히 집중" 을 뺀다.
+ * /interim 종료 카드가 moments.peak 가 있을 때만 "●" 범례를 붙이는 것과 같은 규칙 — 반응 0 관객 둘을 나란히 두면 그래프에 점이 없는데 범례만 남아 "점을 찾게" 했다.
+ * 사건 사이 흐린 선 설명은 계열이 있는 한 늘 붙는다(그래프 자체가 있을 때만 이 함수를 부른다).
+ * @param {{peak?:object|null, calm?:object|null}|null} ma  momentsOf(A)
+ * @param {{peak?:object|null, calm?:object|null}|null} mb  momentsOf(B)
+ * @returns {string}  예: "● 가장 크게 반응 · ▬ 가장 차분히 집중 · 흐린 선 = 사건 사이(잔움직임만)"
+ */
+export const XHAT_LEGEND = { peak: "● 가장 크게 반응", calm: "▬ 가장 차분히 집중", between: "흐린 선 = 사건 사이(잔움직임만)" };
+export function xhatLegendText(ma, mb) {
+  const parts = [];
+  if (ma?.peak || mb?.peak) parts.push(XHAT_LEGEND.peak);
+  if (ma?.calm || mb?.calm) parts.push(XHAT_LEGEND.calm);
+  parts.push(XHAT_LEGEND.between);
+  return parts.join(" · ");
+}
+
 export const LEAD_EPS = 0.02; // 선두 장르와 2위의 차이가 이보다 작으면 "비슷함"(회색 띠) — 잠정치
 
 /**
