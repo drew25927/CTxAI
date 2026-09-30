@@ -9,8 +9,12 @@
 //   (4) "지금 목표 | 추정 x̂" 행의 두 문구(goalRowText) — 목표 곡선이 없는 구간에서 진행 중 탐침은 왼쪽에 한 번만 적는다(B227).
 //   (5) 최근 봉우리 잔상 한 줄(recentPeakText) — 마지막 점이 아직 오르는 중이면 "봉우리" 가 아니라 "x̂ 오르는 중" 으로 적는다(B235).
 //   (6) 머리글의 자극 수(stimCountText) — 닫힌 레코드 수에 진행 중 수를 "자극 0+1" 로 붙인다(B244). 탐침이 진행 중인데 "자극 0" 이면 "x̂ 오르는 중 · 포스터" 와 어긋나 보였다.
+//   (7) 머리글의 트랙 문구(trackHeadText) — 판정 전 선두 장르를 "트랙 R" 이 아니라 "트랙 잠정 R" 로 적는다(B143). /interim 1배속 표본에서 머리글이
+//       0:14 "트랙 R" → 1:08 "트랙 C" → 1:55 "트랙 H" 로 바뀌어 판정이 두 번 뒤집힌 것처럼 읽혔다. /film 은 판정 전 배합을 "잠정 H72 R19 C10" 으로 적는다(B92).
 
 import { actuationText } from "./controlActuate.js";
+import { isMixTrack, trackLabel } from "./tensionCurve.js";
+import { GENRE_LABEL } from "./viewerText.js";
 
 const NBSP = "\u00a0";
 
@@ -135,4 +139,28 @@ export function stimCountText(nStim, nActive = 0) {
   const n = Number.isFinite(nStim) ? nStim : 0;
   const m = Number.isFinite(nActive) && nActive > 0 ? nActive : 0;
   return { text: `자극${NBSP}${n}${m ? `+${m}` : ""}`, title: m ? `닫힌 자극 ${n} · 진행 중 ${m}` : `닫힌 자극 ${n}` };
+}
+
+/**
+ * 머리글의 트랙 문구(B143) — 모니터 머리글 "트랙 <값> · 자극 N" 의 왼쪽 조각 → { text, title(툴팁) }.
+ *   /interim 은 판정 확정 전에 드리프트 선두 장르 한 글자를 track 자리에 준다(lib/interimProbes interimTrack). 그것을 "트랙 R" 로 찍으면
+ *   확정처럼 읽히고, 1배속 공포형 seed 1 표본에서는 0:14 "트랙 R" → 1:08 "트랙 C" → 1:55 "트랙 H" 로 바뀌어 판정이 두 번 뒤집힌 것처럼 보였다
+ *   (work/evidence/b244/analysis-interim.txt 머리글 분포). /film 은 판정 전 배합 {R,H,C} 를 주고 trackLabel 이 "잠정 H72 R19 C10" 으로 적는다(B92).
+ *   판정 전(decided === false)이면 같은 말로 "트랙 잠정 R", 선두가 아직 없으면(종전 "트랙 -") "트랙 판정 전". 판정 뒤·강제(?track=)·decided 생략은 종전 "트랙 H".
+ *   문구 폭: "잠정 " 만 늘어(3자) /interim 머리글(제목 "디렉터 모니터 · 중간시연" · B244 실측 한 줄 상한 약 160px)에서 "트랙 잠정 R · 자극 4+1" 도 한 줄에 든다.
+ *   공백은 보통 공백 — 종전 머리글("트랙 R"·"트랙 잠정 H72 R19 C10")과 같은 표기라 관찰 하네스의 문자열 검사가 그대로 맞는다(행 높이는 표본으로 확인).
+ * @param {string|object|null} track  "H"|"R"|"C" · 판정 전 배합 {R,H,C}(B92) · null(선두 없음)
+ * @param {{decided?:boolean}} [o]  decided === false 면 track 은 선두 장르일 뿐(/interim 이 B154 와 같은 뜻으로 준다). 생략(undefined)·true 면 판정·강제 트랙.
+ * @returns {{text:string, title:string}}
+ */
+export function trackHeadText(track, { decided } = {}) {
+  if (isMixTrack(track)) {
+    const label = trackLabel(track); // "잠정 H72 R19 C10"
+    return { text: `트랙 ${label}`, title: `판정 전 · 배합으로 가중한 기대 곡선 ${label.replace(/^잠정 /, "")} · 확정 아님` };
+  }
+  const g = typeof track === "string" && track ? track : null;
+  if (!g) return { text: "트랙 판정 전", title: "판정 전 · 선두 장르 없음" };
+  const name = GENRE_LABEL[g] ? `${g}(${GENRE_LABEL[g]})` : g;
+  if (decided === false) return { text: `트랙 잠정 ${g}`, title: `판정 전 · 드리프트 선두 ${name} · 확정 아님` };
+  return { text: `트랙 ${g}`, title: `판정 트랙 ${name}` };
 }

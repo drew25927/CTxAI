@@ -9,7 +9,7 @@
 //
 // monitor 객체 모양(페이지가 250ms/200ms 틱마다 만든다):
 //   { track, theta:{g,L,tau,rho,confidence,nResp}, xhat, target?, tol?, ceiling?, series:[{t,tension,fromStim?}], scene?:bool(판정 뒤 장면 구간, B149),
-//     (track = "H"|"R"|"C" 또는 판정 전 배합 {R,H,C} — 점선은 배합 가중 기대 곡선, 머리글은 "잠정 R44 H34 C21", B92)
+//     (track = "H"|"R"|"C" 또는 판정 전 배합 {R,H,C} — 점선은 배합 가중 기대 곡선, 머리글은 "잠정 R44 H34 C21", B92 · /interim 판정 전 선두 장르는 decided:false 라 "트랙 잠정 R", B143)
 //     nStim, sel?:{track,reach}, decided?:bool(track 이 판정된 트랙인가 — /interim 은 판정 전 선두 장르를 track 에 주므로 false, B154), control?:bool, micro?:number, note?,
 //     active?:string[]  ← 진행 중(레코드가 아직 닫히지 않은) 사건 이름(B153·B159). 계열은 그 잠정 레코드를 더해 그린 값이라 마지막 점이 잠정이면
 //                         "추정 x̂" 에 "잠정", 반응 몫 없이 사건만 진행 중이면 "사건 사이" 대신 "<사건> 진행 중". 잠정 구간은 그래프에 점선.
@@ -20,9 +20,9 @@
 // 줄바꿈(B65): 패널은 word-break: keep-all 이라 한글 단어 안에서 끊기지 않고, 라벨과 숫자 사이는 lib/monitorText glueNumbers 로
 // 줄바꿈 없는 공백을 넣어 "회복 / 0.848s"·"응 / 답 7/7" 처럼 갈리지 않는다. 줄은 " · " 구분자에서만 접힌다.
 
-import { curveAt, trackLabel } from "@/lib/tensionCurve";
+import { curveAt } from "@/lib/tensionCurve";
 import { observedSegments, xhatReading, xhatScopeNote, isProvisional } from "@/lib/tensionEstimate";
-import { actuateLine, glueNumbers, goalRowText, reachText, recentPeakText, stimCountText } from "@/lib/monitorText";
+import { actuateLine, glueNumbers, goalRowText, reachText, recentPeakText, stimCountText, trackHeadText } from "@/lib/monitorText";
 import { stimulusLabel } from "@/lib/viewerText";
 
 export const MOMENT_COLOR = { peak: "#ffffff", calm: "rgba(143,214,143,0.85)" }; // 종료 카드 범례와 같은 색(B144)
@@ -112,6 +112,8 @@ export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTar
   // 행의 두 문구(B227) — 목표 곡선이 없는데 탐침이 진행 중이면 왼쪽 "중립 탐침 S1 진행 중" · 오른쪽은 값(과 "잠정")만. 함께 적으면 한 줄을 넘었다
   const row = goalRowText({ hasTarget, active: activeLabels, reading });
   const stimCount = stimCountText(monitor.nStim, activeLabels.length);
+  // 머리글의 트랙 조각(B143) — /interim 판정 전 선두 장르는 "트랙 잠정 R"(decided false) · 선두 없음 "트랙 판정 전" · /film 판정 전 배합은 "트랙 잠정 H72 R19 C10"(B92) · 판정 뒤 "트랙 H"
+  const head = trackHeadText(monitor.track, { decided: monitor.decided });
   const XHAT_COLOR = { above: "#e0a86a", below: "#8fae95", in: "#cfe", between: "rgba(230,233,240,0.55)" };
   const xhatColor = XHAT_COLOR[reading.state] || "#7fd1ff";
   const scopeNote = showTarget ? xhatScopeNote({ scene: !!monitor.scene, control: !!monitor.control }) : null;
@@ -119,7 +121,7 @@ export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTar
     <div style={{ position: "fixed", top: 12, left: 12, zIndex: 40, width: 320, padding: "12px 14px", borderRadius: 10, background: "rgba(12,14,20,0.82)", color: "#e6e9f0", font: "12px/1.5 ui-monospace, monospace", border: "1px solid rgba(255,255,255,0.12)", wordBreak: "keep-all" }}>
       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
         {/* 자극 수는 닫힌 레코드 + 진행 중(B244 · "자극 0+1" · 풀이는 툴팁) — 긴 형식은 /interim 제목·/film 판정 전 트랙 라벨과 한 줄에 못 든다(monitorText.stimCountText) */}
-        <b>{title}</b><span style={{ opacity: 0.6 }} title={stimCount.title}>트랙 {trackLabel(monitor.track)} · {stimCount.text}</span>
+        <b>{title}</b><span style={{ opacity: 0.6 }}><span title={head.title}>{head.text}</span> · <span title={stimCount.title}>{stimCount.text}</span></span>
       </div>
       <MonitorChart series={monitor.series} track={monitor.track || "H"} tNow={tNow} ceiling={monitor.ceiling ?? 1} tMax={tMax} showTarget={showTarget} marks={marks} />
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, margin: "6px 0" }}>

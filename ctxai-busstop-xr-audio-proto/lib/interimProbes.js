@@ -52,7 +52,8 @@ export function probeMarks() {
 
 /**
  * 모니터에 표시할 트랙 — 판정 확정 전에는 드리프트 선두, 확정 뒤에는 최종 장르. 둘 다 없으면 null.
- * (팀 드리프트 상태 st: lib/interimDrift.js)
+ * (팀 드리프트 상태 st: lib/interimDrift.js) 페이지는 decided(= finalGenre 유무)를 함께 넘기고, 모니터 머리글은 판정 전 선두를
+ * "트랙 잠정 R" 로 적는다(lib/monitorText trackHeadText · B143) — 선두는 S1~S5 를 읽을 때마다 바뀔 수 있는 부분 합산 결과다.
  */
 export function interimTrack(driftSt) {
   if (!driftSt) return null;

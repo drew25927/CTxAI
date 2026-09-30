@@ -1,6 +1,7 @@
 // 모니터 문구 회귀 테스트(B65·B154) — 라벨과 숫자가 다른 줄로 갈리지 않고, 도달 점수 줄이 트랙 변경으로 읽히지 않는다
 import assert from "node:assert/strict";
-import { glueNumbers, pair, reachText, reachParts, actuateLine, ACT_MODE, goalRowText, NO_TARGET_LABEL, recentPeakText, stimCountText } from "../lib/monitorText.js";
+import { glueNumbers, pair, reachText, reachParts, actuateLine, ACT_MODE, goalRowText, NO_TARGET_LABEL, recentPeakText, stimCountText, trackHeadText } from "../lib/monitorText.js";
+import { trackLabel } from "../lib/tensionCurve.js";
 import { xhatReading } from "../lib/tensionEstimate.js";
 import { actuationFor, offsetsFor, actuationText } from "../lib/controlActuate.js";
 
@@ -160,6 +161,24 @@ test("stimCountText(B244): 진행 중 자극이 있으면 '자극 0+1'(닫힌 + 
   // 한 줄 폭 근거(measure.log): 진행 중 표기가 문구를 15px 만 늘린다 — "+" 뒤에 공백·낱말이 없어야 한다
   assert.ok(!/\s/.test(stimCountText(0, 1).text.replace(NB, "")), "NBSP 말고는 공백 없음");
   assert.equal(stimCountText(0, 1).text.length - stimCountText(0, 0).text.length, 2, "'+1' 두 글자만 는다");
+});
+
+test("trackHeadText(B143): /interim 판정 전 선두는 '트랙 잠정 R'(확정처럼 안 읽힘) · 선두 없음 '트랙 판정 전' · 판정 뒤 '트랙 H' · /film 배합은 종전 '트랙 잠정 H72 R19 C10' · decided 생략(강제·판정)은 종전 그대로", () => {
+  assert.deepEqual(trackHeadText("R", { decided: false }), { text: "트랙 잠정 R", title: "판정 전 · 드리프트 선두 R(로맨스) · 확정 아님" });
+  assert.deepEqual(trackHeadText("C", { decided: false }).text, "트랙 잠정 C");
+  assert.deepEqual(trackHeadText("H", { decided: true }), { text: "트랙 H", title: "판정 트랙 H(공포)" });
+  assert.deepEqual(trackHeadText("H"), { text: "트랙 H", title: "판정 트랙 H(공포)" }, "/film ?track= 강제·판정 뒤(decided 생략)");
+  assert.deepEqual(trackHeadText(null, { decided: false }), { text: "트랙 판정 전", title: "판정 전 · 선두 장르 없음" }, "종전 '트랙 -'");
+  assert.equal(trackHeadText(undefined).text, "트랙 판정 전");
+  const mix = { R: 0.19, H: 0.72, C: 0.1 };
+  assert.equal(trackHeadText(mix, { decided: false }).text, `트랙 ${trackLabel(mix)}`, "/film 판정 전 배합은 trackLabel 그대로");
+  assert.match(trackHeadText(mix).text, /^트랙 잠정 H7\d R\d\d C\d\d$/, "정규화(합 1.01)로 H71 — 값은 trackLabel 몫");
+  assert.match(trackHeadText(mix).title, /^판정 전 · .*H7\d R\d\d C\d\d · 확정 아님$/);
+  // 완료 판정의 문자열 규칙: 판정 전 표본 어디에도 "트랙 R"(확정 표기)이 없어야 한다 — "트랙 잠정 R" 은 그 규칙에 걸리지 않는다
+  for (const g of ["R", "H", "C"]) assert.ok(!new RegExp(`트랙 ${g}(\\b|$)`).test(trackHeadText(g, { decided: false }).text), g);
+  // 폭 근거(b244 measure.log · /interim 한 줄 상한 약 160px · "트랙 R · 자극 0+1" 107px): "잠정 " 세 글자만 는다
+  assert.equal(trackHeadText("R", { decided: false }).text.length - trackHeadText("R").text.length, 3);
+  assert.ok(!/\u00a0/.test(trackHeadText("R", { decided: false }).text), "종전 머리글과 같은 보통 공백(하네스 문자열 검사 호환)");
 });
 
 console.log(`${n} passed`);
