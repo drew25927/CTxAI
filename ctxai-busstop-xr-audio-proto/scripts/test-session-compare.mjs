@@ -363,6 +363,21 @@ test("labelRows(B210): 0:37~0:53 에 몰린 /film 사건 이름표가 같은 줄
   const xi = (t) => 10 + (t / 140) * 880;
   assert.deepEqual(labelRows(interim, xi), [0, 0, 0, 0, 0]);
 });
+test("labelRows(B140): /film 종료 카드 축(W 660 · PAD 8 · 1배속 tMax 195)의 여섯 사건 이름표 — 같은 줄 겹침 0 · 두 줄 안 · 0:06 포스터와 0:12 우비 인물은 다른 줄", () => {
+  // lib/filmTimeline CUES 의 sense 사건(event:start) 시각 — poster 6 · cafeBell 12 · truckSplash 28.4 · frog 37 · cat 43.6 · catScream 52
+  const marks = [["포스터", 6], ["우비 인물", 12], ["물보라", 28.4], ["개구리", 37], ["고양이", 43.6], ["비명", 52]].map(([label, t]) => ({ t, label }));
+  // 축 길이는 회차마다 다르다 — 1배속 완주 궤적 끝 172초(b21 세션)~195초(대사 루프가 길었던 회차). 둘 다 같은 두 줄 배치여야 한다
+  for (const tMax of [172, 195]) {
+    const x = (t) => 8 + (t / tMax) * 644;
+    const rows = labelRows(marks, x);
+    assert.deepEqual(labelOverlaps(marks, x, rows), [], `tMax ${tMax}: 같은 줄 겹침 없음`);
+    assert.deepEqual(rows, [0, 1, 0, 1, 0, 1], `tMax ${tMax}: 줄 ${rows.join(",")}`);
+  }
+  // 옛 규칙 i%3 은 같은 줄 겹침은 없었지만 세 줄(맨 위 33px)을 써서 공포 곡선의 봉우리를 더 가렸다 — 폭 배치는 두 줄
+  assert.equal(Math.max(...marks.map((_, i) => i % 3)), 2);
+  // 세로로 포개진 두 줄 사이의 빈틈은 rowH − fontSize = 2px 뿐이라 글자에 halo(app/film/page.js LABEL_HALO)를 둔다 — 배치 상수가 바뀌면 여기서 드러난다
+  assert.equal(LABEL_LAYOUT.rowH - 9, 2);
+});
 test("사건별 봉우리(B222): 눈금마다 다음 눈금 전(최대 12초) 창의 관측 최고점 — 침 모양 한 창도 잡힌다 · 반응 없던 사건은 없음 · 순서 무관", () => {
   const sr = [
     { t: 10, tension: 0.12, fromStim: 0 }, { t: 12, tension: 0.9, fromStim: 0.78 }, { t: 14, tension: 0.2, fromStim: 0.08 }, // S1 침 모양 한 창

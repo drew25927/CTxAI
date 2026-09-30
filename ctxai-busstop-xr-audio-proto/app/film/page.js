@@ -57,7 +57,7 @@ import { beatOf, gazeFor, playsLine, playedCount, beatsTotalSec, nextPlayedBeat,
 import { scoresFromMoodApi } from "@/lib/textKeywords";
 import { analyzeProsody } from "@/lib/voiceProsody";
 import { mixLines, mmss, fingerprintText, STIMULUS_LABEL, MOMENT_TEXT } from "@/lib/viewerText";
-import { momentsOf, peakText, NO_PEAK_TEXT } from "@/lib/sessionCompare";
+import { momentsOf, peakText, NO_PEAK_TEXT, labelRows, LABEL_LAYOUT } from "@/lib/sessionCompare";
 import s from "../story/story.module.css";
 import f from "./film.module.css";
 
@@ -241,6 +241,9 @@ function Effects({ enabled }) {
   );
 }
 
+// 종료 카드 사건 이름표 글자의 배경색 테두리(halo) — 카드 배경(rgba(10,10,12,.72) + 흐림)에 가까운 색. 비교 화면(app/film/compare/page.js HALO)과 같은 방식(B140).
+const LABEL_HALO = { paintOrder: "stroke", stroke: "#0e0f12", strokeWidth: 3, strokeLinejoin: "round" };
+
 function TrajectoryChart({ trajectory, events }) {
   const W = 660, H = 170, PAD = 8;
   if (!trajectory?.length) return null;
@@ -248,28 +251,29 @@ function TrajectoryChart({ trajectory, events }) {
   const x = (t) => PAD + (t / tMax) * (W - PAD * 2);
   const y = (v) => H - PAD - v * (H - PAD * 2);
   const path = (g) => trajectory.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p[g]).toFixed(1)}`).join(" ");
-  const marks = (events || []).filter((e) => e.kind === "event" && e.name === "event:start");
+  // 사건 이름표 — 비교 화면과 같은 규칙(B140): 줄은 i%3 순환이 아니라 폭을 보고 배치하고(lib/sessionCompare labelRows · B210), 글자에 halo 를
+  // 두고, 곡선을 그린 뒤에 얹는다. 옛 배치는 "포스터"(0:06) 바로 아래 "우비 인물"(0:12) 이 halo 없이 붙어 "포스터우비 인물" 로 읽혔고,
+  // 공포 곡선이 맨 윗줄 글자를 가로질렀다(work/evidence/review31/onh/onh-end.png). 폭 배치는 여섯 사건을 두 줄에 놓아 봉우리도 덜 가린다.
+  const marks = (events || [])
+    .filter((e) => e.kind === "event" && e.name === "event:start")
+    .map((e) => ({ t: e.t, label: EVENT_LABEL[e.detail?.name] || e.detail?.name }));
+  const rows = labelRows(marks, x);
   // 판정 시각 — 그 뒤로도 배합이 흐른다는 것을 카드의 두 줄(판정 때 · 끝)과 함께 보이게 한다(B86).
   const judge = (events || []).find((e) => e.kind === "event" && e.name === "cue" && e.detail === "judge");
   return (
     <svg className={f.chart} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-      {judge && (
-        <g>
-          <line x1={x(judge.t)} x2={x(judge.t)} y1={PAD} y2={H - PAD} stroke="rgba(255,255,255,0.55)" strokeWidth="1.2" />
-          <text x={x(judge.t) + 3} y={H - PAD - 4} fill="rgba(255,255,255,0.7)" fontSize="9">판정</text>
-        </g>
-      )}
+      {judge && <line x1={x(judge.t)} x2={x(judge.t)} y1={PAD} y2={H - PAD} stroke="rgba(255,255,255,0.55)" strokeWidth="1.2" />}
       {marks.map((m, i) => (
-        <g key={i}>
-          <line x1={x(m.t)} x2={x(m.t)} y1={PAD} y2={H - PAD} stroke="rgba(255,255,255,0.15)" strokeDasharray="3 3" />
-          {/* 사건이 초반 1분에 몰려 있어 라벨을 위아래로 번갈아 놓는다 */}
-          <text x={x(m.t) + 3} y={PAD + 10 + (i % 3) * 11} fill="rgba(255,255,255,0.45)" fontSize="9">{EVENT_LABEL[m.detail?.name] || m.detail?.name}</text>
-        </g>
+        <line key={`l${i}`} x1={x(m.t)} x2={x(m.t)} y1={PAD} y2={H - PAD} stroke="rgba(255,255,255,0.15)" strokeDasharray="3 3" />
       ))}
       <path d={path("R")} fill="none" stroke={GENRE_META.R.accent} strokeWidth="2" />
       <path d={path("H")} fill="none" stroke={GENRE_META.H.accent} strokeWidth="2" />
       <path d={path("C")} fill="none" stroke={GENRE_META.C.accent} strokeWidth="2" />
       <path d={trajectory.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.settled).toFixed(1)}`).join(" ")} fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="1" strokeDasharray="4 3" />
+      {judge && <text x={x(judge.t) + 3} y={H - PAD - 4} fill="rgba(255,255,255,0.7)" fontSize="9" style={LABEL_HALO}>판정</text>}
+      {marks.map((m, i) => (
+        <text key={`t${i}`} x={x(m.t) + LABEL_LAYOUT.offset} y={PAD + 10 + rows[i] * LABEL_LAYOUT.rowH} fill="rgba(255,255,255,0.45)" fontSize="9" style={LABEL_HALO}>{m.label}</text>
+      ))}
     </svg>
   );
 }
