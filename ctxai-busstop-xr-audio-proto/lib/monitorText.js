@@ -8,6 +8,7 @@
 //   (3) 연속 구동 한 줄(actuateLine) — 장면이 끝난 뒤 되돌림 구간을 "유지 u 0.00" 이 아니라 "장면 끝" 으로 적는다(B135).
 //   (4) "지금 목표 | 추정 x̂" 행의 두 문구(goalRowText) — 목표 곡선이 없는 구간에서 진행 중 탐침은 왼쪽에 한 번만 적는다(B227).
 //   (5) 최근 봉우리 잔상 한 줄(recentPeakText) — 마지막 점이 아직 오르는 중이면 "봉우리" 가 아니라 "x̂ 오르는 중" 으로 적는다(B235).
+//   (6) 머리글의 자극 수(stimCountText) — 닫힌 레코드 수에 진행 중 수를 "자극 0+1" 로 붙인다(B244). 탐침이 진행 중인데 "자극 0" 이면 "x̂ 오르는 중 · 포스터" 와 어긋나 보였다.
 
 import { actuationText } from "./controlActuate.js";
 
@@ -118,4 +119,20 @@ export function recentPeakText(rc, name = null) {
   if (rc.provisional) parts.push("잠정");
   // 라벨은 보통 공백 — 줄이 짧아(≤ 30자 · 11px) 접힐 일이 없고, 기존 관찰 하네스가 '최근 봉우리' 를 보통 공백으로 찾는다
   return { label: rc.rising ? "x̂ 오르는 중" : "최근 봉우리", value, tail: parts.map((x) => ` · ${x}`).join("") };
+}
+
+/**
+ * 머리글의 자극 수(B244) — 모니터 "트랙 R · 자극 N" 과 /interim HUD "자극 N · x̂" 의 N 은 닫힌 레코드 수(θ̂·슬롯 결정에 쓰는 것)라
+ * 탐침이 진행 중일 때(0:06 "x̂ 오르는 중 0.34 · 포스터" · 0:21 "중립 탐침 S1 진행 중")도 "자극 0" 이어서 같은 패널의 "진행 중" 줄과 어긋나 보였다.
+ * 진행 중 자극이 있으면 "자극 0+1" 로 붙인다 — /interim HUD 가 이미 쓰던 표기. 긴 형식("자극 0(+1 진행 중)" · "자극 0 · 진행 중 1")은
+ * /interim 머리글(제목 "디렉터 모니터 · 중간시연")에서 두 줄(36px)로 접히고, /film 판정 전 트랙 라벨("잠정 H91 R4 C4")과도 한 줄에 못 든다
+ * (지금 빌드 실측 · work/evidence/b244/measure.log: 161px 36 · "자극 0+1" 107px 18). 풀이는 title(툴팁)로.
+ * @param {number} nStim  닫힌 레코드 수(engagementSense data().stimuli.length)
+ * @param {number} nActive  진행 중 자극 수(active.length 또는 current().active)
+ * @returns {{text:string, title:string}}  text 는 "자극\u00a00+1"(숫자 앞 NBSP · 안에 공백 없음) · title 은 "닫힌 자극 0 · 진행 중 1"
+ */
+export function stimCountText(nStim, nActive = 0) {
+  const n = Number.isFinite(nStim) ? nStim : 0;
+  const m = Number.isFinite(nActive) && nActive > 0 ? nActive : 0;
+  return { text: `자극${NBSP}${n}${m ? `+${m}` : ""}`, title: m ? `닫힌 자극 ${n} · 진행 중 ${m}` : `닫힌 자극 ${n}` };
 }

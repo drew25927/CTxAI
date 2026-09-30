@@ -1,6 +1,6 @@
 // 모니터 문구 회귀 테스트(B65·B154) — 라벨과 숫자가 다른 줄로 갈리지 않고, 도달 점수 줄이 트랙 변경으로 읽히지 않는다
 import assert from "node:assert/strict";
-import { glueNumbers, pair, reachText, reachParts, actuateLine, ACT_MODE, goalRowText, NO_TARGET_LABEL, recentPeakText } from "../lib/monitorText.js";
+import { glueNumbers, pair, reachText, reachParts, actuateLine, ACT_MODE, goalRowText, NO_TARGET_LABEL, recentPeakText, stimCountText } from "../lib/monitorText.js";
 import { xhatReading } from "../lib/tensionEstimate.js";
 import { actuationFor, offsetsFor, actuationText } from "../lib/controlActuate.js";
 
@@ -148,6 +148,18 @@ test("recentPeakText(B235): 오르는 중이면 '봉우리' 대신 'x̂ 오르�
   assert.deepEqual(recentPeakText({ tension: 0.84, ago: 7, rising: false }, null), { label: "최근 봉우리", value: "0.84", tail: ` · 7초${NB}전` }, "이름 없음(자극 목록 밖)");
   assert.deepEqual(recentPeakText({ tension: 0.3, ago: 0, rising: true }, null), { label: "x̂ 오르는 중", value: "0.30", tail: "" });
   assert.equal(recentPeakText(null), null); assert.equal(recentPeakText({ tension: NaN, ago: 0 }), null);
+});
+
+test("stimCountText(B244): 진행 중 자극이 있으면 '자극 0+1'(닫힌 + 진행 중 · 숫자 앞 NBSP · 안에 공백 없음) · 없으면 종전 '자극 3' · 툴팁은 풀이 · 이상값은 0", () => {
+  assert.deepEqual(stimCountText(0, 1), { text: `자극${NB}0+1`, title: "닫힌 자극 0 · 진행 중 1" });
+  assert.deepEqual(stimCountText(3, 2), { text: `자극${NB}3+2`, title: "닫힌 자극 3 · 진행 중 2" });
+  assert.deepEqual(stimCountText(3, 0), { text: `자극${NB}3`, title: "닫힌 자극 3" });
+  assert.deepEqual(stimCountText(3), { text: `자극${NB}3`, title: "닫힌 자극 3" });
+  assert.deepEqual(stimCountText(undefined, undefined), { text: `자극${NB}0`, title: "닫힌 자극 0" }, "첫 틱(센서 전)");
+  assert.deepEqual(stimCountText(2, -1).text, `자극${NB}2`, "음수 진행 중은 없음");
+  // 한 줄 폭 근거(measure.log): 진행 중 표기가 문구를 15px 만 늘린다 — "+" 뒤에 공백·낱말이 없어야 한다
+  assert.ok(!/\s/.test(stimCountText(0, 1).text.replace(NB, "")), "NBSP 말고는 공백 없음");
+  assert.equal(stimCountText(0, 1).text.length - stimCountText(0, 0).text.length, 2, "'+1' 두 글자만 는다");
 });
 
 console.log(`${n} passed`);

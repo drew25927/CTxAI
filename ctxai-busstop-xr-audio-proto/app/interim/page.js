@@ -78,7 +78,7 @@ import { createGazeSim, isGazeProfile, GAZE_PROFILES, SEATED_LOOK_PITCH } from "
 import { fitViewerModel } from "@/lib/viewerModel";
 import { estimateTensionSeries, isProvisional, recentPeak } from "@/lib/tensionEstimate";
 import { selectTrack } from "@/lib/trackSelect";
-import { glueNumbers, reachParts } from "@/lib/monitorText";
+import { glueNumbers, reachParts, stimCountText } from "@/lib/monitorText";
 import { probeFor, probeMarks, interimTrack } from "@/lib/interimProbes";
 import DirectorMonitor, { MonitorChart, MOMENT_COLOR } from "@/components/DirectorMonitor";
 import { fingerprintText, MOMENT_TEXT } from "@/lib/viewerText";
@@ -610,7 +610,7 @@ export default function InterimPage() {
                 <span style={{ opacity: 0.7 }}>모델 신뢰도 {Math.round(hud.engine.theta.confidence * 100)}% · 응답 {hud.engine.theta.nResp}/{hud.engine.theta.n}</span><b>{glueNumbers(`회복 ${hud.engine.theta.tau}s · 습관화 ${hud.engine.theta.rho}`) /* 음수 부호 −·라벨과 붙임(B65) */}</b>
               </div>
               <div className={f.hudMeta} style={{ marginTop: 2 }}>
-                <span>자극 · 긴장 x̂</span><b>자극 {hud.engine.nStim}{hud.engine.active ? `+${hud.engine.active}` : ""} · x̂ {hud.engine.xhat == null ? "-" : hud.engine.xhat.toFixed(2)}{hud.engine.provisional ? <span style={{ opacity: 0.6, fontWeight: 400 }}> 잠정</span> : null}</b>
+                <span>자극 · 긴장 x̂</span><b>{stimCountText(hud.engine.nStim, hud.engine.active).text} · x̂ {hud.engine.xhat == null ? "-" : hud.engine.xhat.toFixed(2)}{hud.engine.provisional ? <span style={{ opacity: 0.6, fontWeight: 400 }}> 잠정</span> : null}</b>
                 {/* 도달 점수(B154) — 최고와 성향 반영 선택이 다르면 둘 다. 화살표·"트랙" 이라는 말은 쓰지 않는다(판정 트랙을 바꾸지 않는 참고값) */}
                 {hud.engine.sel && (() => { const rp = reachParts(hud.engine.sel); return <><span>도달 점수(참고)</span><b>최고 {rp.best}{rp.pick !== rp.best ? ` · 성향 반영 ${rp.pick}` : ""} <span style={{ opacity: 0.6, fontWeight: 400 }}>(R {hud.engine.sel.reach.R} · H {hud.engine.sel.reach.H} · C {hud.engine.sel.reach.C})</span></b></>; })()}
               </div>
