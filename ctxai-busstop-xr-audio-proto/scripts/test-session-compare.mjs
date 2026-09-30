@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   sessionRoute, biasOf, movieEvents, movieTrajectory, sessionBadges, directionChangeText, actuationStats,
   xhatSeries, eventMarks, markBefore, MARK_NEAR_SEC, judgeTime, judgeLine, lookResponses, lookText, xhatPeak, xhatGap, pairWarning,
-  momentsOf, peakText, NO_PEAK_TEXT, leaderBands, labelRows, labelWidth, labelOverlaps, LABEL_LAYOUT,
+  momentsOf, peakText, NO_PEAK_TEXT, leaderBands, labelRows, labelWidth, labelOverlaps, LABEL_LAYOUT, eventPeaks, EVENT_PEAK_SPAN_SEC,
 } from "../lib/sessionCompare.js";
 import { interimAdapt } from "../lib/interimAdapt.js";
 
@@ -360,5 +360,21 @@ test("labelRows(B210): 0:37~0:53 에 몰린 /film 사건 이름표가 같은 줄
   const interim = [["S1 우비 인물", 16], ["S2 물보라", 40], ["S3 포스터", 62], ["S4 고양이", 84], ["S5 개구리", 100]].map(([label, t]) => ({ t, label }));
   const xi = (t) => 10 + (t / 140) * 880;
   assert.deepEqual(labelRows(interim, xi), [0, 0, 0, 0, 0]);
+});
+test("사건별 봉우리(B222): 눈금마다 다음 눈금 전(최대 12초) 창의 관측 최고점 — 침 모양 한 창도 잡힌다 · 반응 없던 사건은 없음 · 순서 무관", () => {
+  const sr = [
+    { t: 10, tension: 0.12, fromStim: 0 }, { t: 12, tension: 0.9, fromStim: 0.78 }, { t: 14, tension: 0.2, fromStim: 0.08 }, // S1 침 모양 한 창
+    { t: 30, tension: 0.13, fromStim: 0 }, { t: 32, tension: 0.4, fromStim: 0.28 }, { t: 34, tension: 0.6, fromStim: 0.48 }, { t: 36, tension: 0.3, fromStim: 0.18 }, // S2 넓은 봉우리
+    { t: 50, tension: 0.14, fromStim: 0 }, { t: 52, tension: 0.15, fromStim: 0 }, // S3 반응 없음
+    { t: 70, tension: 0.5, fromStim: 0.38 }, { t: 90, tension: 0.8, fromStim: 0.7 }, // S4 뒤 12초 넘어 온 큰 값은 S4 것이 아니다
+  ];
+  const marks = [{ t: 31, name: "S2" }, { t: 11, name: "S1" }, { t: 51, name: "S3" }, { t: 69, name: "S4" }];
+  const pk = eventPeaks(sr, marks);
+  assert.deepEqual(pk, [{ name: "S1", t: 12, tension: 0.9 }, { name: "S2", t: 34, tension: 0.6 }, { name: "S4", t: 70, tension: 0.5 }]);
+  assert.equal(EVENT_PEAK_SPAN_SEC, 12);
+  assert.deepEqual(eventPeaks([], marks), []);
+  assert.deepEqual(eventPeaks(sr, []), []);
+  // fromStim 없는 옛 계열({t,tension})은 관측으로 본다(xhatPeak 와 같은 규칙)
+  assert.deepEqual(eventPeaks([{ t: 12, tension: 0.7 }], [{ t: 11, name: "S1" }]), [{ name: "S1", t: 12, tension: 0.7 }]);
 });
 console.log(`\n${n} passed`);

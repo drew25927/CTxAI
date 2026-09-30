@@ -59,6 +59,9 @@ export const FIXED = Object.freeze({
 });
 
 // 적용 뒤 허용 범위. 거리는 controlActuate.RANGES.npcDistance 와 같은 값(요청서 v5.0 §2.7), 시간은 타임라인이 깨지지 않는 선.
+// 거리 상한 1.4 는 요청서 v5.0 §2.7 · /film controlActuate.RANGES.npcDistance 와 같은 값이다. 공포 앵커 1.2 는 과민 쪽 여유가 0.2 m 뿐이지만
+// 상한을 넓히지 않는다(B212 결정 · 2026-09-30): 무대 벤치(painted_wooden_bench.glb 폭 1.165 m × scale 1.9 = 2.21 m · 중심 x 0.6 → 끝 x ≈ 1.71)에서
+// 옆사람 착석 x = 0.35 + 거리라 1.4 m 는 이미 벤치 끝(1.75)이다. 공포 과민은 거리 대신 걸어옴·기다림·시선이 더 가른다. 더 멀리 두려면 벤치를 늘려야 한다.
 export const ADAPT_RANGES = Object.freeze({
   seatDistance: [0.5, 1.4],
   approachSec: [3, 9],

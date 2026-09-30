@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import s from "../../story/story.module.css";
 import f from "../film.module.css";
 import { mixLines, verdictOf, mmss, fingerprintText, MOMENT_TEXT, MOMENT_BASIS } from "@/lib/viewerText";
-import { labelRows, LABEL_LAYOUT, sessionRoute, sessionBadges, directionChangeText, xhatSeries, eventMarks, judgeTime, judgeLine, lookResponses, lookText, momentsOf, peakText, NO_PEAK_TEXT, xhatGap, pairWarning, biasOf, movieTrajectory, markBefore, leaderBands } from "@/lib/sessionCompare";
+import { labelRows, LABEL_LAYOUT, sessionRoute, sessionBadges, directionChangeText, xhatSeries, eventMarks, judgeTime, judgeLine, lookResponses, lookText, momentsOf, peakText, NO_PEAK_TEXT, xhatGap, pairWarning, biasOf, movieTrajectory, markBefore, eventPeaks, leaderBands } from "@/lib/sessionCompare";
 import { observedSegments } from "@/lib/tensionEstimate";
 
 const GENRE = { R: { label: "로맨스", accent: "#f2a7c0" }, H: { label: "공포", accent: "#8fae95" }, C: { label: "블랙코미디", accent: "#e0a86a" } };
@@ -134,6 +134,8 @@ function XhatChart({ a, b, sa, sb, ma, mb }) {
     <rect x={x(m.calm.t0)} y={H - PAD - 5 - row * 7} width={Math.max(4, x(m.calm.t1) - x(m.calm.t0))} height={5} rx={1.5} fill={color} opacity={0.85} />
   );
   const peakDot = (m, color) => m?.peak && <circle cx={x(m.peak.t)} cy={y(m.peak.tension)} r={5} fill={color} stroke="#0b0f14" strokeWidth={1.5} />;
+  // 사건별 봉우리 점(B222) — 한 창(2초)짜리 침 모양 봉우리도 자리가 보이게 작은 점(r 3). 큰 점(r 5)은 세션 최고 봉우리 그대로
+  const eventDots = (sr, color, key) => eventPeaks(sr, marks).map((p) => <circle key={`${key}-${p.name}-${p.t}`} cx={x(p.t)} cy={y(p.tension)} r={3} fill={color} stroke="#0b0f14" strokeWidth={1} />);
   return (
     <svg className={f.chart} style={{ height: H }} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
       {[0.5, 1].map((v) => <line key={v} x1={PAD} x2={W - PAD} y1={y(v)} y2={y(v)} stroke="rgba(255,255,255,0.07)" />)}
@@ -142,6 +144,8 @@ function XhatChart({ a, b, sa, sb, ma, mb }) {
       {calmBar(mb, XHAT_COLOR.b, 1)}
       {sa.length > 0 && curve(sa, XHAT_COLOR.a)}
       {sb.length > 0 && curve(sb, XHAT_COLOR.b, "6 4")}
+      {sa.length > 0 && eventDots(sa, XHAT_COLOR.a, "a")}
+      {sb.length > 0 && eventDots(sb, XHAT_COLOR.b, "b")}
       {peakDot(ma, XHAT_COLOR.a)}
       {peakDot(mb, XHAT_COLOR.b)}
       <Marks marks={marks} judgeT={judgeTime(ref)} x={x} H={H} PAD={PAD} layer="labels" />

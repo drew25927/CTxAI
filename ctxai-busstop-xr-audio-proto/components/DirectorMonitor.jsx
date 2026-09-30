@@ -118,11 +118,19 @@ export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTar
         <b>{title}</b><span style={{ opacity: 0.6 }}>트랙 {trackLabel(monitor.track)} · 자극 {monitor.nStim}</span>
       </div>
       <MonitorChart series={monitor.series} track={monitor.track || "H"} tNow={tNow} ceiling={monitor.ceiling ?? 1} tMax={tMax} showTarget={showTarget} marks={marks} />
-      <div style={{ display: "flex", justifyContent: "space-between", margin: "6px 0" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, margin: "6px 0" }}>
         {/* "지금 목표" — 현재 시각의 곡선값. "다음" 줄의 "슬롯 시각 목표" 는 슬롯 시각(예: 고양이 0:45+RISE)의 곡선값이라 값이 다르다(B109) */}
-        {hasTarget ? <span>지금 목표 <b>{fmt2(monitor.target)}</b></span> : <span style={{ opacity: 0.6 }}>목표 곡선 없음(중립 탐침)</span>}
-        <span>추정 x̂ <b style={{ color: xhatColor }}>{fmt2(monitor.xhat)}</b>{reading.label && <span style={{ opacity: 0.6 }}> · {reading.label}</span>}</span>
+        {/* "목표 곡선 없음(중립 탐침)" 은 NBSP 로 묶고 "(" 앞에 WORD JOINER(U+2060) — keep-all 이어도 한글 뒤 여는 괄호 앞은 줄바꿈 자리라 오른쪽 라벨이 길면 "없음 / (중립 탐침)" 으로 갈렸다(B217 · 1배속 S1 구간 span 높이 36px) */}
+        {hasTarget ? <span>지금 목표 <b>{fmt2(monitor.target)}</b></span> : <span style={{ opacity: 0.6 }}>목표{"\u00a0"}곡선{"\u00a0"}없음{"\u2060"}(중립{"\u00a0"}탐침)</span>}
+        {/* 오른쪽 라벨이 길면("S1 진행 중 · 잠정") " · " 에서 두 줄이 된다 — 둘째 줄도 오른쪽에 붙이고(textAlign) 왼쪽 라벨과 사이(gap 8)를 둔다(B217) */}
+        <span style={{ textAlign: "right" }}>추정 x̂ <b style={{ color: xhatColor }}>{fmt2(monitor.xhat)}</b>{reading.label && <span style={{ opacity: 0.6 }}> · {reading.label}</span>}</span>
       </div>
+      {/* 최근 봉우리 잔상(B216) — 회복이 빠른 관객의 봉우리는 x̂ 숫자에 한 창(2초)만 머문다. 봉우리 뒤 6초 동안 값·사건·경과를 남긴다 */}
+      {monitor.recent && (() => {
+        const rc = monitor.recent;
+        const rname = rc.name ? (eventLabel[rc.name] || stimulusLabel(rc.name)) : null;
+        return <div style={{ opacity: 0.7, fontSize: 11, marginTop: -4, marginBottom: 4, wordBreak: "keep-all" }}>최근 봉우리 <b>{fmt2(rc.tension)}</b>{rname ? ` · ${rname}` : ""} · {rc.ago < 1 ? "지금" : `${Math.round(rc.ago)}초\u00a0전`}{rc.provisional ? " · 잠정" : ""}</div>;
+      })()}
       {scopeNote && <div style={{ opacity: 0.6, fontSize: 11, marginTop: -4, marginBottom: 4, wordBreak: "keep-all" }}>{scopeNote}</div>}
       {theta && (
         <div style={{ opacity: 0.85 }}>관객모델 θ̂: {glueNumbers(`이득 ${theta.g} · 지연 ${theta.L}s · 회복 ${theta.tau}s · 습관화 ${theta.rho}`)} <span style={{ opacity: 0.5 }}>({glueNumbers(`모델 신뢰도 ${Math.round((theta.confidence || 0) * 100)}% · 응답 ${theta.nResp}/${theta.n}`)})</span></div>

@@ -1,6 +1,6 @@
 // 긴장 추정 회귀 테스트
 import assert from "node:assert/strict";
-import { estimateTensionSeries, tensionAt, peaks, TENSION_PARAMS, OBS_EPS, isObserved, isProvisional, observedSegments, xhatReading, trackingStats, xhatScopeNote, fidgetOf } from "../lib/tensionEstimate.js";
+import { estimateTensionSeries, tensionAt, peaks, TENSION_PARAMS, OBS_EPS, isObserved, isProvisional, observedSegments, xhatReading, trackingStats, xhatScopeNote, fidgetOf, recentPeak, RECENT_PEAK } from "../lib/tensionEstimate.js";
 
 let n = 0;
 function test(name, fn) { try { fn(); n++; console.log("ok ", name); } catch (e) { console.log("FAIL", name, "—", e.message); process.exitCode = 1; } }
@@ -238,6 +238,28 @@ test("잔움직임 항(B152): 사건 관측 안에 든 창은 그 비율만큼 �
   assert.ok(s[1].fidget < 0.01, `사건 창 잔움직임 ${s[1].fidget}`);
   const old = estimateTensionSeries({ windows: w.map((x) => ({ ...x, stimRatio: undefined })), stimuli: st });
   assert.ok(old[1].fidget > 0.14 && old[1].tension > s[1].tension, "옛 창(stimRatio 없음)은 예전처럼 더해진다");
+});
+
+test("최근 봉우리(B216): 가장 최근 국소 최댓값을 hold 초 동안 이름·경과와 함께 남긴다 — 마지막 점(오르는 중)도 후보 · 사건 사이 바닥·작은 봉우리는 없음 · 배속 무관한 실제 초", () => {
+  const s = [{ t: 2, tension: 0.12, fromStim: 0 }, { t: 4, tension: 0.5, fromStim: 0.38 }, { t: 6, tension: 1.0, fromStim: 0.88, tPeak: 5.2, fromActive: 0.88 }, { t: 8, tension: 0.3, fromStim: 0.18 }, { t: 10, tension: 0.13, fromStim: 0.01 }];
+  const st = [{ name: "micro-1", onset: 4.0, dur: 1.5 }, { name: "poster", onset: 20, dur: 3 }];
+  assert.deepEqual(recentPeak(s, st, { tNow: 6 }), { t: 6, tPeak: 5.2, tension: 1, name: "micro-1", ago: 0.8, provisional: true, current: true }); // 지금 오르는 중
+  assert.deepEqual(recentPeak(s, st, { tNow: 10 }), { t: 6, tPeak: 5.2, tension: 1, name: "micro-1", ago: 4.8, provisional: true, current: false }); // 내려온 뒤에도 남는다
+  assert.equal(recentPeak(s, st, { tNow: 12 }).ago, 6.8); // 봉우리 점(t 6) 뒤 6초까지
+  assert.equal(recentPeak(s, st, { tNow: 12.1 }), null, "hold 6초가 지나면 없음");
+  assert.equal(RECENT_PEAK.HOLD_SEC, 6);
+  assert.equal(recentPeak(s, [], { tNow: 8 }).name, null, "자극 목록이 없으면 이름 없이");
+  assert.equal(recentPeak(s, [{ name: "poster", onset: 5.9, dur: 3 }], { tNow: 8 }).name, null, "봉우리 시각(5.2)보다 0.5초 넘게 늦게 시작한 자극은 아니다");
+  assert.equal(recentPeak(s, [{ name: "poster", onset: 5.4, dur: 3 }], { tNow: 8 }).name, "poster", "0.5초 안이면(창 끝에 찍힌 tPeak 의 오차) 그 자극");
+  assert.equal(recentPeak([{ t: 2, tension: 0.12, fromStim: 0 }, { t: 4, tension: 0.27, fromStim: 0 }], st, { tNow: 4 }), null, "사건 사이 잔움직임(fromStim 0)은 봉우리가 아니다");
+  assert.equal(recentPeak([{ t: 2, tension: 0.12, fromStim: 0 }, { t: 4, tension: 0.2, fromStim: 0.08 }], st, { tNow: 4 }), null, "바닥 위 0.1 미만은 봉우리가 아니다");
+  // 봉우리가 둘이면 최근 것 — 앞 봉우리가 더 커도
+  const two = [{ t: 2, tension: 1.0, fromStim: 0.88 }, { t: 4, tension: 0.4, fromStim: 0.28 }, { t: 6, tension: 0.7, fromStim: 0.58 }, { t: 8, tension: 0.3, fromStim: 0.18 }];
+  assert.equal(recentPeak(two, [{ name: "cat", onset: 1 }, { name: "frog", onset: 5.5 }], { tNow: 8 }).name, "frog");
+  // 상한 1.0 평평한 봉우리는 뒤쪽 점(가장 늦은 시각)
+  const flat = [{ t: 2, tension: 0.5, fromStim: 0.38 }, { t: 4, tension: 1.0, fromStim: 0.9 }, { t: 6, tension: 1.0, fromStim: 0.95 }, { t: 8, tension: 0.4, fromStim: 0.28 }];
+  assert.equal(recentPeak(flat, [], { tNow: 8 }).t, 6);
+  assert.equal(recentPeak([], st, { tNow: 8 }), null);
 });
 
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);

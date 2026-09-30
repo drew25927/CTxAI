@@ -298,6 +298,25 @@ export const NO_PEAK_TEXT = "뚜렷한 반응 없음";
  * 고르고 상한에 닿은 다른 사건 수를 capped 로 — 그러지 않으면 동률 여덟 곳 중 첫째(늘 포스터 0:08)로 정해진다.
  * @returns {{t, tension, label, capped}|null}  사건 반응이 있는 창이 없으면 null
  */
+/**
+ * 사건별 봉우리(B222) — 사건 눈금마다 그 뒤 창(다음 눈금 1초 전까지 · 최대 EVENT_PEAK_SPAN_SEC) 안 관측 x̂ 의 최고점.
+ * 회복이 빠른 관객의 봉우리는 한 창(2초)짜리 침 모양이라 곡선만으로는 폭이 없다(review57 A 의 S3 포스터) — 비교 화면이 점(●)으로 찍는다.
+ * 관측(사건 반응) 없는 사건은 뺀다. 같은 값이면 앞 점.
+ * @returns {Array<{name:string, t:number, tension:number}>}
+ */
+export const EVENT_PEAK_SPAN_SEC = 12; // 잠정치 — 미세 자극 사이 간격(~30초)보다 짧고 사건 반응 꼬리(4.5초)보다 길게
+export function eventPeaks(series = [], marks = []) {
+  const ms = (marks || []).filter((m) => Number.isFinite(m?.t)).sort((a, b) => a.t - b.t);
+  const out = [];
+  for (let i = 0; i < ms.length; i++) {
+    const t0 = ms[i].t - 1, t1 = Math.min(ms[i + 1] ? ms[i + 1].t - 1 : Infinity, ms[i].t + EVENT_PEAK_SPAN_SEC);
+    let best = null;
+    for (const p of series || []) { if (!(p.t >= t0 && p.t <= t1) || !isObserved(p)) continue; if (!best || p.tension > best.tension + 1e-9) best = p; }
+    if (best) out.push({ name: ms[i].name, t: best.t, tension: best.tension });
+  }
+  return out;
+}
+
 export function xhatPeak(series, marks = []) {
   const cand = (series || []).filter((q) => isObserved(q));
   if (!cand.length) return null;

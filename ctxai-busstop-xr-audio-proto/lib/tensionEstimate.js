@@ -221,3 +221,39 @@ export function peaks(series, stimuli = [], minProm = 0.1) {
   }
   return out;
 }
+
+/**
+ * 최근 봉우리(B216) — 모니터의 "추정 x̂" 숫자는 창(2초)마다 바뀌어, 회복이 빠른 관객(합성 공포형 미세 자극 recoverySec 0.07~0.44초)의
+ * 봉우리는 한 창만 머물고 사람 눈에도 2초 표본에도 잘 안 잡힌다(1배속 micro-1 봉우리 창 69~71초가 표본 간격에 걸려 숫자에 없었다).
+ * 그래서 가장 최근의 국소 최댓값(관측 창 · 바닥 위 minProm 이상)을 hold 초 동안 "최근 봉우리 1.00 · 먼 문 소리 · 3초 전" 으로 남긴다.
+ * 마지막 점은 아직 내려오지 않았어도 봉우리 후보다(지금 오르는 중 → current). 이름은 봉우리 시각(tPeak)을 관측 창
+ * [onset, onset + dur + NAME_TAIL] 에 품은 자극 중 가장 늦게 시작한 것 — 없으면 null(모니터는 이름 없이 값·시각만 적는다).
+ * 시간 기준은 계열·자극과 같은 축(센서 실제 초). 배속 페이지는 ago 를 배속으로 곱해 영화 초로 적는다.
+ * @param {Array} series  estimateTensionSeries 결과(진행 중 자극 포함 가능 · 잠정 점은 provisional 로 표시)
+ * @param {Array} stimuli  닫힌 레코드 + 진행 중 잠정 레코드(이름표용)
+ * @param {{tNow?:number, hold?:number, minProm?:number, eps?:number}} [o]
+ * @returns {{t:number, tPeak:number, tension:number, name:string|null, ago:number, provisional:boolean, current:boolean}|null}
+ */
+export const RECENT_PEAK = Object.freeze({ HOLD_SEC: 6, MIN_PROM: 0.1, NAME_TAIL: 6 }); // 잠정치 — hold 는 2초 표본 세 개가 걸리는 길이
+export function recentPeak(series = [], stimuli = [], { tNow = Infinity, hold = RECENT_PEAK.HOLD_SEC, minProm = RECENT_PEAK.MIN_PROM, eps = OBS_EPS } = {}) {
+  const pts = (series || []).filter((p) => p && Number.isFinite(p.tension) && Number.isFinite(p.t) && p.t <= tNow + 1e-9);
+  let idx = -1;
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    if (!isObserved(p, eps) || p.tension - TENSION_PARAMS.BASE < minProm) continue;
+    const prev = pts[i - 1], next = pts[i + 1];
+    if ((!prev || p.tension >= prev.tension) && (!next || p.tension > next.tension)) { idx = i; break; }
+  }
+  if (idx < 0) return null;
+  const p = pts[idx];
+  const now = Number.isFinite(tNow) ? tNow : p.t;
+  if (now - p.t > hold) return null;
+  const tPeak = Number.isFinite(p.tPeak) ? p.tPeak : p.t;
+  let name = null, lastOnset = -Infinity;
+  for (const st of stimuli || []) {
+    const on = st?.onset;
+    if (!Number.isFinite(on) || on > tPeak + 0.5 || tPeak > on + (st.dur || 0) + RECENT_PEAK.NAME_TAIL) continue;
+    if (on > lastOnset) { lastOnset = on; name = st.name ?? null; }
+  }
+  return { t: p.t, tPeak, tension: p.tension, name, ago: Math.max(0, Math.round((now - tPeak) * 10) / 10), provisional: isProvisional(p, eps), current: idx === pts.length - 1 };
+}

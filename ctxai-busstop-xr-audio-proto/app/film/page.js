@@ -40,7 +40,7 @@ import { createHeadPoseSensor } from "@/lib/headPoseSense";
 import { createEngagementSensor } from "@/lib/engagementSense";
 import { createGazeSim, isGazeProfile, GAZE_PROFILES } from "@/lib/gazeSim";
 import { fitViewerModel } from "@/lib/viewerModel";
-import { estimateTensionSeries, trackingStats, isObserved, isProvisional, OBS_EPS } from "@/lib/tensionEstimate";
+import { estimateTensionSeries, trackingStats, isObserved, isProvisional, OBS_EPS, recentPeak } from "@/lib/tensionEstimate";
 import DirectorMonitor from "@/components/DirectorMonitor";
 import { curveAt, controlTrack, isMixTrack } from "@/lib/tensionCurve";
 import { runController, microDecision, nextAdvice } from "@/lib/slotController";
@@ -402,8 +402,12 @@ export default function FilmPage() {
           const theta = fitViewerModel(eng.stimuli);
           // 센서 시각은 실제 경과 초, 모니터의 목표 곡선·현재 시각은 영화 시간 — 배속이면 환산해 겹친다.
           // eng.active(진행 중 자극의 잠정 레코드)도 들어가므로 반응이 레코드가 닫히기 전에 보인다(B153) — 그 점은 모니터가 "잠정" 으로 적는다
-          const series = estimateTensionSeries(eng).map((p) => (speed === 1 ? p : { ...p, t: Math.round(p.t * speed * 10) / 10 }));
+          const rawSeries = estimateTensionSeries(eng);
+          const series = rawSeries.map((p) => (speed === 1 ? p : { ...p, t: Math.round(p.t * speed * 10) / 10 }));
           const last = series[series.length - 1];
+          // 최근 봉우리 잔상(B216) — 센서 시각(실제 초 = film.t / speed) 기준으로 찾고, 경과는 영화 초로 적는다
+          const rp = recentPeak(rawSeries, [...eng.stimuli, ...(eng.active || [])], { tNow: film.t / speed });
+          const recent = rp && speed !== 1 ? { ...rp, ago: Math.round(rp.ago * speed * 10) / 10 } : rp;
           const tgt = curveAt(track, film.t);
           const rec = runController(track, theta, { fixed: PROBE_DOSE }); // 도입부 탐침은 중립 — 변형을 적지 않는다(B85)
           // 이미 확정된 슬롯(개구리·고양이, B78)은 계획 대신 실제로 고른 변형을 보인다 — 계획은 틱마다 다시 세워져 확정값과 어긋날 수 있다
@@ -419,7 +423,8 @@ export default function FilmPage() {
             quiet: quietState(film, film.t), observed: last ? isObserved(last) : true });
           const sel = theta.nResp >= 1 ? selectTrack(theta, { genrePrior: snap.current, priorWeight: 0.3 }) : null;
           setMonitor({ track, theta, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, series, next, nStim: eng.stimuli.length, sel, scene: inScene, control: q.control === "1", micro: film.microCount || 0, actuate: adjustRef.current ? { ...adjustRef.current, base: actBase(snap) } : null, slots: film.slotChoice || null,
-            active: (eng.active || []).map((a) => a.name) }); // 진행 중 사건 이름 — "<사건> 진행 중"·"잠정" 표기(B153·B159)
+            active: (eng.active || []).map((a) => a.name), // 진행 중 사건 이름 — "<사건> 진행 중"·"잠정" 표기(B153·B159)
+            recent }); // 최근 봉우리 잔상(B216)
         }
       }
       // 실제 제어(?control=1) — 판정 뒤 장면에서만. 도입부 다섯 사건은 관객을 공정히 읽기 위한

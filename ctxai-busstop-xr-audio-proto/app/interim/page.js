@@ -76,7 +76,7 @@ import {
 import { createEngagementSensor } from "@/lib/engagementSense";
 import { createGazeSim, isGazeProfile, GAZE_PROFILES } from "@/lib/gazeSim";
 import { fitViewerModel } from "@/lib/viewerModel";
-import { estimateTensionSeries, isProvisional } from "@/lib/tensionEstimate";
+import { estimateTensionSeries, isProvisional, recentPeak } from "@/lib/tensionEstimate";
 import { selectTrack } from "@/lib/trackSelect";
 import { glueNumbers, reachParts } from "@/lib/monitorText";
 import { probeFor, probeMarks, interimTrack } from "@/lib/interimProbes";
@@ -127,6 +127,7 @@ function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, engagemen
   const tRef = useRef(0);
   const cueIdxRef = useRef(0);
   const judgedRef = useRef(false);
+  const greetedRef = useRef(false); // 인사 큐가 지났는가 — 합성 관객이 말하는 옆사람을 본다(B214)
   const lastSampleRef = useRef(-Infinity);
 
   useFrame((state, dt) => {
@@ -171,6 +172,7 @@ function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, engagemen
     while (cueIdxRef.current < CUES.length && t >= cueAt(CUES[cueIdxRef.current])) {
       const cue = CUES[cueIdxRef.current++];
       onCue?.(cue, t);
+      if (cue.name === "greeting") greetedRef.current = true;
       if (cue.sense) sensorRef.current?.beginEvent(cue.name, cue.sense.azimuth, cue.sense.dur / speed, { kind: cue.sense.kind, tail: 4 / speed });
       // 다섯 사건 모두를 탐침으로 기록 — S2·S4(웹캠 담당)도 방위 보조 메타로 반응 크기·지연을 잰다
       const probe = probeFor(cue.name, speed);
@@ -190,7 +192,9 @@ function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, engagemen
       }
     }
 
-    driftRef.current.tick(dt);
+    // 드리프트 시계도 영화 시간과 같은 clamp(0.1초)를 쓴다(B213) — 원래 clamp 없는 dt 라, GPU 경합으로 fps 가 떨어진 1배속 회차에서
+    // HUD 경과 시각이 영화 시간보다 빨리 가고(실제 146초에 "02:24") 4초 스냅도 먼저 끝났다. 정상 fps(dt < 0.1)에서는 같은 값이다.
+    driftRef.current.tick(clamped);
     // 판정 뒤 관객별 연출(B170b) — 판정 전(adaptRef 비어 있음)에는 evalActors 기본값(오늘 값)
     const ad = adaptRef?.current;
     actorsRef.current = evalActors(t, { dominant: driftRef.current.st.finalGenre, seatDistance: ad?.seatDistance, approachSec: ad?.approachSec });
@@ -202,6 +206,9 @@ function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, engagemen
       const npcAz = npc?.visible && npc.seated ? MathUtils.radToDeg(Math.atan2(npc.x - cp.x, -(npc.z - cp.z))) : null;
       // ?look=1(B170b 증거·시연) — 앉은 옆사람을 상한·비율 없이 똑바로 본다. 판정(1:55)은 이미 끝난 뒤라 판정·θ̂ 에는 영향이 없다
       if (lookAt && npcAz != null) sim.setRest(npcAz, { factor: 1 });
+      // 인사 구간(greeting 큐 ~ 끝)에는 말하는 옆사람을 본다 — /film 의 B67 과 같은 규칙(TALK.factor 0.9 · 63° 상한 없음)(B214).
+      // 판정(1:55)은 끝난 뒤라 θ̂·판정에는 영향이 없고, 옆사람이 화면 안에 들어와 관객별 거리 차이가 보인다
+      else if (greetedRef.current && npcAz != null) sim.setRest(npcAz, { talk: true });
       else sim.setRest(npcAz != null ? Math.min(63, npcAz) : 0);
     }
 
@@ -325,12 +332,16 @@ export default function InterimPage() {
           const theta = fitViewerModel(eng.stimuli);
           // 센서 시각은 실제 경과 초 — 모니터 눈금(영화 시간)과 맞추려고 배속을 곱한다.
           // eng.active(진행 중 자극의 잠정 레코드)도 들어간다(B153·B159) — S1 추적(94초)이 닫히는 1:53 전에도 반응이 보이고, 그 점은 "잠정"
-          const series = estimateTensionSeries(eng).map((p) => (speed === 1 ? p : { ...p, t: r3(p.t * speed) }));
+          const rawSeries = estimateTensionSeries(eng);
+          const series = rawSeries.map((p) => (speed === 1 ? p : { ...p, t: r3(p.t * speed) }));
           const last = series[series.length - 1];
+          // 최근 봉우리 잔상(B216) — 센서 시각(실제 초 · 드리프트 시계와 같은 축) 기준, 경과는 영화 초
+          const rp = recentPeak(rawSeries, [...eng.stimuli, ...(eng.active || [])], { tNow: eng.elapsed ?? d.st.elapsed });
+          const recent = rp && speed !== 1 ? { ...rp, ago: r3(rp.ago * speed) } : rp;
           const track = interimTrack(d.st);
           const sel = theta.nResp >= 1 ? selectTrack(theta, { genrePrior: d.st.current, priorWeight: 0.3 }) : null;
           engine = { theta, xhat: last?.tension ?? null, provisional: isProvisional(last), series, nStim: eng.stimuli.length, active: engagementRef.current.current().active,
-            activeNames: (eng.active || []).map((a) => a.name), sel, track };
+            activeNames: (eng.active || []).map((a) => a.name), sel, track, recent };
         }
         setHud({
           current: { ...d.st.current }, settled: d.st.settled, elapsed: d.st.elapsed,
@@ -343,7 +354,7 @@ export default function InterimPage() {
         });
         if (monitorOn && engine) {
           setMonitor({
-            track: engine.track, theta: engine.theta, xhat: engine.xhat, series: engine.series, nStim: engine.nStim, sel: engine.sel, active: engine.activeNames,
+            track: engine.track, theta: engine.theta, xhat: engine.xhat, series: engine.series, nStim: engine.nStim, sel: engine.sel, active: engine.activeNames, recent: engine.recent,
             decided: !!d.st.finalGenre, // 판정 전의 track 은 선두 장르일 뿐 — 도달 점수 줄에 "현재 R 유지" 를 붙이지 않는다(B154)
             note: d.st.finalGenre ? `팀 판정 ${GENRE_META[d.st.finalGenre].label} · 드리프트 ${Math.round(d.st.settled * 100)}%` : `판정 전 · 선두 ${d.st.leadingGenre ? GENRE_META[d.st.leadingGenre].label : "-"} · 드리프트 ${Math.round(d.st.settled * 100)}%`,
           });
