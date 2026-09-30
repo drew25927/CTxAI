@@ -1,6 +1,6 @@
 // 긴장 추정 회귀 테스트
 import assert from "node:assert/strict";
-import { estimateTensionSeries, tensionAt, peaks, TENSION_PARAMS, OBS_EPS, isObserved, isProvisional, observedSegments, xhatReading, trackingStats, xhatScopeNote } from "../lib/tensionEstimate.js";
+import { estimateTensionSeries, tensionAt, peaks, TENSION_PARAMS, OBS_EPS, isObserved, isProvisional, observedSegments, xhatReading, trackingStats, xhatScopeNote, fidgetOf } from "../lib/tensionEstimate.js";
 
 let n = 0;
 function test(name, fn) { try { fn(); n++; console.log("ok ", name); } catch (e) { console.log("FAIL", name, "—", e.message); process.exitCode = 1; } }
@@ -156,7 +156,8 @@ test("창 안 최댓값: 회복 0.1초짜리 큰 반응도 봉우리를 품은 �
     const pk = st.onset + TENSION_PARAMS.RISE_SEC;
     const p = s.find((q) => q.t >= pk);
     assert.ok(isObserved(p), `${st.name} 창 끝 ${p.t} fromStim ${p.fromStim}`);
-    assert.ok(p.tension >= 0.9, `${st.name} 봉우리 ${p.tension}`);
+    // B152 뒤 각속도 항이 포화해 micro-1(58.6°) 봉우리는 0.68, micro-2·3(107°)은 0.93 — 옛 규칙에선 셋 다 1.0 에 잘렸다. 판정 기준은 "창 안에서 봉우리가 보이는가"
+    assert.ok(p.tension >= 0.65, `${st.name} 봉우리 ${p.tension}`);
     assert.ok(Math.abs(p.tPeak - pk) < 0.01, `${st.name} tPeak ${p.tPeak} vs ${pk}`);
   }
   // 옛 방식(창 끝 한 점)은 봉우리와 창 끝의 위상에 따라 놓친다 — 이 간격에서는 micro-1(τ 0.1, 창 끝이 봉우리 1.65초 뒤)
@@ -221,6 +222,22 @@ test("xhatReading(B159): 진행 중 사건이 있으면 바닥 x̂ 를 '사건 �
   assert.deepEqual(xhatReading(fixed, { target: 0.5, tol: 0.1, active: ["S1"] }), { state: "above", label: "", provisional: false }); // 닫힌 반응 + 다른 사건 진행 중
   assert.deepEqual(xhatReading({ t: 40, tension: 0.8, fromStim: 0.68 }, { target: 0.9, tol: 0.05 }), { state: "below", label: "", provisional: false }); // 옛 계열(fromActive 없음)
   assert.equal(xhatReading(null, { active: ["S1"] }).state, "none");
+});
+
+test("잔움직임 항(B152): 사건 관측 안에 든 창은 그 비율만큼 뺀다 — stimRatio 1 이면 0, 0 이면 그대로, 없는 옛 창은 그대로 · 사건 창의 고개 돌림이 봉우리 위에 두 번 얹히지 않는다", () => {
+  const P = TENSION_PARAMS;
+  assert.ok(Math.abs(fidgetOf({ angVelRms: 115, stimRatio: 1 }) - 0) < 1e-9);
+  assert.ok(Math.abs(fidgetOf({ angVelRms: 115, stimRatio: 0 }) - P.FID) < 1e-9);
+  assert.ok(Math.abs(fidgetOf({ angVelRms: 115 }) - P.FID) < 1e-9, "stimRatio 없는 옛 창");
+  assert.ok(Math.abs(fidgetOf({ angVelRms: 15, stimRatio: 0.5 }) - P.FID * 0.5 * 0.5) < 1e-9);
+  // 1배속 공포형 poster 창 모양: 사건 반응 fromStim 0.80 + 바닥 0.12 = 0.92 — 옛 규칙은 각속도 RMS 115 의 잔움직임 0.15 가 더해져 1.0 에 잘렸다
+  const st = [{ name: "poster", kind: "probe", onset: 6.0, dur: 3, peakAmp: 60.7, maxVel: 489, lookSec: 2.39, retreat: 0.03, responded: 1, recoverySec: 1.19 }];
+  const w = [{ t0: 4, t1: 6, angVelRms: 9, stimRatio: 0 }, { t0: 6, t1: 8, angVelRms: 115, stimRatio: 0.97 }, { t0: 8, t1: 10, angVelRms: 31, stimRatio: 1 }];
+  const s = estimateTensionSeries({ windows: w, stimuli: st });
+  assert.ok(s[1].tension < 0.999 && s[1].tension > 0.85, `poster 봉우리 ${s[1].tension} (잘리지 않음)`);
+  assert.ok(s[1].fidget < 0.01, `사건 창 잔움직임 ${s[1].fidget}`);
+  const old = estimateTensionSeries({ windows: w.map((x) => ({ ...x, stimRatio: undefined })), stimuli: st });
+  assert.ok(old[1].fidget > 0.14 && old[1].tension > s[1].tension, "옛 창(stimRatio 없음)은 예전처럼 더해진다");
 });
 
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);

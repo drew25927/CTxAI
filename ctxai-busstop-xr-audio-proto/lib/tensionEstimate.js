@@ -4,10 +4,12 @@
 // 어디에 있는가"를 알아야 다음 자극을 고른다. 스냅숏 감정 라벨이 아니라 변화의 모양이 필요하다.
 //
 // 모델(인과·causal):
-//   x̂(t) = clamp01( BASE + Σ_k A_k·kernel(t − onset_k; τ_k) + FID·fidget(t) )
+//   x̂(t) = clamp01( BASE + Σ_k A_k·kernel(t − onset_k; τ_k) + FID·fidget(t)·(1 − stimRatio(t)) )
 //   A_k    = K_RESP · responseMagnitude(자극 k)         반응이 클수록 큰 봉우리 · 반응하지 않은 사건(responded 0)은 0
 //   kernel = 자극 뒤 지수 감쇠(회복 시정수 τ_k = recoverySec 또는 기본값), 자극 전 그쪽으로 고개를 돌렸으면(preTurn) 완만한 예감 상승(반응한 사건만)
-//   fidget = 잔움직임(각속도)에서 온 낮은 지속 각성
+//   fidget = 잔움직임(각속도)에서 온 낮은 지속 각성 — 사건 관측 밖에서만 센다(창이 사건 관측 안에 든 비율 stimRatio 만큼 뺀다 · B152).
+//            사건 창의 각속도는 그 사건에 대한 정향(레코드의 maxVel)이라, 그대로 더하면 같은 고개 돌림이 봉우리 위에 +0.15 로 한 번 더 얹혀
+//            공포형의 봉우리가 거의 전부 상한 1.0 에 잘렸다(1배속 공포형 poster 창 각속도 RMS 115°/s · 사건 9개 중 7개).
 //
 // 사건 창은 탐침 반응이, 사이는 감쇠와 잔움직임이 채운다. 값은 0~1. τ_k 로 "회복이 느린 관객은
 // 봉우리가 오래 남는다"가 자연히 나온다. 가중치는 잠정치 — 파일럿 자기보고로 보정한다.
@@ -67,8 +69,15 @@ export function tensionAt(stimuli, t, win = null, params = TENSION_PARAMS) {
   const P = params;
   let x = P.BASE;
   for (const st of stimuli || []) x += stimContribution(st, t, P);
-  if (win) x += P.FID * clamp01((win.angVelRms || 0) / P.FID_REF);
+  if (win) x += fidgetOf(win, P);
   return clamp01(x);
+}
+
+/** 잔움직임 항 — 창의 각속도 RMS 에서, 그 창이 사건 관측 안에 든 비율(stimRatio)만큼 뺀다(B152). stimRatio 가 없는 옛 창은 예전처럼 전부. */
+export function fidgetOf(win, P = TENSION_PARAMS) {
+  const raw = P.FID * clamp01((win?.angVelRms || 0) / P.FID_REF);
+  const sr = Number.isFinite(win?.stimRatio) ? clamp01(win.stimRatio) : 0;
+  return raw * (1 - sr);
 }
 
 /**
@@ -113,7 +122,7 @@ export function estimateTensionSeries({ windows = [], stimuli = [], active = [] 
     const prevT1 = i > 0 ? windows[i - 1].t1 : null;
     const t0 = Number.isFinite(w.t0) ? (Number.isFinite(prevT1) ? Math.min(w.t0, prevT1) : w.t0) : null;
     const { s, at } = stimMaxInWindow(all, t0, t, P);
-    const fid = P.FID * clamp01((w.angVelRms || 0) / P.FID_REF);
+    const fid = fidgetOf(w, P);
     const p = { t, tension: r3(clamp01(P.BASE + s + fid)), fromStim: r3(s), fidget: r3(fid), tPeak: Math.round(at * 100) / 100 };
     if (all !== stimuli) { let a = 0; for (const st of active) a += stimContribution(st, at, P); p.fromActive = r3(a); }
     return p;
@@ -125,7 +134,7 @@ export function isProvisional(p, eps = OBS_EPS) {
   return !!(p && Number.isFinite(p.fromActive) && p.fromActive >= eps);
 }
 
-// 관측 범위(B149) — x̂ 는 사건(탐침·미세 자극)에 대한 순간 반응에 잔움직임(FID, 최대 +0.15)을 더한 값이다. 사건 기여(fromStim)가
+// 관측 범위(B149) — x̂ 는 사건(탐침·미세 자극)에 대한 순간 반응에 잔움직임(FID, 최대 +0.15 · 사건 관측 밖 창에서만 · B152)을 더한 값이다. 사건 기여(fromStim)가
 // OBS_EPS 보다 작은 창은 바닥 긴장 + 잔움직임뿐이라, 작가 곡선이 장면 구간에 적은 "지속 긴장"(대사·안개·침묵이 만드는 분위기)과 견줄 관측이 아니다.
 // 1배속 공포형 bias=H 재완주에서 장면 39창 중 목표 허용폭 안 0 — 그중 사건 반응이 있던 창은 몇 개뿐이었다(review31/scene-gap.txt).
 // 그래서 모니터는 사건 사이 창을 "추종 실패" 가 아니라 "측정 밖" 으로 보이고, 연속 구동(개루프)의 효과는 x̂ 로 주장하지 않는다.

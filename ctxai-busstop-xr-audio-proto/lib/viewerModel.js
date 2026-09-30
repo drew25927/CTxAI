@@ -30,6 +30,11 @@ const r3 = (x) => Math.round(x * 1000) / 1000;
 // 반응 크기 가중치(잠정치). probe(순간 사건)는 정향 세기(편차·각속도·후퇴)가 본체이고, track(수십 초
 // 추적 사건)은 얼마나 오래 봤는가(응시 비율)가 본체라 편차·각속도 가중을 절반으로 줄인다. track 의
 // 순간 지표는 engagementSense 가 겹친 탐침 구간을 가려도 자기 정향 한 번은 남기 때문이다.
+// 항의 상한(B152): 각속도(200°/s = 1)·후퇴(10 cm = 1)·응시(비율)는 1 에서 포화한다. 사람 고개의 최대 각속도는 진폭에 따라
+// 200~400°/s 에서 포화하고(main sequence) 그 위는 표본 간격의 점프라 정보가 없다 — 합성 공포형은 gazeSim 1차 지연의 첫 프레임
+// 클립 값 ~500°/s 가 그대로 들어와 이 항만 0.75 가 되어 사건 9개 중 8개의 x̂ 봉우리가 상한 1.0 에 잘렸다. headPoseSense 의
+// 화들짝(startle)도 clamp01(maxVel/140) 로 같은 꼴이다. 편차(90° = 1)는 180° 가 물리 상한이라 그대로 둔다 — 시뮬(tensionSim)이
+// peakAmp 로 반응 크기를 정확히 부호화하므로 여기에 상한을 두면 시뮬 관측이 뒤틀린다.
 export const MAG_WEIGHTS = Object.freeze({
   probe: { peak: 0.5, vel: 0.3, dwell: 0.2, retreat: 0.3 },
   track: { peak: 0.25, vel: 0.15, dwell: 0.6, retreat: 0.15 },
@@ -42,10 +47,10 @@ export const MAG_WEIGHTS = Object.freeze({
 export function responseMagnitude(st) {
   if (!st) return 0;
   const dur = Math.max(1, st.dur || 1);
-  const peak = (st.peakAmp || 0) / 90;                     // 90° 편차 = 1
-  const vel = (st.maxVel || 0) / 200;                       // 200°/s = 1
-  const dwell = Math.min(st.lookSec || 0, dur) / dur;       // 지속시간 대비 응시 비율
-  const retreat = (st.retreat || 0) / 0.1;                  // 10cm 후퇴 = 1
+  const peak = (st.peakAmp || 0) / 90;                     // 90° 편차 = 1 (물리 상한 180° · 시뮬 부호화 때문에 포화 없음)
+  const vel = Math.min(1, (st.maxVel || 0) / 200);          // 200°/s = 1 에서 포화(B152)
+  const dwell = Math.min(st.lookSec || 0, dur) / dur;       // 지속시간 대비 응시 비율(0~1)
+  const retreat = Math.min(1, (st.retreat || 0) / 0.1);     // 10cm 후퇴 = 1 에서 포화(B152)
   const W = st.kind === "track" ? MAG_WEIGHTS.track : MAG_WEIGHTS.probe;
   return Math.max(0, W.peak * peak + W.vel * vel + W.dwell * dwell + W.retreat * retreat);
 }

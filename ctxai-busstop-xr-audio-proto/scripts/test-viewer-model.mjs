@@ -20,6 +20,17 @@ test("responseMagnitude: peakAmp 90° = 0.5, maxVel 200 = 0.3, retreat 10cm = 0.
   assert.ok(Math.abs(responseMagnitude({ retreat: 0.1, dur: 1 }) - 0.3) < 1e-9);
 });
 
+test("responseMagnitude(B152): 각속도·후퇴 항은 1 에서 포화 — maxVel 500 은 200 과 같고 retreat 35cm 는 10cm 와 같다 · 편차 항은 그대로(180° = 1.0)", () => {
+  assert.ok(Math.abs(responseMagnitude({ maxVel: 500, dur: 1 }) - responseMagnitude({ maxVel: 200, dur: 1 })) < 1e-9);
+  assert.ok(Math.abs(responseMagnitude({ maxVel: 500, dur: 1 }) - 0.3) < 1e-9);
+  assert.ok(Math.abs(responseMagnitude({ retreat: 0.35, dur: 1 }) - 0.3) < 1e-9);
+  assert.ok(Math.abs(responseMagnitude({ peakAmp: 180, dur: 1 }) - 1.0) < 1e-9);
+  assert.ok(responseMagnitude({ maxVel: 100, dur: 1 }) < responseMagnitude({ maxVel: 200, dur: 1 }), "상한 아래에서는 여전히 선형");
+  // 1배속 합성 공포형 고양이 비명 레코드(peakAmp 97.4 · maxVel 492.5 · lookSec 3.16/2.5 · retreat 0.09) — 옛 규칙 1.75 → 1.31
+  const scream = { kind: "probe", peakAmp: 97.4, maxVel: 492.5, lookSec: 3.16, retreat: 0.09, dur: 2.5 };
+  assert.ok(responseMagnitude(scream) < 1.35 && responseMagnitude(scream) > 1.25, `${responseMagnitude(scream)}`);
+});
+
 test("responseMagnitude: track 은 응시 비율 중심 — 같은 편차·각속도면 probe 의 절반 이하, 오래 볼수록 커진다", () => {
   const base = { peakAmp: 60, maxVel: 300, lookSec: 0, retreat: 0, dur: 60 };
   assert.ok(responseMagnitude({ ...base, kind: "track" }) <= responseMagnitude({ ...base, kind: "probe" }) * 0.5 + 1e-9);
