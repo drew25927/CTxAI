@@ -121,7 +121,7 @@ export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTar
       {/* 도달 점수(B154) — 점수 최고 트랙은 참고값이고 판정 트랙을 바꾸지 않는다. 화살표 대신 "최고 H(참고 · 현재 R 유지)" */}
       {monitor.sel && <div style={{ opacity: 0.85 }}>{glueNumbers(reachText(monitor.sel, monitor.decided === false ? null : monitor.track))}</div>}
       {monitor.control != null && (
-        <div style={{ opacity: 0.85 }}>실제 제어: {monitor.control ? <b style={{ color: "#7fd1ff" }}>ON · 미세 자극 {monitor.micro ?? 0}/3</b> : <span style={{ opacity: 0.6 }}>OFF (advisory)</span>}</div>
+        <div style={{ opacity: 0.85 }}>실제 제어: {monitor.control ? <b style={{ color: "#7fd1ff" }}>ON · 미세 자극 {monitor.micro ?? 0}/3</b> : <span style={{ opacity: 0.6 }}>OFF (고정 연출)</span>}</div>
       )}
       {monitor.control && monitor.actuate && (() => {
         const line = actuateLine(monitor.actuate);
