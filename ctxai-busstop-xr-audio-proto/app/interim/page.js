@@ -384,6 +384,7 @@ export default function InterimPage() {
   // 판정 순간 한 번(B170b) — 그때까지 닫힌 탐침 레코드로 θ̂ 를, 비교 화면·종료 카드와 같은 함수(momentsOf)로 사건 반응 봉우리 x̂ 를 구해
   // 판정 뒤 인사 구간의 네 값을 정한다. 다섯 사건은 바꾸지 않는다(중립 탐침). ?adapt=0 이면 오늘의 고정 연출 — 같은 관객으로 켬/끔 비교.
   function decideAdapt(genre, t) {
+    engagementRef.current?.noteVerdict?.(); // 요약의 "가장 차분히 집중한 순간" 을 판정 뒤 창에서 고르게(B242)
     let a;
     try {
       const eng = engagementRef.current?.data?.();
@@ -499,7 +500,7 @@ export default function InterimPage() {
       // 센서 시각은 실제 경과 초 — 카드의 S1~S5 눈금(영화 시간)과 맞추려고 배속을 곱한다(HUD 와 같은 규칙)
       const series = eng ? estimateTensionSeries({ windows: eng.windows, stimuli: eng.stimuli }).map((p) => (speed === 1 ? p : { ...p, t: r3(p.t * speed) })) : []; // 닫힌 레코드만(종료 시점엔 다 닫혀 있다)
       // 두 순간(B144) — 가장 크게 반응(x̂ 최고)·가장 차분히 집중(집중도 최고 2초)을 비교 화면과 같은 함수로(lib/sessionCompare momentsOf)
-      const moments = eng ? momentsOf({ route: "interim", speed, events: eventsRef.current, engagement: { windows: eng.windows, stimuli: eng.stimuli } }, summary) : null;
+      const moments = eng ? momentsOf({ route: "interim", speed, events: eventsRef.current, engagement: { windows: eng.windows, stimuli: eng.stimuli, engagement: eng.engagement } }, summary) : null; // 점수 계열도 넘겨 판정 뒤 창으로 다시 고른다(B242)
       setEndEngine({ theta, summary, series, fingerprint: fingerprintText(theta), moments, adapt: adaptRef.current });
     } catch { setEndEngine(null); }
     const data = sessionData();

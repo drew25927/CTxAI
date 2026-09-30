@@ -1,6 +1,6 @@
 // 관객 결과 문장 회귀 테스트(B86·B84·B117·B121) — 종료 카드·비교 화면의 배합 줄이 판정과 모순되지 않고, 반응 지문·집중한 순간이 세 화면에서 같은 규칙으로 나온다
 import assert from "node:assert/strict";
-import { mixText, verdictOf, mixLines, mmss, GENRE_LABEL, fingerprintText, focusText, focusSpan, MOMENT_TEXT, MOMENT_BASIS, talkAt, sceneAt, stimulusLabel, filmTimeEvents } from "../lib/viewerText.js";
+import { mixText, verdictOf, mixLines, mmss, GENRE_LABEL, fingerprintText, focusText, focusSpan, MOMENT_TEXT, MOMENT_BASIS, talkAt, sceneAt, stimulusLabel, filmTimeEvents, prevStimulus } from "../lib/viewerText.js";
 
 let n = 0;
 function test(name, fn) { try { fn(); n++; console.log("ok ", name); } catch (e) { console.log("FAIL", name, "—", e.message); process.exitCode = 1; } }
@@ -234,7 +234,30 @@ test("focusSpan·focusText(B231): 요약에 focusSegments 가 있으면 topSegme
   assert.deepEqual(focusSpan(sum, 4), { t0: 250.8, t1: 258.8, near: null }, "배속이면 × speed");
   assert.equal(focusSpan({ topSegments: sum.topSegments, focusSegments: [] }), null, "사건 밖 창이 하나도 없으면 calm 없음 — topSegments 로 돌아가지 않는다");
   assert.equal(focusText({ topSegments: sum.topSegments }, { events: FILM_EVENTS }), "비명 (0:52)", "focusSegments 없는 옛 요약은 종전 규칙");
-  assert.ok(MOMENT_BASIS.some((b) => b.startsWith("가장 차분히 집중 = 사건 사이 창(사건 관측 밖 · 첫 사건 뒤) 중 집중도 점수 최고 2초")), "읽는 법이 후보 범위를 밝힌다");
+  assert.ok(MOMENT_BASIS.some((b) => b.startsWith("가장 차분히 집중 = 판정 뒤 사건 사이 창(사건 관측 밖) 중 집중도 점수 최고 2초")), "읽는 법이 후보 범위(판정 뒤 · 사건 밖)를 밝힌다");
+  assert.ok(MOMENT_BASIS.some((b) => b.includes("판정 전 창을 '판정 전' 표시로")), "읽는 법이 물러난 경우의 표시도 밝힌다");
+});
+
+test("focusText(B237·B242): 사건·대사·장면 이름이 없으면 앞에 시작한 마지막 사건에 '뒤' — 판정 전 창은 괄호 안 '· 판정 전', labelOf 로 /interim 의 S 번호", () => {
+  // b170b 차분형의 모양: 판정(1:55) 전 자유 창 1:51~1:53 — 그때까지 phase·talk 이벤트가 없어 종전에는 "1:51 무렵" 이었다
+  const ev = [{ t: 15, name: "cue", detail: "figureApproach" }, { t: 115, name: "cue", detail: "judge" }, { t: 126, name: "cue", detail: "transition" }];
+  const stimuli = [{ name: "figureApproach", onset: 15 }, { name: "frog", onset: 95 }];
+  assert.deepEqual(prevStimulus(stimuli, 111.7), { name: "frog", onset: 95 });
+  assert.equal(prevStimulus(stimuli, 10), null, "앞에 시작한 사건이 없으면 null");
+  assert.deepEqual(prevStimulus(stimuli, 400, 4), { name: "frog", onset: 380 }, "배속이면 onset × speed 로 영화 시간에 맞춘다");
+  assert.equal(prevStimulus(undefined, 100), null);
+  const seg = { t0: 111.7, t1: 113.7, score: 0.698, near: null };
+  assert.equal(focusText({ focusSegments: [seg] }, { events: ev, stimuli }), "개구리 뒤 (1:51)");
+  assert.equal(focusText({ focusSegments: [seg] }, { events: ev }), "1:51 무렵", "stimuli 를 안 주면 종전 문구");
+  assert.equal(focusText({ focusSegments: [seg] }, { events: ev, stimuli, labelOf: (n) => `S5 ${stimulusLabel(n)}` }), "S5 개구리 뒤 (1:51)", "labelOf 가 이름표를 바꾼다(/interim 의 S 번호)");
+  assert.equal(focusText({ focusSegments: [{ t0: 127, t1: 129, near: null }] }, { events: ev, stimuli }), "전환 장면 (2:07)", "장면 이름이 있으면 '뒤' 보다 먼저");
+  // 판정 뒤 창이 없어 판정 전 창으로 물러난 회차(focusSegments 의 before) — 어느 갈래든 판정 전임을 밝힌다
+  const before = { ...seg, before: true };
+  assert.deepEqual(focusSpan({ focusSegments: [before] }), { t0: 111.7, t1: 113.7, near: null, before: true }, "focusSpan 이 before 를 그대로 넘긴다");
+  assert.deepEqual(focusSpan({ focusSegments: [seg] }), { t0: 111.7, t1: 113.7, near: null }, "before 가 없으면 키도 없다(옛 deepEqual 그대로)");
+  assert.equal(focusText({ focusSegments: [before] }, { events: ev, stimuli, labelOf: (n) => `S5 ${stimulusLabel(n)}` }), "S5 개구리 뒤 (1:51 · 판정 전)");
+  assert.equal(focusText({ focusSegments: [before] }, { events: ev }), "판정 전 1:51 무렵");
+  assert.equal(focusText({ focusSegments: [{ t0: 16.3, t1: 18.3, near: { name: "figureApproach" }, before: true }] }, { events: ev }), "우비 인물 (0:16 · 판정 전)");
 });
 
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);

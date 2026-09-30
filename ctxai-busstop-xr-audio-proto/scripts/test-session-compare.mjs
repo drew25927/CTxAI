@@ -312,7 +312,8 @@ test("momentsOf(B144): 가장 크게 반응(x̂ 최고)과 가장 차분히 집�
   assert.deepEqual(m.peak, xhatPeak(xhatSeries(FEARFUL), eventMarks(FEARFUL)), "비교 화면과 같은 계열·눈금");
   assert.ok(m.peak.label, "사건 이름이 붙는다");
   assert.deepEqual([m.calm.t0, m.calm.t1], [29, 31]);
-  assert.equal(m.calm.text, "0:29 무렵", "focusText 와 같은 규칙(사건·대사·장면이 없으면 m:ss 무렵)");
+  assert.equal(m.calm.text, "S1 우비 인물 뒤 (0:29)", "focusText 와 같은 규칙 — 사건·대사·장면 이름이 없으면 앞에 시작한 사건 '뒤'(B237 · /interim 은 S 번호)");
+  assert.equal(momentsOf({ ...FEARFUL, engagement: { ...FEARFUL.engagement, stimuli: [], summary } }).calm.text, "0:29 무렵", "앞 사건도 없으면 m:ss 무렵");
   const fast = momentsOf({ ...FEARFUL, speed: 4, engagement: { ...FEARFUL.engagement, summary } });
   assert.deepEqual([fast.calm.t0, fast.calm.t1], [116, 124]);
   assert.equal(momentsOf({ ...FEARFUL, engagement: { ...FEARFUL.engagement } }).calm, null, "요약 없으면 calm 없음");
@@ -389,9 +390,36 @@ test("momentsOf(B231): 옛 세션(요약에 focusSegments 없음)도 저장된 �
   assert.deepEqual([m.calm.t0, m.calm.t1], [62.7, 64.7]);
   assert.equal(m.calm.text, "판정 직후 (1:02)");
   assert.equal(momentsOf({ ...sess, engagement: { ...sess.engagement, engagement: undefined } }).calm.text, "비명 (0:52)", "점수 계열이 없는 옛 세션은 종전대로 topSegments");
-  assert.equal(momentsOf({ ...sess, engagement: { ...sess.engagement, summary: { ...summary, focusSegments: [] } } }).calm, null, "새 요약은 그대로 쓴다(비어 있으면 없음)");
+  assert.equal(momentsOf({ ...sess, engagement: { ...sess.engagement, summary: { ...summary, focusSegments: [] } } }).calm.text, "판정 직후 (1:02)", "창·점수 계열이 있으면 요약의 focusSegments 와 상관없이 판정 시각으로 다시 고른다(B242)");
+  assert.equal(momentsOf({ ...sess, engagement: { ...sess.engagement, engagement: undefined, summary: { ...summary, focusSegments: [] } } }).calm, null, "계열이 없는 요약은 그대로 쓴다(비어 있으면 없음)");
   const fast = momentsOf({ ...sess, speed: 4 });
   assert.deepEqual([fast.calm.t0, fast.calm.t1], [250.8, 258.8], "배속 회차는 × speed");
+});
+
+test("momentsOf(B242·B237): /interim 의 '가장 차분히 집중한 순간' 은 판정(1:55) 뒤 창에서 — 판정 전 1:51 창이 점수 최고여도 두 관객이 같은 문구가 되지 않게 · 판정 뒤 창이 없으면 'S5 개구리 뒤 (1:51 · 판정 전)'", () => {
+  // b170b 차분형을 줄인 모양: 판정 전 자유 창 1:51~1:53(0.70 · 종전 1위)과 판정 뒤 1:57~1:59 · 2:01~2:03(0.698 · 이웃 병합) · S5 개구리 1:35 관측 · 요약은 판정을 모르고 만든 것(focusAfterT null)
+  const windows = [{ t0: 111.7, t1: 113.7, stimRatio: 0 }, { t0: 113.7, t1: 115.7, stimRatio: 0 }, { t0: 117.8, t1: 119.8, stimRatio: 0 }, { t0: 121.8, t1: 123.8, stimRatio: 0 }];
+  const engagement = [{ t: 113.7, score: 0.7 }, { t: 115.7, score: 0.5 }, { t: 119.8, score: 0.698 }, { t: 123.8, score: 0.698 }];
+  const stimuli = [stim("figureApproach", 15, 1, { kind: "track" }), stim("frog", 95, 0)];
+  const summary = { topSegments: [{ t0: 111.7, t1: 113.7, score: 0.7, near: null }], focusSegments: [{ t0: 111.7, t1: 113.7, score: 0.7, near: null }], focusAfterT: null };
+  const sess = { ...CALM, engagement: { windows, stimuli, engagement, summary } };
+  const m = momentsOf(sess);
+  assert.equal(m.calm.text, "판정 직후 (1:57)", "판정 뒤 창 — 실측 b170b 차분형이 '1:51 무렵' → '판정 직후 (1:57)'");
+  assert.deepEqual([m.calm.t0, m.calm.t1], [117.8, 123.8], "이웃 창 병합(간격 2.0 ≤ 2.5)");
+  // 판정 전에 끝난 회차(판정 뒤 창 없음) — 판정 전 창을 쓰되 '판정 전' 을 밝히고, 장면 이름이 없어 앞 사건 S5 개구리 '뒤'
+  const early = { ...sess, engagement: { ...sess.engagement, windows: windows.slice(0, 2), engagement: engagement.slice(0, 2) } };
+  assert.equal(momentsOf(early).calm.text, "S5 개구리 뒤 (1:51 · 판정 전)");
+  // 판정이 없는 세션(judge 큐 없음)은 판정 시각을 모르니 종전 규칙 — 1:51 이 최고, 이름은 앞 사건 '뒤'
+  const noJudge = { ...sess, events: sess.events.filter((e) => e.detail !== "judge") };
+  assert.equal(judgeTime(noJudge), null);
+  assert.equal(momentsOf(noJudge).calm.text, "S5 개구리 뒤 (1:51)");
+  // 4배속 — 판정 시각(영화 시간 115)을 센서 시계(÷ 4)로 넘긴다: 센서 창 29.45~30.95 초가 영화 1:57~2:03
+  const q = (x) => Math.round(x / 4 * 1000) / 1000;
+  const fast = { ...sess, speed: 4, engagement: { windows: windows.map((w) => ({ ...w, t0: q(w.t0), t1: q(w.t1) })), stimuli: stimuli.map((s) => ({ ...s, onset: q(s.onset) })), engagement: engagement.map((e) => ({ ...e, t: q(e.t) })), summary } };
+  const f = momentsOf(fast);
+  assert.equal(f.calm.text, "판정 직후 (1:57)");
+  assert.ok(Math.abs(f.calm.t0 - 117.8) < 1e-6 && Math.abs(f.calm.t1 - 123.8) < 1e-6, `영화 시간으로 ${f.calm.t0}~${f.calm.t1}`);
+  // /film 은 무영향 — 판정 0:58 뒤 창이 이미 1위(위 B231 테스트의 '판정 직후 (1:02)')
 });
 
 test("lengthNote(B221): /film 쌍의 버스 도착 시각 차이와 원인 — 제어 ON 의 침묵 오프셋이 대사마다 쌓임 · 콜백 대사 유무. /interim·1초 미만·한쪽 없음은 null", () => {

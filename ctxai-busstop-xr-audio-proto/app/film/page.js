@@ -609,6 +609,7 @@ export default function FilmPage() {
       film.verdict = { dominant: dom, mix: { ...d.st.current }, t: Math.round(film.t * 10) / 10, confidence: d.st.confidence };
       setDominant(dom);
       setVerdict(film.verdict);
+      engagementRef.current?.noteVerdict?.(); // 요약의 "가장 차분히 집중한 순간" 을 판정 뒤 창에서 고르게(B242)
       d.setPhase("judged");
       setCaption("");
     }
@@ -916,7 +917,7 @@ export default function FilmPage() {
       setEngSummary(summary);
       setFingerprint(eng ? fingerprintText(fitViewerModel(eng.stimuli)) : null);
       // 비교 화면과 같은 함수(lib/sessionCompare momentsOf) — 세션 모양으로 넘겨 카드와 비교 화면이 같은 답을 낸다
-      setEndMoments(eng ? momentsOf({ route: "film", speed, events: directionRef.current?.st.events, engagement: { windows: eng.windows, stimuli: eng.stimuli } }, summary) : null);
+      setEndMoments(eng ? momentsOf({ route: "film", speed, events: directionRef.current?.st.events, engagement: { windows: eng.windows, stimuli: eng.stimuli, engagement: eng.engagement } }, summary) : null); // 점수 계열도 넘겨 판정 뒤 창으로 다시 고른다(B242)
       saveSession();
     } /* eslint-disable-next-line react-hooks/exhaustive-deps */
   }, [phase]);

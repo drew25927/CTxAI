@@ -195,21 +195,28 @@ function nearestStimulus(stimuli, t) {
  * "차분히" 는 사건 사이 창에서만 뜻이 서므로 후보를 사건 관측 밖 창으로 좁히고, 첫 사건 전 창(점수가 사전값뿐이라 반응이 없는 관객은
  * 0:00 이 뽑힌다)도 뺀다. 후보가 없으면 첫 사건 전 창까지 넓힌다(잠정 규칙). 사건 이름(near)은 붙이지 않는다 — 20초 안 최근접 사건을
  * 붙이면 "비명 (1:02)" 처럼 사건 뒤 창이 사건 이름을 받는다. topSegments(점수 최고 · 사건 이름 포함)는 그대로 둔다(내보내기 스크립트).
- * @param {{windows?:Array, stimuli?:Array, engagement?:Array}} r  창(stimRatio) · 탐침 레코드(onset) · 창별 집중도 점수(index 가 windows 와 같다)
- * @returns {Array<{t0:number,t1:number,score:number,near:null}>}  점수 내림차순(이웃 창 병합) · 창이 없으면 []
+ * 판정 시각 afterT(센서 시계 · B242)가 있으면 판정 뒤 창으로 더 좁힌다 — /interim 은 S5 관측 종료(약 1:46)~판정(1:55) 사이의 첫 자유 창(1:51)이
+ * 점수가 거의 같은 창들 가운데 먼저 놓여 프로필과 무관하게 뽑혔고, 두 관객 비교 화면의 B 칸이 차분형·호기심형 모두 "1:51 무렵" 이 됐다.
+ * 관객마다 연출이 실제로 갈리는 구간은 판정 뒤이므로 판정 뒤 창이 하나라도 있으면 거기서 고르고, 없을 때만(판정 전에 끝난 회차) 판정 전 창을 쓰되
+ * 구간마다 before: true 를 붙여 카드·비교 화면이 "판정 전" 을 밝힌다(viewerText.focusText). afterT 가 없으면(판정 없는 회차 · 옛 호출) 종전 규칙.
+ * @param {{windows?:Array, stimuli?:Array, engagement?:Array, afterT?:number|null}} r  창(stimRatio) · 탐침 레코드(onset) · 창별 집중도 점수(index 가 windows 와 같다) · 판정 시각
+ * @returns {Array<{t0:number,t1:number,score:number,near:null,before?:true}>}  점수 내림차순(이웃 창 병합) · 창이 없으면 []
  */
-export function focusSegmentsOf({ windows = [], stimuli = [], engagement = [] } = {}, P = ENGAGE_PARAMS) {
+export function focusSegmentsOf({ windows = [], stimuli = [], engagement = [], afterT = null } = {}, P = ENGAGE_PARAMS) {
   const scored = engagement.map((e, i) => ({ t0: windows[i]?.t0 ?? e.t - P.WINDOW_SEC, t1: e.t, score: e.score, stim: windows[i]?.stimRatio ?? 0 }));
   const free = scored.filter((s) => s.stim === 0);
   const firstOnset = stimuli.length ? Math.min(...stimuli.map((s) => s.onset)) : -Infinity;
   const after = free.filter((s) => s.t0 >= firstOnset);
-  const pool = after.length ? after : free;
+  const wide = after.length ? after : free;
+  const post = afterT != null ? wide.filter((s) => s.t0 >= afterT - 1e-6) : wide; // 판정 뒤 창(B242)
+  const pool = post.length ? post : wide;
+  const before = afterT != null && !post.length && wide.length > 0; // 판정 뒤 창이 없어 판정 전 창으로 물러났다
   const byScore = [...pool].sort((a, b) => b.score - a.score);
-  return mergeSegments(byScore.slice(0, 3), P.WINDOW_SEC + 0.5).sort((a, b) => b.score - a.score).map((seg) => ({ ...seg, near: null }));
+  return mergeSegments(byScore.slice(0, 3), P.WINDOW_SEC + 0.5).sort((a, b) => b.score - a.score).map((seg) => ({ ...seg, near: null, ...(before ? { before: true } : {}) }));
 }
 
-/** 세션 하나의 요약 — 종료 카드와 내보내기 스크립트가 같은 함수를 쓴다. */
-export function summarizeEngagement({ windows = [], stimuli = [], engagement = [] } = {}, P = ENGAGE_PARAMS) {
+/** 세션 하나의 요약 — 종료 카드와 내보내기 스크립트가 같은 함수를 쓴다. afterT(판정 시각 · 센서 시계)는 focusSegments 를 판정 뒤 창으로 좁힌다(B242). */
+export function summarizeEngagement({ windows = [], stimuli = [], engagement = [], afterT = null } = {}, P = ENGAGE_PARAMS) {
   const mean = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
   const responded = stimuli.filter((s) => s.responded).length;
   const scored = engagement.map((e, i) => ({ t0: windows[i]?.t0 ?? e.t - P.WINDOW_SEC, t1: e.t, score: e.score }));
@@ -230,7 +237,8 @@ export function summarizeEngagement({ windows = [], stimuli = [], engagement = [
     fidgetMean: r2(mean(windows.map((w) => w.angVelRms)) ?? 0),
     intentMatchMean: intentVals.length ? r3(mean(intentVals)) : null,
     topSegments: top,
-    focusSegments: focusSegmentsOf({ windows, stimuli, engagement }, P), // 카드·비교 화면의 "가장 차분히 집중한 순간"(B231)
+    focusSegments: focusSegmentsOf({ windows, stimuli, engagement, afterT }, P), // 카드·비교 화면의 "가장 차분히 집중한 순간"(B231 · 판정 뒤 창 B242)
+    focusAfterT: afterT ?? null, // focusSegments 를 고를 때 안 판정 시각(센서 시계) — null 이면 판정을 모르고 고른 것
     lowSegments: low,
     laughEpisodes: mergeSegments(laughWins, P.WINDOW_SEC + 0.5),
     dropPoint: changePoint(engagement),
@@ -245,6 +253,7 @@ export function summarizeEngagement({ windows = [], stimuli = [], engagement = [
 export function createEngagementSensor({ mark, params } = {}) {
   const P = { ...ENGAGE_PARAMS, ...(params || {}) };
   let t = 0;
+  let verdictAt = null; // 판정 시각(센서 시계 · 페이지가 noteVerdict 로 알림) — 요약의 focusSegments 를 판정 뒤 창으로 좁힌다(B242)
   let baseline = null;
   let prev = null;
   const rows = [];                 // 원시 CSV 행
@@ -398,20 +407,24 @@ export function createEngagementSensor({ mark, params } = {}) {
   // stimuli 는 닫힌 레코드만(θ̂·슬롯 결정·세션 저장용), active 는 진행 중 자극의 잠정 레코드(실시간 x̂ 표시용 · B153·B159 · 머리말 참조).
   function data() { return { elapsed: r1(t), windows, stimuli: done, engagement: series, active: [...active.values()].map((st) => recordOf(st, false)) }; }
 
+  /** 판정이 났다 — 기본은 지금 센서 시각. 두 페이지(/film judge 큐 · /interim judged)가 부른다. */
+  function noteVerdict(at = t) { verdictAt = r1(at); }
+
   function report() {
     return {
       version: 1,
       params: P,
       elapsed: r1(t),
+      verdictAt,
       rateHz: r1(rows.length / Math.max(1e-3, t)),
       baseline: baseline ? { yaw: r1(baseline.yaw), pitch: r1(baseline.pitch), z: r3(baseline.z) } : null,
       raw: { columns: RAW_COLUMNS, csv: `${RAW_COLUMNS.join(",")}\n${rows.join("\n")}` },
       windows,
       stimuli: done,
       engagement: series,
-      summary: summarizeEngagement({ windows, stimuli: done, engagement: series }, P),
+      summary: summarizeEngagement({ windows, stimuli: done, engagement: series, afterT: verdictAt }, P),
     };
   }
 
-  return { update, beginStimulus, setIntent, current, data, report };
+  return { update, beginStimulus, setIntent, noteVerdict, current, data, report };
 }

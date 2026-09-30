@@ -311,4 +311,39 @@ test("요약 focusSegments(B231): 가장 차분히 집중한 구간은 사건 �
   assert.deepEqual(focusSegmentsOf({ windows: old, stimuli, engagement })[0], { t0: 20, t1: 26, score: 0.9, near: null });
 });
 
+test("요약 focusSegments afterT(B242): 판정 시각이 있으면 판정 뒤 창에서 고르고, 판정 뒤 창이 없으면 판정 전 창에 before 를 붙인다 — 요약은 focusAfterT 에 판정 시각을 남긴다", () => {
+  // /interim 을 줄인 모양(2초 창 70개 · 0~140초): 첫 사건 15초(창 16~20 관측) · S5 개구리 95초(창 96~106 관측) · 판정 115초.
+  // 판정 전 자유 창 108~114 가 0.93 으로 점수 최고(실측 1:51 창처럼), 판정 뒤에는 132~134 가 0.92 로 최고.
+  const windows = [], engagement = [];
+  for (let i = 0; i < 70; i++) {
+    const t1 = (i + 1) * 2, inStim = (t1 > 15 && t1 <= 21) || (t1 > 95 && t1 <= 106);
+    windows.push({ t0: t1 - 2, t1, angVelRms: 5, intentMatch: null, stimRatio: inStim ? 1 : 0 });
+    engagement.push({ t: t1, score: inStim ? 0.95 : t1 >= 110 && t1 <= 114 ? 0.93 : t1 === 134 ? 0.92 : t1 > 114 ? 0.6 : 0.5, calm: 0.5, laugh: 0 });
+  }
+  const stimuli = [{ name: "figureApproach", onset: 15, responded: 1, preLook: 0 }, { name: "frog", onset: 95, responded: 0, preLook: 0 }];
+  assert.deepEqual(focusSegmentsOf({ windows, stimuli, engagement })[0], { t0: 108, t1: 114, score: 0.93, near: null }, "판정 시각이 없으면 종전 규칙 — 판정 전 창이 최고");
+  const post = focusSegmentsOf({ windows, stimuli, engagement, afterT: 115 });
+  assert.deepEqual(post[0], { t0: 132, t1: 134, score: 0.92, near: null }, "판정 뒤 창(t0 ≥ 115)에서 최고 · before 없음");
+  assert.ok(post.every((s) => s.t0 >= 115 && !s.before), "후보 전부 판정 뒤");
+  assert.ok(focusSegmentsOf({ windows, stimuli, engagement, afterT: 116 }).some((s) => s.t0 === 116), "경계 — t0 가 판정 시각과 같은 창(116~118)은 판정 뒤로 쳐서 후보에 든다");
+  assert.ok(!focusSegmentsOf({ windows, stimuli, engagement, afterT: 116.5 }).some((s) => s.t0 === 116), "판정이 창 안에 걸치면(116.5) 그 창은 판정 전");
+  const early = focusSegmentsOf({ windows, stimuli, engagement, afterT: 139 });
+  assert.deepEqual(early[0], { t0: 108, t1: 114, score: 0.93, near: null, before: true }, "판정 뒤 창이 없으면 판정 전 창으로 물러나되 before: true");
+  assert.ok(early.every((s) => s.before === true));
+  const sum = summarizeEngagement({ windows, stimuli, engagement, afterT: 115 });
+  assert.deepEqual(sum.focusSegments, post, "요약도 같은 함수 · 같은 판정 시각");
+  assert.equal(sum.focusAfterT, 115);
+  assert.equal(summarizeEngagement({ windows, stimuli, engagement }).focusAfterT, null, "판정을 모르고 만든 요약은 null");
+  assert.deepEqual([sum.topSegments[0].t0, sum.topSegments[0].near?.name], [14, "figureApproach"], "topSegments(점수 최고 · 사건 창 14~20 · 사건 이름)는 종전대로 — 판정과 무관");
+  // 센서: noteVerdict 가 판정 시각을 기억해 report().summary 에 넣는다 — 기본은 지금 센서 시각
+  const sensor = createEngagementSensor({});
+  for (let k = 0; k < 40; k++) sensor.update({ yaw: 0, pitch: 0, roll: 0, x: 0, y: 0, z: 0 }, 0.1);
+  sensor.noteVerdict();
+  const rep = sensor.report();
+  assert.equal(rep.verdictAt, 4, "센서 시계 4.0초에 판정");
+  assert.equal(rep.summary.focusAfterT, 4);
+  sensor.noteVerdict(2.5);
+  assert.equal(sensor.report().verdictAt, 2.5, "시각을 직접 줄 수도 있다");
+});
+
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);

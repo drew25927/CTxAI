@@ -390,17 +390,21 @@ export function momentsOf(sess, summary = sess?.engagement?.summary) {
   const series = xhatSeries(sess);
   const peak = xhatPeak(series, eventMarks(sess));
   const sp = sess?.speed || 1;
-  // 옛 세션(요약에 focusSegments 없음 · B231 전)은 저장된 창·집중도 점수 계열로 같은 규칙(사건 관측 밖 · 첫 사건 뒤 창)을 다시 계산한다.
-  // 종료 카드는 새 요약을 넘기고, 창·계열이 없는 요약은 종전대로 topSegments.
+  // 저장된 창·집중도 점수 계열이 있으면 언제나 같은 규칙(사건 관측 밖 · 첫 사건 뒤 · 판정 뒤 창 · B231·B242)으로 다시 고른다 — 판정 시각(judgeTime · 영화 시간)을
+  // 센서 시계(÷ speed)로 맞춰 넘기므로, 판정을 모르고 만든 요약(옛 세션 · 판정 전 요약)도 카드·비교 화면에서는 판정 뒤 창이 된다.
+  // 창·계열이 없는 요약(아주 옛 세션)은 종전대로 저장된 focusSegments → topSegments.
   const eng = sess?.engagement;
-  const sum = summary && !summary.focusSegments && eng?.windows?.length && eng?.engagement?.length
-    ? { ...summary, focusSegments: focusSegmentsOf({ windows: eng.windows, stimuli: eng.stimuli || [], engagement: eng.engagement }) }
+  const jt = judgeTime(sess);
+  const afterT = jt == null ? null : jt / sp;
+  const sum = summary && eng?.windows?.length && eng?.engagement?.length
+    ? { ...summary, focusSegments: focusSegmentsOf({ windows: eng.windows, stimuli: eng.stimuli || [], engagement: eng.engagement, afterT }), focusAfterT: afterT }
     : summary;
   const span = focusSpan(sum, sp);
-  let text = span ? focusText(sum, { events: movieEvents(sess), speed: sp }) : null;
-  // /interim 은 사건 이름 앞에 S 번호 — 같은 카드의 "가장 크게 반응한 순간 S1 우비 인물" 과 표기를 맞춘다
-  const sig = span?.near && sessionRoute(sess) === "interim" ? probeMarks().find((m) => m.name === span.near)?.label : null;
-  if (sig) text = `${sig} ${text}`;
+  // /interim 은 사건 이름 앞에 S 번호 — 같은 카드의 "가장 크게 반응한 순간 S1 우비 인물" 과 표기를 맞춘다("S5 개구리 뒤 (1:51 · 판정 전)" 도 같은 이름표)
+  const labelOf = sessionRoute(sess) === "interim"
+    ? (name) => { const sig = probeMarks().find((m) => m.name === name)?.label; return sig ? `${sig} ${stimulusLabel(name)}` : stimulusLabel(name); }
+    : undefined;
+  const text = span ? focusText(sum, { events: movieEvents(sess), speed: sp, stimuli: eng?.stimuli || [], labelOf }) : null;
   // noPeak — x̂ 계열은 있는데 사건 반응이 한 번도 없었다(카드는 NO_PEAK_TEXT). 계열 자체가 없으면 붙이지 않는다
   return { peak, calm: span ? { text, t0: span.t0, t1: span.t1 } : null, ...(!peak && series.length ? { noPeak: true } : {}) };
 }

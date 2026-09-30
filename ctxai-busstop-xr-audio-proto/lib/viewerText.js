@@ -154,6 +154,21 @@ export function sceneAt(events, t) {
   for (const e of phaseEvents(events)) { if (e.t <= t + 1e-6) cur = PHASE_LABEL[e.detail]; else break; }
   return cur;
 }
+/**
+ * t(영화 시간) 앞에 시작한 마지막 사건 — 사건·대사·장면 이름이 없는 창에 "개구리 뒤 (1:51)" 로 자리를 주는 데 쓴다(B237).
+ * 탐침 레코드의 onset 은 센서 시계(실제 초)라 speed 를 곱해 영화 시간으로 맞춘다. 없으면 null.
+ * @param {Array<{name:string, onset:number}>} stimuli
+ */
+export function prevStimulus(stimuli, t, speed = 1) {
+  const sp = speed || 1;
+  let best = null;
+  for (const s of stimuli || []) {
+    if (s?.onset == null || !s.name) continue;
+    const at = s.onset * sp;
+    if (at <= t + 1e-6 && (!best || at > best.onset)) best = { name: s.name, onset: at };
+  }
+  return best;
+}
 
 /**
  * /film 세션의 이벤트를 영화 시간으로 — /film 은 이벤트 t 와 집중도 시각이 실제 경과 초이고(directionState.elapsed),
@@ -167,25 +182,29 @@ export function filmTimeEvents(events, speed = 1) {
 }
 
 /**
- * 종료 카드·비교 화면의 "집중한 순간" — engagement.summary.topSegments[0] 을 사람이 읽는 말로(B117).
+ * 종료 카드·비교 화면의 "집중한 순간" — engagement.summary 의 집중 구간(focusSpan)을 사람이 읽는 말로(B117).
  *  near 가 있으면 "고양이 (0:45)", 없으면 그 시각에 걸친 대사 줄("대사 05 무렵 (1:43)")이나 장면 이름("버스 장면 (2:30)"),
- *  둘 다 없으면 "2:28 무렵". 시각은 언제나 m:ss.
+ *  그것도 없으면 그 앞에 시작한 마지막 사건에 "뒤" 를 붙여 "개구리 뒤 (1:51)"(B237 · ctx.stimuli 가 있을 때), 아무것도 없으면 "2:28 무렵". 시각은 언제나 m:ss.
+ *  구간이 판정 전 창이면(focusSegments 의 before · 판정 뒤 창이 없던 회차 · B242) 괄호 안에 "· 판정 전" 을, 이름이 없으면 "판정 전 1:51 무렵" 으로 밝힌다.
  * 집중도 센서의 시각은 실제 경과 초라 배속 회차에서는 ctx.speed 를 곱해 영화 시간으로 맞춘다. ctx.events 는 영화 시간이어야 한다
- * (/film 은 filmTimeEvents 로 맞춰서, /interim 은 그대로).
+ * (/film 은 filmTimeEvents 로 맞춰서, /interim 은 그대로). ctx.stimuli 는 센서 시계 그대로(여기서 × speed).
  * @param {object} summary  engagement.summary
- * @param {{events?:Array, speed?:number}} ctx
+ * @param {{events?:Array, speed?:number, stimuli?:Array, labelOf?:(name:string)=>string}} ctx  labelOf — 사건 이름표(기본 stimulusLabel · /interim 은 momentsOf 가 "S5 개구리" 로)
  */
 export function focusText(summary, ctx = {}) {
   const span = focusSpan(summary, ctx.speed);
   if (!span) return null;
-  const { t0, t1, near } = span;
-  const when = mmss(t0);
-  if (near) return `${stimulusLabel(near)} (${when})`;
+  const { t0, t1, near, before } = span;
+  const label = ctx.labelOf || stimulusLabel;
+  const when = before ? `${mmss(t0)} · 판정 전` : mmss(t0);
+  if (near) return `${label(near)} (${when})`;
   const talk = talkAt(ctx.events, t0, t1);
   if (talk) return `대사 ${talk.seq} 무렵 (${when})`;
   const scene = sceneAt(ctx.events, t0);
   if (scene) return `${scene} (${when})`;
-  return `${when} 무렵`;
+  const prev = prevStimulus(ctx.stimuli, t0, ctx.speed);
+  if (prev) return `${label(prev.name)} 뒤 (${when})`;
+  return `${before ? "판정 전 " : ""}${mmss(t0)} 무렵`;
 }
 
 /**
@@ -197,7 +216,7 @@ export function focusSpan(summary, speed = 1) {
   const seg = summary?.focusSegments ? summary.focusSegments[0] : summary?.topSegments?.[0];
   if (!seg) return null;
   const sp = speed || 1;
-  return { t0: seg.t0 * sp, t1: (seg.t1 ?? seg.t0) * sp, near: seg.near?.name || null };
+  return { t0: seg.t0 * sp, t1: (seg.t1 ?? seg.t0) * sp, near: seg.near?.name || null, ...(seg.before ? { before: true } : {}) }; // before — 판정 전 창(B242)
 }
 
 /**
@@ -208,10 +227,12 @@ export function focusSpan(summary, speed = 1) {
  *                          사건이 시작될 때 이미 그쪽을 보고 있었고 움찔하지도 않았으면 "보고만 있던" — 돌아본 것도, 놓친 것도 아니다(B158).
  *  peak                    긴장 추정 x̂ 최고 — 반응의 크기. 돌아보지 않은 사건이 여기 올 수 있다(1배속 /film ON 공포형의 개구리:
  *                          135° 뒤라 돌아보지 않았지만 511°/s 로 움찔해 x̂ 1.00).
- *  calm                    사건 사이 창(사건 관측 밖 · 첫 사건 뒤) 중 집중도 점수 최고 2초 — 사건 반응률·잔움직임 억제·의도 방향 응시의 합성
- *                          (lib/engagementSense.js focusSegmentsOf · B231). 사건 창은 사건 쪽으로 고개를 돌려 멈춘 창이라 점수가 구조적으로 높아
- *                          "가장 차분히 집중한 순간 비명 (0:52)"(1배속 /film OFF)이 나왔다 — 그래서 사건 창은 후보에서 뺀다. 크게 반응한 순간과
- *                          다른 때일 때가 많다 — 1배속 /interim 공포형은 S5 개구리(1:37) vs 전환 장면(2:12), /film OFF 는 개구리(0:38) vs 판정 직후(1:02).
+ *  calm                    판정 뒤 사건 사이 창(사건 관측 밖) 중 집중도 점수 최고 2초 — 사건 반응률·잔움직임 억제·의도 방향 응시의 합성
+ *                          (lib/engagementSense.js focusSegmentsOf · B231 · 판정 뒤 창 B242). 사건 창은 사건 쪽으로 고개를 돌려 멈춘 창이라 점수가 구조적으로 높아
+ *                          "가장 차분히 집중한 순간 비명 (0:52)"(1배속 /film OFF)이 나왔다 — 그래서 사건 창은 후보에서 뺀다. 판정 전 창은 /interim 에서
+ *                          S5 관측 종료~판정 사이 1:51 이 프로필과 무관하게 뽑혀 두 관객이 같은 문구가 됐다 — 그래서 판정 뒤 창으로 좁히고, 판정 뒤 창이
+ *                          없는 회차만 판정 전 창을 "판정 전" 표시로 쓴다. 크게 반응한 순간과 다른 때일 때가 많다 — 1배속 /interim 공포형은
+ *                          S5 개구리(1:37) vs 전환 장면(2:12), /film OFF 는 개구리(0:38) vs 판정 직후(1:02).
  * 옛 이름("본 것/안 본 것"·"가장 집중"·"x̂ 최고")은 기준을 밝히지 않아 "안 본 개구리가 x̂ 최고" 가 모순으로 읽혔다.
  */
 export const MOMENT_TEXT = {
@@ -227,5 +248,5 @@ export const MOMENT_BASIS = [
   "움찔만 = 고개가 빠르게 움직였지만 사건 쪽으로 돌아보지는 않음(이미 보던 사건에 움찔한 경우 포함)",
   "보고만 있던 = 사건이 시작될 때 이미 그쪽을 보고 있었고 움찔하지 않음",
   "가장 크게 반응 = 사건 반응이 있는 순간 중 긴장 추정 x̂ 최고(반응의 크기 · 상한 1.0 에 닿은 봉우리가 여럿이면 잘리기 전 값으로 가름)",
-  "가장 차분히 집중 = 사건 사이 창(사건 관측 밖 · 첫 사건 뒤) 중 집중도 점수 최고 2초(사건 반응률·잔움직임 억제·의도 방향 응시)",
+  "가장 차분히 집중 = 판정 뒤 사건 사이 창(사건 관측 밖) 중 집중도 점수 최고 2초(사건 반응률·잔움직임 억제·의도 방향 응시) · 판정 뒤 창이 없는 회차만 판정 전 창을 '판정 전' 표시로",
 ];
