@@ -101,24 +101,35 @@ test("mixText 동률(B121): 반올림해서 이웃이 같아지면 소수 한 �
   assert.equal(mixText({ R: 1, H: 0, C: 0 }), "로맨스 100% · 공포 0% · 블랙코미디 0%");
 });
 
-// ── B84·B108 반응 지문 — 1배속 합성 관객 세 프로필의 θ̂(b59/sessions-summary-1x.txt) + 비교 화면에서 같았던 두 관객(review16)
+// ── B84·B108·B224 반응 지문 — B152 뒤 1배속 합성 관객 세 프로필의 θ̂(/interim · 공포형 b152/sessions/fearful-on-* · 호기심형 b224/sessions/curious-* ·
+//    차분형 b170b/sessions/calm-on-*) + 비교 화면에서 같았던 두 관객(review16). B152 전 값(공포형 1.274 · 호기심형 1.04 · 차분형 0.6)은 부풀어 있었다.
 const THETA = {
-  fearful: { g: 1.274, L: 0.168, tau: 0.438, rho: -0.004, n: 5, nResp: 5, confidence: 1 },
-  curious: { g: 1.04, L: 0.218, tau: 0.693, rho: 0.098, n: 5, nResp: 5, confidence: 1 },
-  calm: { g: 0.6, L: 0.217, tau: 1, rho: 0.15, n: 5, nResp: 2, confidence: 0.2 },
+  fearful: { g: 1.006, L: 0.15, tau: 0.52, rho: 0.084, n: 5, nResp: 5, levels: 3, confidence: 1 },
+  curious: { g: 0.888, L: 0.17, tau: 0.727, rho: 0.116, n: 5, nResp: 5, levels: 3, confidence: 1 },
+  calm: { g: 0.386, L: 0.355, tau: 1, rho: 0.15, n: 5, nResp: 1, levels: 1, confidence: 0.1 },
 };
-test("fingerprintText: 세 프로필이 서로 다른 문장을 받는다", () => {
+test("fingerprintText(B224): 공포형·호기심형은 같은 '또렷이' 문장, 차분형(응답 1/5)은 반응 수만 — 지문은 둘로 갈린다", () => {
   const out = Object.fromEntries(Object.entries(THETA).map(([k, th]) => [k, fingerprintText(th)]));
-  assert.equal(out.fearful, "자극마다 크게 흔들렸고, 빠르게 반응하고 금방 가라앉았으며 반복돼도 반응이 유지됐습니다");
-  assert.equal(out.curious, "자극에 또렷이 흔들렸고, 빠르게 반응하고 금방 가라앉았으며 반복돼도 반응이 유지됐습니다");
-  // 차분형은 응답 2/5 · 신뢰도 0.2 · θ̂ 사전값 — 성향 문장이 아니라 반응 수만(B147)
-  assert.equal(out.calm, "사건 5개 중 두 번만 반응해 반응 지문을 쓰기에는 이릅니다");
-  assert.equal(new Set(Object.values(out)).size, 3);
+  assert.equal(out.fearful, "자극에 또렷이 흔들렸고, 빠르게 반응하고 금방 가라앉았으며 반복돼도 반응이 유지됐습니다");
+  // 호기심형은 B152 뒤 θ̂ 가 공포형과 가깝다(g 0.89 vs 1.0 · L·τ·ρ 같은 단) — 같은 문장이 맞고, 둘은 카드의 "돌아본·움찔만" 줄과 팀 판정으로 갈린다
+  assert.equal(out.curious, out.fearful);
+  // 차분형은 응답 1/5 · 신뢰도 0.1 · θ̂ 사전값 — 성향 문장이 아니라 반응 수만(B147)
+  assert.equal(out.calm, "사건 5개 중 한 번만 반응해 반응 지문을 쓰기에는 이릅니다");
+  assert.equal(new Set(Object.values(out)).size, 2);
 });
-test("fingerprintText(B147): 신뢰도 0.2·사전값 θ̂(응답 2건) 에는 습관화·회복 같은 성향 구절이 없다", () => {
+test("fingerprintText(B224): 같은 합성 공포형 seed 1 의 /film 제어 ON(g 0.980)·OFF(g 0.895)가 같은 이득 구절을 받는다(b152/sessions/)", () => {
+  const on = fingerprintText({ g: 0.98, L: 0.165, tau: 0.859, rho: -0.03, n: 9, nResp: 9, levels: 9, confidence: 1 });
+  const off = fingerprintText({ g: 0.895, L: 0.164, tau: 0.865, rho: -0.02, n: 6, nResp: 6, levels: 6, confidence: 1 });
+  assert.equal(on, off);
+  assert.match(on, /^자극에 또렷이 흔들렸고/);
+  // 문턱 0.8 의 여유 — 실측 묶음(0.888~1.007) 아래 0.088, 그 아래는 "살짝"
+  assert.match(fingerprintText({ g: 0.8, L: 0.2, tau: 1, rho: 0, n: 5, nResp: 5, levels: 3, confidence: 1 }), /^자극에 또렷이/);
+  assert.match(fingerprintText({ g: 0.79, L: 0.2, tau: 1, rho: 0, n: 5, nResp: 5, levels: 3, confidence: 1 }), /^자극에 살짝/);
+});
+test("fingerprintText(B147): 신뢰도 0.1·사전값 θ̂(응답 1건) 에는 습관화·회복 같은 성향 구절이 없다", () => {
   const fp = fingerprintText(THETA.calm);
   assert.doesNotMatch(fp, /반복|유지|줄었|가라앉|여운|흔들/);
-  assert.match(fp, /5개 중 두 번만/);
+  assert.match(fp, /5개 중 한 번만/);
 });
 test("fingerprintText(B147): 습관화 구절은 반응이 두 가지 이상의 반복 횟수(nth)에 걸쳤을 때만", () => {
   // levels 1 — ρ 는 사전값이므로 습관화를 말하지 않고 회복 구절로 문장을 닫는다

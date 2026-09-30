@@ -94,13 +94,18 @@ export function stimulusLabel(name) {
 
 /**
  * 관객 반응 지문 — fitViewerModel 의 θ̂ 를 사람이 읽는 한 문장으로. /film 종료 카드·/film/compare·/interim 이 같은 규칙(B84·B108).
- * 이득 g 는 네 단(크게 흔들림 / 또렷이 / 가볍게 / 차분) — 1배속 합성 관객 세 프로필(공포형 g≈1.27, 호기심형 g≈1.04, 차분형 g≈0.6)이
- * 서로 다른 문장을 받도록 잡은 잠정치다.
+ * 이득 g 는 네 단(크게 흔들림 / 또렷이 / 살짝 / 차분). 문턱은 B152(반응 크기 항 포화) 뒤 1배속 합성 관객 실측으로 잡은 잠정치다(B224):
+ *   공포형 /interim g 1.005~1.007 · /film 제어 ON 0.980~0.984 · 같은 관객 OFF 0.895 · 호기심형 0.888 · 차분형 0.386(응답 1/5 · 사전값 쪽 수축).
+ *   gainClear 0.8 — 같은 합성 관객의 ON(0.980)·OFF(0.895)가 한 단에 들도록 그 묶음(0.89~1.01) 아래 0.09 여유를 두고 잡았다. 종전 0.9 는
+ *   두 값 사이에 있어 같은 관객이 ON "또렷이" · OFF "살짝" 으로 갈렸다. 그 대신 공포형과 호기심형은 θ̂ 가 가까워(g 1.0 vs 0.89 · L·τ·ρ 도 같은 단)
+ *   같은 지문 문장을 받는다 — 둘은 카드의 "돌아본·움찔만 한 사건" 줄(공포형은 뒤쪽 소리에 움찔·후퇴, 호기심형은 볼거리를 오래 읽음)과 팀 판정으로 갈린다.
+ *   gainHigh 1.2 는 B152 뒤 합성 관객이 닿지 않는 값(최대 1.007)이라 실제 관객의 더 큰 반응을 위해 남겨 둔다. B152 전 값(공포형 1.27 ·
+ *   호기심형 1.04 · 차분형 0.6)은 각속도 항이 상한 없이 더해져 부풀어 있었다.
  * 응답이 minResp(3) 건 미만이면 θ̂ 는 사전분포에 끌린 값이라 성향을 단정하지 않고 반응 수만 적는다 — 1배속 /interim 차분형(응답 2/5 ·
  * 신뢰도 0.2 · θ̂ 사전값)이 "…반복돼도 반응이 유지됐습니다" 를 받던 문제(B147). 습관화 구절은 반복 횟수(nth)가 다른 사건에 반응했을 때만
  * (θ̂.levels ≥ 2) 붙인다 — 한 가지 nth 에서만 반응했으면 ρ 는 사전값 그대로다. 문장은 항상 나온다.
  */
-export const FINGERPRINT_THRESHOLDS = { gainHigh: 1.2, gainClear: 0.9, gainLow: 0.45, latencyFast: 0.5, recoverFast: 2, habituate: 0.25, minResp: 3 }; // 잠정치
+export const FINGERPRINT_THRESHOLDS = { gainHigh: 1.2, gainClear: 0.8, gainLow: 0.45, latencyFast: 0.5, recoverFast: 2, habituate: 0.25, minResp: 3 }; // 잠정치(gainClear 0.9 → 0.8 · B224)
 const TIMES = ["", "한 번", "두 번", "세 번", "네 번"];
 export function fingerprintText(theta, T = FINGERPRINT_THRESHOLDS) {
   if (!theta) return null;
