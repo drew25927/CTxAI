@@ -11,6 +11,7 @@
 //
 // /film/compare            → 최근 두 세션
 // /film/compare?a=<id>&b=<id>
+// /film/compare?…&kiosk=1  → 전시·녹화용(개발용 링크 숨김)
 
 import { useEffect, useMemo, useState } from "react";
 import s from "../../story/story.module.css";
@@ -29,19 +30,23 @@ function useQuery() {
 }
 
 // 사건 눈금·판정선 — 두 차트가 같이 쓴다. 눈금은 A 세션 기준(없으면 B), 시각은 영화 시간(lib/sessionCompare.js).
-function Marks({ marks, judgeT, x, H, PAD, labelTop = PAD }) {
+// layer="lines" 는 곡선 아래에, layer="labels" 는 곡선 위에 그린다 — 이름표를 곡선보다 먼저 그리면 "판정"·사건 이름이
+// 선에 가려진다(B197, B 칸 바닥의 "판정" 이 블랙코미디 선과 겹침). 이름표 글자에는 배경색 테두리(halo)를 둔다.
+const HALO = { paintOrder: "stroke", stroke: "#0b0f14", strokeWidth: 3, strokeLinejoin: "round" };
+function Marks({ marks, judgeT, x, H, PAD, labelTop = PAD, layer = "both" }) {
+  const lines = layer !== "labels", labels = layer !== "lines";
   return (
     <>
       {judgeT != null && (
         <g>
-          <line x1={x(judgeT)} x2={x(judgeT)} y1={PAD} y2={H - PAD} stroke="rgba(255,255,255,0.5)" strokeWidth="1.2" />
-          <text x={x(judgeT) + 3} y={H - PAD - 4} fill="rgba(255,255,255,0.7)" fontSize="9">판정</text>
+          {lines && <line x1={x(judgeT)} x2={x(judgeT)} y1={PAD} y2={H - PAD} stroke="rgba(255,255,255,0.5)" strokeWidth="1.2" />}
+          {labels && <text x={x(judgeT) + 3} y={H - PAD - 4} fill="rgba(255,255,255,0.7)" fontSize="9" style={HALO}>판정</text>}
         </g>
       )}
       {marks.map((m, i) => (
         <g key={i}>
-          <line x1={x(m.t)} x2={x(m.t)} y1={PAD} y2={H - PAD} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
-          <text x={x(m.t) + 3} y={labelTop + 10 + (i % 3) * 11} fill="rgba(255,255,255,0.45)" fontSize="9">{m.label}</text>
+          {lines && <line x1={x(m.t)} x2={x(m.t)} y1={PAD} y2={H - PAD} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />}
+          {labels && <text x={x(m.t) + 3} y={labelTop + 10 + (i % 3) * 11} fill="rgba(255,255,255,0.45)" fontSize="9" style={HALO}>{m.label}</text>}
         </g>
       ))}
     </>
@@ -65,7 +70,7 @@ function Chart({ a, b, divergeAt }) {
   const ref = a || b;
   return (
     <svg className={f.chart} style={{ height: H }} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-      <Marks marks={eventMarks(ref)} judgeT={judgeTime(ref)} x={x} H={H} PAD={PAD} labelTop={PAD + BAND + 2} />
+      <Marks marks={eventMarks(ref)} judgeT={judgeTime(ref)} x={x} H={H} PAD={PAD} layer="lines" />
       {lanes.map(({ key, tr, top }) => {
         const y = (v) => top + BAND + 4 + (1 - v) * (LANE - BAND - 6);
         const path = (g) => tr.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p[g]).toFixed(1)}`).join(" ");
@@ -83,9 +88,10 @@ function Chart({ a, b, divergeAt }) {
       {divergeAt != null && (
         <g>
           <line x1={x(divergeAt)} x2={x(divergeAt)} y1={PAD} y2={H - PAD} stroke="#ffffff" strokeWidth="1.4" strokeDasharray="2 3" />
-          <text x={x(divergeAt) - 4} y={PAD + LANE + GAP - 3} fill="#ffffff" fontSize="10" textAnchor="end">갈라짐 {mmss(divergeAt)}</text>
+          <text x={x(divergeAt) - 4} y={PAD + LANE + GAP - 3} fill="#ffffff" fontSize="10" textAnchor="end" style={HALO}>갈라짐 {mmss(divergeAt)}</text>
         </g>
       )}
+      <Marks marks={eventMarks(ref)} judgeT={judgeTime(ref)} x={x} H={H} PAD={PAD} labelTop={PAD + BAND + 2} layer="labels" />
     </svg>
   );
 }
@@ -124,13 +130,14 @@ function XhatChart({ a, b, sa, sb, ma, mb }) {
   return (
     <svg className={f.chart} style={{ height: 160 }} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
       {[0.5, 1].map((v) => <line key={v} x1={PAD} x2={W - PAD} y1={y(v)} y2={y(v)} stroke="rgba(255,255,255,0.07)" />)}
-      <Marks marks={eventMarks(ref)} judgeT={judgeTime(ref)} x={x} H={H} PAD={PAD} />
+      <Marks marks={eventMarks(ref)} judgeT={judgeTime(ref)} x={x} H={H} PAD={PAD} layer="lines" />
       {calmBar(ma, XHAT_COLOR.a, 0)}
       {calmBar(mb, XHAT_COLOR.b, 1)}
       {sa.length > 0 && curve(sa, XHAT_COLOR.a)}
       {sb.length > 0 && curve(sb, XHAT_COLOR.b, "6 4")}
       {peakDot(ma, XHAT_COLOR.a)}
       {peakDot(mb, XHAT_COLOR.b)}
+      <Marks marks={eventMarks(ref)} judgeT={judgeTime(ref)} x={x} H={H} PAD={PAD} layer="labels" />
     </svg>
   );
 }
@@ -174,6 +181,7 @@ function diverge(a, b) {
 
 export default function ComparePage() {
   const q = useQuery();
+  const kiosk = q.kiosk === "1"; // ?kiosk=1 — 전시·녹화용: 개발용 "← /film" 링크를 숨긴다(/film·/interim 과 같은 규칙, B122)
   const [list, setList] = useState([]);
   const [a, setA] = useState(null);
   const [b, setB] = useState(null);
@@ -213,7 +221,7 @@ export default function ComparePage() {
   return (
     <div className={s.stage} style={{ overflow: "auto" }}>
       <div className={s.topBar}>
-        <a className={s.homeLink} href="/film">← /film</a>
+        {kiosk ? <span /> : <a className={s.homeLink} href="/film">← /film</a>}
         <span className={s.dim}>두 관객 비교 · 같은 정류장, 다른 하늘</span>
         <span />
       </div>
