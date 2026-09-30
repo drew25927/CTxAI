@@ -17,7 +17,7 @@ import { focusSegmentsOf } from "./engagementSense.js";
 import { probeMarks } from "./interimProbes.js";
 import { T as INTERIM_T } from "./interimTimeline.js";
 import { adaptText } from "./interimAdapt.js";
-import { GENRE_LABEL, mmss, stimulusLabel, filmTimeEvents, focusText, focusSpan, MOMENT_TEXT } from "./viewerText.js";
+import { GENRE_LABEL, mmss, stimulusLabel, filmTimeEvents, focusText, focusSpan, MOMENT_TEXT, lookKind } from "./viewerText.js";
 
 // 슬롯 변형 id(lib/tensionCurve.js SLOTS) → 비교 화면 이름. 모르는 것은 id 그대로.
 const VARIANT_LABEL = { once: "한 번", twice: "두 번", loud: "크게", soft: "작게", mid: "중간", playful: "장난스럽게", sudden: "갑자기", brief: "잠깐", linger: "머묾", return: "돌아옴", near: "가까이", far: "멀리", flicker: "깜빡임", shut: "닫힘" };
@@ -272,7 +272,7 @@ export function judgeLine(sess) {
 }
 
 /**
- * 사건별 반응 네 갈래(B128·B158) — 돌아본 사건(turned: 사건 방향 ±28° 안으로 고개를 돌림) · 움찔만 한 사건(responded 인데 turned 아님:
+ * 사건별 반응 네 갈래(B128·B158 · 판정은 viewerText.lookKind · B102) — 돌아본 사건(turned: 사건 방향 ±28° 안으로 고개를 돌림) · 움찔만 한 사건(responded 인데 turned 아님:
  * 빠른 고개 움직임·후퇴만 있고 사건 쪽으로 돌아보지는 않음) · 보고만 있던 사건(atOnset: 시작할 때 이미 그쪽을 보고 있었고 반응 없음) ·
  * 반응 없던 사건. turned·atOnset 이 없는 옛 세션(B158 이전)은 looked 를 돌아본 것으로 읽는다(보고만 있던 갈래는 비어 있다 — 그때 센서는
  * 그것을 가르지 않았다). 두 라우트 모두 우리 관측 축 engagement.stimuli 하나로 가른다
@@ -289,10 +289,10 @@ export function lookResponses(sess) {
     const ev = interim ? null : sess?.headPose?.events;
     if (!Array.isArray(ev) || !ev.length) return null;
     return {
-      turned: group(ev.filter((e) => e.feats?.looked).map((e) => stimulusLabel(e.name))),
+      turned: group(ev.filter((e) => lookKind(e.feats || {}) === "turned").map((e) => stimulusLabel(e.name))),
       flinched: [],
       watched: [],
-      missed: group(ev.filter((e) => !e.feats?.looked).map((e) => stimulusLabel(e.name))),
+      missed: group(ev.filter((e) => lookKind(e.feats || {}) !== "turned").map((e) => stimulusLabel(e.name))),
     };
   }
   const sig = interim ? Object.fromEntries(probeMarks().map((m) => [m.name, m.label])) : {};
@@ -300,13 +300,9 @@ export function lookResponses(sess) {
   const sorted = interim
     ? st.slice().sort((a, b) => (sig[a.name] || a.name).localeCompare(sig[b.name] || b.name))
     : st.slice().sort((a, b) => (a.onset ?? 0) - (b.onset ?? 0));
-  const turned = (s) => (s.turned ?? s.looked) ? 1 : 0;
-  return {
-    turned: group(sorted.filter(turned).map(tag)),
-    flinched: group(sorted.filter((s) => !turned(s) && s.responded).map(tag)),
-    watched: group(sorted.filter((s) => !turned(s) && !s.responded && s.atOnset).map(tag)),
-    missed: group(sorted.filter((s) => !turned(s) && !s.responded && !s.atOnset).map(tag)),
-  };
+  // 갈래는 viewerText.lookKind 하나로 — /film HUD 사건 표(hudEventText)도 같은 함수를 쓴다(B102)
+  const of = (k) => group(sorted.filter((s) => lookKind(s) === k).map(tag));
+  return { turned: of("turned"), flinched: of("flinched"), watched: of("watched"), missed: of("missed") };
 }
 function group(labels) {
   const count = new Map();

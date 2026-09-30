@@ -23,7 +23,7 @@
 import { curveAt } from "@/lib/tensionCurve";
 import { observedSegments, xhatReading, xhatScopeNote, isProvisional } from "@/lib/tensionEstimate";
 import { actuateLine, glueNumbers, goalRowText, reachText, recentPeakText, stimCountText, trackHeadText } from "@/lib/monitorText";
-import { stimulusLabel } from "@/lib/viewerText";
+import { stimulusLabel, RESPONSE_BASIS } from "@/lib/viewerText";
 
 export const MOMENT_COLOR = { peak: "#ffffff", calm: "rgba(143,214,143,0.85)" }; // 종료 카드 범례와 같은 색(B144)
 
@@ -140,7 +140,7 @@ export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTar
       })()}
       {scopeNote && <div style={{ opacity: 0.6, fontSize: 11, marginTop: -4, marginBottom: 4, wordBreak: "keep-all" }}>{scopeNote}</div>}
       {theta && (
-        <div style={{ opacity: 0.85 }}>관객모델 θ̂: {glueNumbers(`이득 ${theta.g} · 지연 ${theta.L}s · 회복 ${theta.tau}s · 습관화 ${theta.rho}`)} <span style={{ opacity: 0.5 }}>({glueNumbers(`모델 신뢰도 ${Math.round((theta.confidence || 0) * 100)}% · 응답 ${theta.nResp}/${theta.n}`)})</span></div>
+        <div style={{ opacity: 0.85 }}>관객모델 θ̂: {glueNumbers(`이득 ${theta.g} · 지연 ${theta.L}s · 회복 ${theta.tau}s · 습관화 ${theta.rho}`)} <span style={{ opacity: 0.5 }}>({glueNumbers(`모델 신뢰도 ${Math.round((theta.confidence || 0) * 100)}% · `)}{/* "응답" 의 정의는 툴팁으로 — HUD 사건 표의 "안 봄" 과 모순으로 읽혔다(B102) */}<span title={RESPONSE_BASIS}>{glueNumbers(`응답 ${theta.nResp}/${theta.n}`)}</span>)</span></div>
       )}
       {/* 도달 점수(B154) — 점수 최고 트랙은 참고값이고 판정 트랙을 바꾸지 않는다. 화살표 대신 "최고 H(참고 · 현재 R 유지)" */}
       {monitor.sel && <div style={{ opacity: 0.85 }}>{glueNumbers(reachText(monitor.sel, monitor.decided === false ? null : monitor.track))}</div>}

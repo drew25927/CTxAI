@@ -8,6 +8,8 @@
 //
 // 순수 함수만 둔다(node 로 테스트: scripts/test-viewer-text.mjs).
 
+import { ENGAGE_PARAMS } from "./engagementSense.js";
+
 export const GENRE_LABEL = { R: "로맨스", H: "공포", C: "블랙코미디" };
 const GENRES = ["R", "H", "C"];
 
@@ -250,3 +252,50 @@ export const MOMENT_BASIS = [
   "가장 크게 반응 = 사건 반응이 있는 순간 중 긴장 추정 x̂ 최고(반응의 크기 · 상한 1.0 에 닿은 봉우리가 여럿이면 잘리기 전 값으로 가름)",
   "가장 차분히 집중 = 판정 뒤 사건 사이 창(사건 관측 밖) 중 집중도 점수 최고 2초(사건 반응률·잔움직임 억제·의도 방향 응시) · 판정 뒤 창이 없는 회차만 판정 전 창을 '판정 전' 표시로",
 ];
+
+/**
+ * 사건별 반응 갈래 하나(B102) — 종료 카드·비교 화면(`sessionCompare.lookResponses`)과 `/film` HUD 사건 표가 이 한 함수로 가른다.
+ * 레코드는 집중도 센서 `engagement.stimuli` 의 한 항목(닫힌 것 또는 진행 중 잠정 레코드 · lib/engagementSense.js recordOf):
+ *   turned    사건 방향 ±LOOK_TOL_DEG 안으로 고개를 돌림(응답 창 안 · 시작할 때 이미 보던 것은 제외 · B158)
+ *   responded 돌아봄 · 빠른 고개 움직임(MOVE_RESP_DEG_S) · 후퇴(RETREAT_M) 중 하나 — θ̂ 의 "응답" 이 세는 것
+ *   atOnset   시작할 때 이미 그쪽을 보고 있었음
+ * turned 가 없는 옛 레코드(B158 이전)는 looked 를 돌아본 것으로 읽고, 헤드 포즈 채점 feats(looked 만 있음)를 넘기면 돌아봄/반응 없음 둘로만
+ * 갈린다 — 옛 `/film` 세션의 lookResponses 와 같은 규칙. 옛 HUD 의 "봤음/안 봄" 은 응시 여부라 θ̂ "응답" 과 어긋나 보였다
+ * (개구리는 "안 봄" 인데 509°/s 로 움찔해 응답 6/6 에 들어갔다 · work/evidence/review38/onh/onh-t072.png).
+ * @returns {"turned"|"flinched"|"watched"|"missed"|null}
+ */
+export function lookKind(rec) {
+  if (!rec) return null;
+  if (rec.turned ?? rec.looked) return "turned";
+  if (rec.responded) return "flinched";
+  if (rec.atOnset) return "watched";
+  return "missed";
+}
+
+/** HUD 사건 표의 짧은 갈래 이름(B102) — MOMENT_TEXT 의 "돌아본 사건 · 움찔만 한 사건 · 보고만 있던 사건 · 반응 없던 사건" 과 같은 낱말. */
+export const LOOK_KIND_SHORT = { turned: "돌아봄", flinched: "움찔만", watched: "보고만 있음", missed: "반응 없음" };
+
+/** HUD 사건 표 툴팁(B102) — 네 갈래의 기준과 모니터 "응답" 의 관계. 수치는 lib/engagementSense.js ENGAGE_PARAMS 그대로. */
+export const HUD_LOOK_BASIS = `돌아봄 = 사건 방향 ±${ENGAGE_PARAMS.LOOK_TOL_DEG}° 안으로 고개를 돌림 · 움찔만 = 돌아보지는 않았지만 빠른 고개 움직임(${ENGAGE_PARAMS.MOVE_RESP_DEG_S}°/s)·후퇴(${ENGAGE_PARAMS.RETREAT_M}m) · 보고만 있음 = 시작할 때 이미 그쪽을 보고 있었고 움찔하지 않음 · 반응 없음 = 셋 다 아님 · 디렉터 모니터 θ̂ 의 "응답" = 돌아봄 + 움찔만(봤는지와 별개) · 속도·후퇴·회복 수치는 헤드 포즈 채점(lib/headPoseSense.js)`;
+
+/** 디렉터 모니터 "응답 N/N" 툴팁(B102) — 응답의 정의 한 줄. HUD 사건 표·종료 카드·비교 화면과 같은 이름을 쓴다. */
+export const RESPONSE_BASIS = `응답 = 돌아봄 + 움찔만(빠른 고개 움직임 ${ENGAGE_PARAMS.MOVE_RESP_DEG_S}°/s · 후퇴 ${ENGAGE_PARAMS.RETREAT_M}m) · 봤는지(응시)와 별개 — 보고만 있음·반응 없음은 응답이 아님 · HUD 사건 표·종료 카드·비교 화면의 같은 이름`;
+
+/**
+ * `/film` HUD 사건 표 한 줄(B102) — "돌아봄 2.4s · 재확인 · 속도 492°/s · 후퇴 0.03m · 회복 1.1s".
+ * 갈래는 집중도 센서 레코드(rec · 카드와 같은 기준 · lookKind)로, 초·속도·후퇴·회복 수치는 헤드 포즈 채점 feats 로 적는다(종전 그대로).
+ * 응시 초(feats.lookSec)는 돌아봄·보고만 있음이면 갈래 뒤에("돌아봄 2.4s"), 움찔만·반응 없음인데 0 이 아니면(응답 창 뒤에 늦게 봄) "· 응시 1.2s".
+ * 진행 중 잠정 레코드면 "· 잠정". rec 가 없으면(집중도 센서 없음·옛 세션) feats 의 looked 로 돌아봄/반응 없음만 가른다.
+ */
+export function hudEventText(feats = {}, rec = null) {
+  const kind = lookKind(rec || feats) || "missed";
+  const lookSec = Number(feats.lookSec) || 0;
+  const parts = [`${LOOK_KIND_SHORT[kind]}${(kind === "turned" || kind === "watched") && lookSec > 0 ? ` ${lookSec.toFixed(1)}s` : ""}`];
+  if ((kind === "flinched" || kind === "missed") && lookSec > 0) parts.push(`응시 ${lookSec.toFixed(1)}s`);
+  if (rec?.provisional) parts.push("잠정");
+  if (feats.recheck) parts.push("재확인");
+  parts.push(`속도 ${(Number(feats.maxVel) || 0).toFixed(0)}°/s`);
+  parts.push(`후퇴 ${(Number(feats.retreat) || 0).toFixed(2)}m`);
+  if (feats.recoverySec != null) parts.push(`회복 ${Number(feats.recoverySec).toFixed(1)}s`);
+  return parts.join(" · ");
+}

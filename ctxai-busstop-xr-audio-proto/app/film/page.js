@@ -56,7 +56,7 @@ import { loadDialoguePool, pickPoolLine, poolCoverage } from "@/lib/dialoguePool
 import { beatOf, gazeFor, playsLine, playedCount, beatsTotalSec, nextPlayedBeat, subtitleHoldSec, splitLead, silenceAfter, dialogueQuiet, quietState, answerWatchStart, answerWatchUpdate, answerWatchResult } from "@/lib/dialogueBeats";
 import { scoresFromMoodApi } from "@/lib/textKeywords";
 import { analyzeProsody } from "@/lib/voiceProsody";
-import { mixLines, mmss, fingerprintText, STIMULUS_LABEL, MOMENT_TEXT } from "@/lib/viewerText";
+import { mixLines, mmss, fingerprintText, STIMULUS_LABEL, MOMENT_TEXT, hudEventText, HUD_LOOK_BASIS } from "@/lib/viewerText";
 import { momentsOf, peakText, NO_PEAK_TEXT, labelRows, LABEL_LAYOUT } from "@/lib/sessionCompare";
 import s from "../story/story.module.css";
 import f from "./film.module.css";
@@ -491,7 +491,10 @@ export default function FilmPage() {
         adjustRef.current = { ...a, mode: a.u === 0 ? "ended" : "return", t: film.t };
       }
 
-      setHud({ ...snap, t: film.t, params: paramsRef.current, lastEvidence: d.st.lastEvidence, camStatus, events: sensorRef.current?.report?.().events || [] });
+      // HUD 사건 표의 갈래(돌아봄·움찔만·보고만 있음·반응 없음)는 집중도 센서 레코드(닫힌 것 + 진행 중 잠정)로 — 카드·비교 화면과 같은 기준(B102)
+      const engHud = engagementRef.current?.data?.();
+      setHud({ ...snap, t: film.t, params: paramsRef.current, lastEvidence: d.st.lastEvidence, camStatus, events: sensorRef.current?.report?.().events || [],
+        stim: engHud ? [...(engHud.stimuli || []), ...(engHud.active || [])] : [] });
     }, 250);
     return () => clearInterval(id);
   }, [phase, camStatus]);
@@ -946,6 +949,7 @@ export default function FilmPage() {
   // 자막은 줄 사이에 지워지므로(B118) line 이 아니라 talkStarted 로 접는다 — 줄마다 펼쳤다 접히며 깜빡이지 않게.
   const hudFold = (phase === "scene" && talkStarted) || phase === "bus";
   const hudEvents = snap?.events || [];
+  const hudStim = new Map((snap?.stim || []).map((st) => [st.name, st])); // 사건 이름 → 집중도 레코드(B102)
   const lastEvent = hudEvents.length ? hudEvents[hudEvents.length - 1] : null;
   const lastEventTop = lastEvent ? ["R", "H", "C"].sort((a, b) => lastEvent[b] - lastEvent[a])[0] : null;
   // 종료 카드 배합 두 줄 — 판정 때 배합이 주 문장, 끝 배합은 "판정 뒤 흐름"(lib/viewerText.js, 비교 화면과 같은 규칙)
@@ -1033,15 +1037,11 @@ export default function FilmPage() {
                 return (
                   <div key={e.name} className={f.evRow}>
                     <span>{EVENT_LABEL[e.name] || e.name}</span>
-                    <span className={s.dim} title="임계값: LOOK_TOLERANCE_DEG=28 · STARTLE_YAW_VEL=140 · RETREAT_M=0.07 · SUSTAIN_SEC=2.0 (lib/headPoseSense.js)">
-                      {/* 라벨과 값 사이 띄어쓰기를 "봤음 1.2s" 와 맞추고(B120), 좁은 칸에서 "속도 / 492°/s" 로 갈리지 않게 붙인다(B65) */}
-                      {glueNumbers([
-                        e.feats.looked ? `봤음 ${e.feats.lookSec.toFixed(1)}s` : "안 봄",
-                        e.feats.recheck ? " · 재확인" : "",
-                        ` · 속도 ${e.feats.maxVel.toFixed(0)}°/s`,
-                        ` · 후퇴 ${e.feats.retreat.toFixed(2)}m`,
-                        e.feats.recoverySec != null ? ` · 회복 ${e.feats.recoverySec.toFixed(1)}s` : "",
-                      ].join(""))}
+                    <span className={s.dim} title={`${HUD_LOOK_BASIS} · 임계값: LOOK_TOLERANCE_DEG=28 · STARTLE_YAW_VEL=140 · RETREAT_M=0.07 · SUSTAIN_SEC=2.0`}>
+                      {/* 옛 "봤음 2.4s / 안 봄" 은 응시 여부라 모니터 θ̂ "응답 6/6" 과 어긋나 보였다(개구리 "안 봄" 인데 509°/s 로 응답) — 카드·비교 화면과 같은
+                          네 갈래 이름(돌아봄·움찔만·보고만 있음·반응 없음 · viewerText.hudEventText · B102). 라벨과 값 사이 띄어쓰기(B120) · 좁은 칸에서
+                          "속도 / 492°/s" 로 갈리지 않게 붙인다(B65) */}
+                      {glueNumbers(hudEventText(e.feats, hudStim.get(e.name)))}
                     </span>
                     <span style={{ color: GENRE_META[top].accent }}>{GENRE_META[top].label} {Math.round(e[top] * 100)}</span>
                   </div>

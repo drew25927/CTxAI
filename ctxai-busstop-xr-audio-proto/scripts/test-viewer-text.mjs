@@ -1,6 +1,6 @@
 // 관객 결과 문장 회귀 테스트(B86·B84·B117·B121) — 종료 카드·비교 화면의 배합 줄이 판정과 모순되지 않고, 반응 지문·집중한 순간이 세 화면에서 같은 규칙으로 나온다
 import assert from "node:assert/strict";
-import { mixText, verdictOf, mixLines, mmss, GENRE_LABEL, fingerprintText, focusText, focusSpan, MOMENT_TEXT, MOMENT_BASIS, talkAt, sceneAt, stimulusLabel, filmTimeEvents, prevStimulus } from "../lib/viewerText.js";
+import { mixText, verdictOf, mixLines, mmss, GENRE_LABEL, fingerprintText, focusText, focusSpan, MOMENT_TEXT, MOMENT_BASIS, talkAt, sceneAt, stimulusLabel, filmTimeEvents, prevStimulus, lookKind, LOOK_KIND_SHORT, hudEventText, HUD_LOOK_BASIS, RESPONSE_BASIS } from "../lib/viewerText.js";
 
 let n = 0;
 function test(name, fn) { try { fn(); n++; console.log("ok ", name); } catch (e) { console.log("FAIL", name, "—", e.message); process.exitCode = 1; } }
@@ -258,6 +258,45 @@ test("focusText(B237·B242): 사건·대사·장면 이름이 없으면 앞에 �
   assert.equal(focusText({ focusSegments: [before] }, { events: ev, stimuli, labelOf: (n) => `S5 ${stimulusLabel(n)}` }), "S5 개구리 뒤 (1:51 · 판정 전)");
   assert.equal(focusText({ focusSegments: [before] }, { events: ev }), "판정 전 1:51 무렵");
   assert.equal(focusText({ focusSegments: [{ t0: 16.3, t1: 18.3, near: { name: "figureApproach" }, before: true }] }, { events: ev }), "우비 인물 (0:16 · 판정 전)");
+});
+
+// B102 — 사건별 반응 갈래는 한 함수(lookKind)로: 종료 카드·비교 화면(lookResponses)·/film HUD 사건 표가 같은 이름을 쓴다
+test("lookKind(B102): 네 갈래 — turned 우선 · responded 면 움찔만 · atOnset 이면 보고만 있음 · 옛 레코드는 looked · 헤드 포즈 feats 는 둘로만", () => {
+  assert.equal(lookKind({ turned: 1, responded: 1, atOnset: 0, looked: 1 }), "turned");
+  assert.equal(lookKind({ turned: 0, responded: 1, atOnset: 0, looked: 0 }), "flinched", "돌아보지 않고 509°/s 로 움찔한 개구리");
+  assert.equal(lookKind({ turned: 0, responded: 1, atOnset: 1, looked: 1 }), "flinched", "보고 있던 사건에 움찔해도 움찔만(B158)");
+  assert.equal(lookKind({ turned: 0, responded: 0, atOnset: 1, looked: 1 }), "watched", "atOnset 이라 looked 가 켜져도 돌아본 것이 아니다");
+  assert.equal(lookKind({ turned: 0, responded: 0, atOnset: 0, looked: 0 }), "missed");
+  assert.equal(lookKind({ looked: 1 }), "turned", "turned 가 없는 B158 이전 레코드는 looked");
+  assert.equal(lookKind({ looked: 0 }), "missed");
+  assert.equal(lookKind({ looked: false, maxVel: 509, retreat: 0.04 }), "missed", "헤드 포즈 feats 만 있으면 속도로 움찔을 가르지 않는다(lookResponses 옛 세션 규칙과 같음)");
+  assert.equal(lookKind(null), null);
+  assert.deepEqual(Object.keys(LOOK_KIND_SHORT), ["turned", "flinched", "watched", "missed"]);
+  for (const k of Object.keys(LOOK_KIND_SHORT)) assert.ok(MOMENT_TEXT[k].startsWith(LOOK_KIND_SHORT[k].slice(0, 2)), `${k}: HUD "${LOOK_KIND_SHORT[k]}" 와 카드 "${MOMENT_TEXT[k]}" 가 같은 낱말로 시작`);
+});
+
+test("hudEventText(B102): /film HUD 사건 표가 '봤음/안 봄' 대신 카드와 같은 갈래 이름 — 개구리(안 봄 · 509°/s)는 '움찔만'", () => {
+  const frog = { looked: false, lookSec: 0, maxVel: 509, retreat: 0.04, recoverySec: null, recheck: 0 };
+  const frogRec = { name: "frog", turned: 0, responded: 1, atOnset: 0, looked: 0 };
+  assert.equal(hudEventText(frog, frogRec), "움찔만 · 속도 509°/s · 후퇴 0.04m");
+  const poster = { looked: true, lookSec: 2.4, maxVel: 492, retreat: 0.03, recoverySec: 1.1, recheck: 0 };
+  assert.equal(hudEventText(poster, { turned: 1, responded: 1, atOnset: 0, looked: 1 }), "돌아봄 2.4s · 속도 492°/s · 후퇴 0.03m · 회복 1.1s");
+  const spray = { looked: true, lookSec: 3.9, maxVel: 307, retreat: 0.09, recoverySec: null, recheck: 1 };
+  assert.equal(hudEventText(spray, { turned: 0, responded: 0, atOnset: 1, looked: 1 }), "보고만 있음 3.9s · 재확인 · 속도 307°/s · 후퇴 0.09m");
+  assert.equal(hudEventText(frog, { ...frogRec, provisional: 1, elapsed: 1.2 }), "움찔만 · 잠정 · 속도 509°/s · 후퇴 0.04m", "진행 중 잠정 레코드");
+  assert.equal(hudEventText({ looked: false, lookSec: 1.2, maxVel: 20, retreat: 0, recoverySec: null, recheck: 0 }, { turned: 0, responded: 0, atOnset: 0, looked: 1 }), "반응 없음 · 응시 1.2s · 속도 20°/s · 후퇴 0.00m", "응답 창 뒤에 늦게 본 사건은 응시 초를 따로");
+  // 레코드가 없으면(집중도 센서 없음·옛 세션) 헤드 포즈 looked 로 둘만 — lookResponses 의 옛 세션 규칙과 같다
+  assert.equal(hudEventText(frog, null), "반응 없음 · 속도 509°/s · 후퇴 0.04m");
+  assert.equal(hudEventText(poster, undefined), "돌아봄 2.4s · 속도 492°/s · 후퇴 0.03m · 회복 1.1s");
+  assert.equal(hudEventText({}, null), "반응 없음 · 속도 0°/s · 후퇴 0.00m", "feats 가 비어도 깨지지 않는다");
+  for (const t of [hudEventText(frog, frogRec), hudEventText(frog, null), hudEventText(poster, null)]) assert.ok(!/봤음|안 봄/.test(t), t);
+});
+
+test("HUD·모니터 기준 문장(B102): 툴팁이 네 갈래 기준과 '응답 = 돌아봄 + 움찔만(봤는지와 별개)' 을 같은 수치로 적는다", () => {
+  assert.ok(HUD_LOOK_BASIS.includes("±28°") && HUD_LOOK_BASIS.includes("60°/s") && HUD_LOOK_BASIS.includes("0.07m"), HUD_LOOK_BASIS);
+  assert.ok(HUD_LOOK_BASIS.includes('"응답" = 돌아봄 + 움찔만'), HUD_LOOK_BASIS);
+  assert.ok(RESPONSE_BASIS.startsWith("응답 = 돌아봄 + 움찔만") && RESPONSE_BASIS.includes("봤는지(응시)와 별개"), RESPONSE_BASIS);
+  for (const k of Object.keys(LOOK_KIND_SHORT)) assert.ok(HUD_LOOK_BASIS.includes(LOOK_KIND_SHORT[k]), `툴팁에 "${LOOK_KIND_SHORT[k]}"`);
 });
 
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);
