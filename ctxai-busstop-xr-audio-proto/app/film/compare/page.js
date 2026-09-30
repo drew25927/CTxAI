@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import s from "../../story/story.module.css";
 import f from "../film.module.css";
 import { mixLines, verdictOf, mmss, fingerprintText, MOMENT_TEXT, MOMENT_BASIS } from "@/lib/viewerText";
-import { labelRows, LABEL_LAYOUT, sessionRoute, sessionBadges, directionChangeText, xhatSeries, eventMarks, judgeTime, judgeLine, lookResponses, lookText, momentsOf, peakText, NO_PEAK_TEXT, xhatGap, pairWarning, biasOf, movieTrajectory, markBefore, eventPeaks, leaderBands } from "@/lib/sessionCompare";
+import { lengthNote, labelRows, LABEL_LAYOUT, sessionRoute, sessionBadges, directionChangeText, xhatSeries, eventMarks, judgeTime, judgeLine, lookResponses, lookText, momentsOf, peakText, NO_PEAK_TEXT, xhatGap, pairWarning, biasOf, movieTrajectory, markBefore, eventPeaks, leaderBands } from "@/lib/sessionCompare";
 import { observedSegments } from "@/lib/tensionEstimate";
 
 const GENRE = { R: { label: "로맨스", accent: "#f2a7c0" }, H: { label: "공포", accent: "#8fae95" }, C: { label: "블랙코미디", accent: "#e0a86a" } };
@@ -219,6 +219,7 @@ export default function ComparePage() {
   const sb = useMemo(() => xhatSeries(b), [b]);
   const ma = useMemo(() => momentsOf(a), [a]); // 두 순간(B144) — 종료 카드와 같은 함수
   const mb = useMemo(() => momentsOf(b), [b]);
+  const lenNote = useMemo(() => lengthNote(a, b), [a, b]); // /film 쌍의 길이 차이와 원인(B221) — 배합 그래프 아래 범례
   // 라우트가 다르면(/interim vs /film) 사건 시각표가 달라 같은 시각끼리의 차이는 뜻이 없다 — 경고만 보이고 차이 줄은 뺀다
   const gap = useMemo(() => (a && b && sessionRoute(a) !== sessionRoute(b) ? null : xhatGap(sa, sb)), [a, b, sa, sb]);
   const warn = pairWarning(a, b);
@@ -252,6 +253,8 @@ export default function ComparePage() {
           {["R", "H", "C"].map((g) => <span key={g}><i style={{ background: GENRE[g].accent }} />{GENRE[g].label}</span>)}
           <span className={s.dim}>위 칸 A · 아래 칸 B · 칸 위 띠 = 그 시각 선두 장르(회색 = 비슷함)</span>
         </div>
+        {/* /film 쌍의 길이 차이와 원인(B221) — 범례 flex 행 안에 두면 두 줄로 접혀 그래프 오른쪽 끝을 넘어가므로 한 문단으로 */}
+        {lenNote && <p className={s.dim} style={{ margin: "2px 0 0", fontSize: 12 }}>{lenNote}</p>}
         {(sa.length > 0 || sb.length > 0) && (
           <div style={{ margin: "14px 0 6px" }}>
             <p style={{ margin: "0 0 4px", fontSize: 14, color: "rgba(255,255,255,0.88)" }}>

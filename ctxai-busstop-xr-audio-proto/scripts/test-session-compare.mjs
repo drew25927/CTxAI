@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   sessionRoute, biasOf, movieEvents, movieTrajectory, sessionBadges, directionChangeText, actuationStats,
   xhatSeries, eventMarks, markBefore, MARK_NEAR_SEC, judgeTime, judgeLine, lookResponses, lookText, xhatPeak, xhatGap, pairWarning,
-  momentsOf, peakText, NO_PEAK_TEXT, leaderBands, labelRows, labelWidth, labelOverlaps, LABEL_LAYOUT, eventPeaks, EVENT_PEAK_SPAN_SEC,
+  momentsOf, peakText, NO_PEAK_TEXT, leaderBands, labelRows, labelWidth, labelOverlaps, LABEL_LAYOUT, eventPeaks, EVENT_PEAK_SPAN_SEC, lengthNote,
 } from "../lib/sessionCompare.js";
 import { interimAdapt } from "../lib/interimAdapt.js";
 
@@ -111,7 +111,7 @@ test("directionChangeText(B96): /film ON 은 슬롯 변형·미세 자극·연�
   assert.match(on, /개구리 한 번\(볼륨 0\.5\)/);
   assert.match(on, /고양이 장난스럽게\(볼륨 0\.5\)/);
   assert.match(on, /미세 자극 2회/);
-  assert.match(on, /연속 구동 2틱 평균 u \+0\.60/);
+  assert.match(on, /연속 구동 2틱 평균 u \+0\.60 \(ON 구동량 평균 · 침묵 \+0\.40s/, "괄호 값은 ON 켜진 틱의 구동량 평균 자체 — 수치표 B3(ON−OFF 최근접 짝 평균)와 정의가 다르다(B236)");
   assert.match(on, /침묵 \+0\.40s/);
   assert.match(on, /거리 \+0\.15m/);
   assert.match(on, /시선 −8%/);
@@ -376,5 +376,38 @@ test("사건별 봉우리(B222): 눈금마다 다음 눈금 전(최대 12초) �
   assert.deepEqual(eventPeaks(sr, []), []);
   // fromStim 없는 옛 계열({t,tension})은 관측으로 본다(xhatPeak 와 같은 규칙)
   assert.deepEqual(eventPeaks([{ t: 12, tension: 0.7 }], [{ t: 11, name: "S1" }]), [{ name: "S1", t: 12, tension: 0.7 }]);
+});
+test("momentsOf(B231): 옛 세션(요약에 focusSegments 없음)도 저장된 창·집중도 계열이 있으면 사건 관측 밖·첫 사건 뒤 창으로 다시 고른다 — b152 OFF 의 '가장 차분히 집중한 순간 비명 (0:52)'", () => {
+  // 실제 b152 OFF 세션을 줄인 모양: 비명 사건 창(52.6~54.5 · stimRatio 1)이 점수 최고(0.862), 판정 직후 창(62.7~64.7 · 사건 밖)이 그다음(0.855)
+  const windows = [{ t0: 50.6, t1: 52.6, angVelRms: 5, stimRatio: 0 }, { t0: 52.6, t1: 54.5, angVelRms: 40, stimRatio: 1 }, { t0: 62.7, t1: 64.7, angVelRms: 3, stimRatio: 0 }];
+  const engagement = [{ t: 52.6, score: 0.7 }, { t: 54.5, score: 0.862 }, { t: 64.7, score: 0.855 }];
+  const summary = { topSegments: [{ t0: 52.6, t1: 54.5, score: 0.862, near: { name: "catScream", onset: 52.04 } }] };
+  const events = [...OFF.events, { t: 58, kind: "event", name: "phase", detail: "judged" }, { t: 69, kind: "event", name: "phase", detail: "scene" }];
+  const sess = { ...OFF, events, engagement: { windows, stimuli: [stim("catScream", 52.04, 1)], engagement, summary } };
+  const m = momentsOf(sess);
+  assert.deepEqual([m.calm.t0, m.calm.t1], [62.7, 64.7]);
+  assert.equal(m.calm.text, "판정 직후 (1:02)");
+  assert.equal(momentsOf({ ...sess, engagement: { ...sess.engagement, engagement: undefined } }).calm.text, "비명 (0:52)", "점수 계열이 없는 옛 세션은 종전대로 topSegments");
+  assert.equal(momentsOf({ ...sess, engagement: { ...sess.engagement, summary: { ...summary, focusSegments: [] } } }).calm, null, "새 요약은 그대로 쓴다(비어 있으면 없음)");
+  const fast = momentsOf({ ...sess, speed: 4 });
+  assert.deepEqual([fast.calm.t0, fast.calm.t1], [250.8, 258.8], "배속 회차는 × speed");
+});
+
+test("lengthNote(B221): /film 쌍의 버스 도착 시각 차이와 원인 — 제어 ON 의 침묵 오프셋이 대사마다 쌓임 · 콜백 대사 유무. /interim·1초 미만·한쪽 없음은 null", () => {
+  const ph = (t, d) => ({ t, kind: "event", name: "phase", detail: d });
+  const on = { ...ON, events: [...ON.events, ph(0, "intro"), ph(69, "scene"), ph(157.2, "bus"), ph(180.5, "end")] };
+  const off = { ...OFF, events: [...OFF.events, ph(0, "intro"), ph(69, "scene"), ph(150.1, "bus"), ph(173.4, "end"), { t: 120, kind: "event", name: "callback", detail: { seq: "R-01" } }] };
+  assert.equal(lengthNote(on, off), "길이 차이 +7.1초(버스 도착 A 2:37 · B 2:30) = 제어 ON(A)의 대사 간격 제어(침묵 +0.40s)가 대사마다 쌓임 · 콜백 대사 A 0 · B 1");
+  assert.equal(lengthNote(off, on), "길이 차이 −7.1초(버스 도착 A 2:30 · B 2:37) = 제어 ON(B)의 대사 간격 제어(침묵 +0.40s)가 대사마다 쌓임 · 콜백 대사 A 1 · B 0");
+  assert.equal(lengthNote(off, { ...off, events: off.events.map((e) => (e.detail === "bus" ? { ...e, t: 150.9 } : e)) }), null, "1초 미만은 적지 않는다");
+  assert.equal(lengthNote(FEARFUL, CALM), null, "/interim 은 타임라인 고정");
+  assert.equal(lengthNote(on, null), null);
+  assert.equal(lengthNote(ON, OFF), null, "phase 이벤트가 없으면 null");
+  // 버스 도착이 없으면 마지막 phase(라벨 "끝") · 긴 쪽이 OFF 면 원인 없이 차이와 콜백 수만
+  const offB = { ...off, events: off.events.filter((e) => e.detail !== "bus" && e.name !== "callback").map((e) => (e.detail === "end" ? { ...e, t: 178.4 } : e)) };
+  assert.equal(lengthNote(off, offB), "길이 차이 −28.3초(A 버스 도착 2:30 · B 끝 2:58) · 콜백 대사 A 1 · B 0");
+  // 배속 회차는 영화 시간으로(movieEvents × speed)
+  const fast = { ...on, speed: 4, events: on.events.map((e) => ({ ...e, t: e.t / 4 })) };
+  assert.match(lengthNote(fast, off), /^길이 차이 \+7\.1초\(버스 도착 A 2:37 · B 2:30\)/);
 });
 console.log(`\n${n} passed`);

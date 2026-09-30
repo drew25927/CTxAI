@@ -215,4 +215,15 @@ test("focusText(/interim): cue 이벤트(judge·greeting)로 장면을 찾는다
   assert.equal(talkAt(ev, 126), null);
 });
 
+test("focusSpan·focusText(B231): 요약에 focusSegments 가 있으면 topSegments 대신 그것만(사건 밖 창 · 사건 이름 없음), 비어 있으면 없음, 없는 옛 요약은 topSegments", () => {
+  // b152 OFF 세션의 모양 — topSegments[0] 은 비명 사건 창(52.6~54.5), focusSegments[0] 은 판정 직후 창(62.7~64.7)
+  const sum = { topSegments: [{ t0: 52.6, t1: 54.5, score: 0.862, near: { name: "catScream", onset: 52.04 } }], focusSegments: [{ t0: 62.7, t1: 64.7, score: 0.855, near: null }] };
+  assert.deepEqual(focusSpan(sum), { t0: 62.7, t1: 64.7, near: null });
+  assert.equal(focusText(sum, { events: FILM_EVENTS }), "판정 직후 (1:02)");
+  assert.deepEqual(focusSpan(sum, 4), { t0: 250.8, t1: 258.8, near: null }, "배속이면 × speed");
+  assert.equal(focusSpan({ topSegments: sum.topSegments, focusSegments: [] }), null, "사건 밖 창이 하나도 없으면 calm 없음 — topSegments 로 돌아가지 않는다");
+  assert.equal(focusText({ topSegments: sum.topSegments }, { events: FILM_EVENTS }), "비명 (0:52)", "focusSegments 없는 옛 요약은 종전 규칙");
+  assert.ok(MOMENT_BASIS.some((b) => b.startsWith("가장 차분히 집중 = 사건 사이 창(사건 관측 밖 · 첫 사건 뒤) 중 집중도 점수 최고 2초")), "읽는 법이 후보 범위를 밝힌다");
+});
+
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);

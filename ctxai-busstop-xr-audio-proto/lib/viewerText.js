@@ -183,9 +183,13 @@ export function focusText(summary, ctx = {}) {
   return `${when} 무렵`;
 }
 
-/** "가장 차분히 집중한 순간" 의 구간(영화 시간) — 그래프에 띠로 칠할 때 쓴다. 없으면 null. */
+/**
+ * "가장 차분히 집중한 순간" 의 구간(영화 시간) — 그래프에 띠로 칠할 때 쓴다. 없으면 null.
+ * 요약에 focusSegments(사건 관측 밖 · 첫 사건 뒤 창 · engagementSense.focusSegmentsOf · B231)가 있으면 그것만 쓴다(비어 있으면 없음).
+ * focusSegments 가 없는 옛 요약은 topSegments(점수 최고 · 사건 창일 수 있음)로 — 옛 세션은 sessionCompare.momentsOf 가 창·점수 계열로 다시 만든다.
+ */
 export function focusSpan(summary, speed = 1) {
-  const seg = summary?.topSegments?.[0];
+  const seg = summary?.focusSegments ? summary.focusSegments[0] : summary?.topSegments?.[0];
   if (!seg) return null;
   const sp = speed || 1;
   return { t0: seg.t0 * sp, t1: (seg.t1 ?? seg.t0) * sp, near: seg.near?.name || null };
@@ -199,9 +203,10 @@ export function focusSpan(summary, speed = 1) {
  *                          사건이 시작될 때 이미 그쪽을 보고 있었고 움찔하지도 않았으면 "보고만 있던" — 돌아본 것도, 놓친 것도 아니다(B158).
  *  peak                    긴장 추정 x̂ 최고 — 반응의 크기. 돌아보지 않은 사건이 여기 올 수 있다(1배속 /film ON 공포형의 개구리:
  *                          135° 뒤라 돌아보지 않았지만 511°/s 로 움찔해 x̂ 1.00).
- *  calm                    집중도 점수 최고 2초 — 사건 반응률·잔움직임 억제·의도 방향 응시의 합성(lib/engagementSense.js).
- *                          크게 반응한 순간과 다른 때일 때가 많다(움직임이 가라앉아야 점수가 오른다) — 1배속 /interim 공포형은 S5 개구리(1:37)
- *                          vs 인사 장면(2:15), 차분형은 둘 다 S1 우비 인물(0:16)이었다.
+ *  calm                    사건 사이 창(사건 관측 밖 · 첫 사건 뒤) 중 집중도 점수 최고 2초 — 사건 반응률·잔움직임 억제·의도 방향 응시의 합성
+ *                          (lib/engagementSense.js focusSegmentsOf · B231). 사건 창은 사건 쪽으로 고개를 돌려 멈춘 창이라 점수가 구조적으로 높아
+ *                          "가장 차분히 집중한 순간 비명 (0:52)"(1배속 /film OFF)이 나왔다 — 그래서 사건 창은 후보에서 뺀다. 크게 반응한 순간과
+ *                          다른 때일 때가 많다 — 1배속 /interim 공포형은 S5 개구리(1:37) vs 전환 장면(2:12), /film OFF 는 개구리(0:38) vs 판정 직후(1:02).
  * 옛 이름("본 것/안 본 것"·"가장 집중"·"x̂ 최고")은 기준을 밝히지 않아 "안 본 개구리가 x̂ 최고" 가 모순으로 읽혔다.
  */
 export const MOMENT_TEXT = {
@@ -217,5 +222,5 @@ export const MOMENT_BASIS = [
   "움찔만 = 고개가 빠르게 움직였지만 사건 쪽으로 돌아보지는 않음(이미 보던 사건에 움찔한 경우 포함)",
   "보고만 있던 = 사건이 시작될 때 이미 그쪽을 보고 있었고 움찔하지 않음",
   "가장 크게 반응 = 사건 반응이 있는 순간 중 긴장 추정 x̂ 최고(반응의 크기 · 상한 1.0 에 닿은 봉우리가 여럿이면 잘리기 전 값으로 가름)",
-  "가장 차분히 집중 = 집중도 점수 최고 2초(사건 반응률·잔움직임 억제·의도 방향 응시)",
+  "가장 차분히 집중 = 사건 사이 창(사건 관측 밖 · 첫 사건 뒤) 중 집중도 점수 최고 2초(사건 반응률·잔움직임 억제·의도 방향 응시)",
 ];

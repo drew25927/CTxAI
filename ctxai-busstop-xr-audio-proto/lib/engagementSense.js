@@ -188,6 +188,26 @@ function nearestStimulus(stimuli, t) {
   return best && best.d <= 20 ? { name: best.name, onset: best.onset } : null;
 }
 
+/**
+ * "가장 차분히 집중한 순간" 의 후보 구간(B231) — 집중도 점수 최고 창을 고르되 사건 관측 창은 뺀다.
+ * 집중도 점수(탐침 응답률 · 잔움직임 억제 · 의도 방향 응시)는 사건 쪽으로 고개를 돌려 멈춘 창에서 응답률·의도 항이 함께 올라
+ * 사건 창(stimRatio > 0)이 구조적으로 1위가 된다 — 1배속 /film OFF 공포형의 카드가 "가장 차분히 집중한 순간 비명 (0:52)" 을 적었다.
+ * "차분히" 는 사건 사이 창에서만 뜻이 서므로 후보를 사건 관측 밖 창으로 좁히고, 첫 사건 전 창(점수가 사전값뿐이라 반응이 없는 관객은
+ * 0:00 이 뽑힌다)도 뺀다. 후보가 없으면 첫 사건 전 창까지 넓힌다(잠정 규칙). 사건 이름(near)은 붙이지 않는다 — 20초 안 최근접 사건을
+ * 붙이면 "비명 (1:02)" 처럼 사건 뒤 창이 사건 이름을 받는다. topSegments(점수 최고 · 사건 이름 포함)는 그대로 둔다(내보내기 스크립트).
+ * @param {{windows?:Array, stimuli?:Array, engagement?:Array}} r  창(stimRatio) · 탐침 레코드(onset) · 창별 집중도 점수(index 가 windows 와 같다)
+ * @returns {Array<{t0:number,t1:number,score:number,near:null}>}  점수 내림차순(이웃 창 병합) · 창이 없으면 []
+ */
+export function focusSegmentsOf({ windows = [], stimuli = [], engagement = [] } = {}, P = ENGAGE_PARAMS) {
+  const scored = engagement.map((e, i) => ({ t0: windows[i]?.t0 ?? e.t - P.WINDOW_SEC, t1: e.t, score: e.score, stim: windows[i]?.stimRatio ?? 0 }));
+  const free = scored.filter((s) => s.stim === 0);
+  const firstOnset = stimuli.length ? Math.min(...stimuli.map((s) => s.onset)) : -Infinity;
+  const after = free.filter((s) => s.t0 >= firstOnset);
+  const pool = after.length ? after : free;
+  const byScore = [...pool].sort((a, b) => b.score - a.score);
+  return mergeSegments(byScore.slice(0, 3), P.WINDOW_SEC + 0.5).sort((a, b) => b.score - a.score).map((seg) => ({ ...seg, near: null }));
+}
+
 /** 세션 하나의 요약 — 종료 카드와 내보내기 스크립트가 같은 함수를 쓴다. */
 export function summarizeEngagement({ windows = [], stimuli = [], engagement = [] } = {}, P = ENGAGE_PARAMS) {
   const mean = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null);
@@ -210,6 +230,7 @@ export function summarizeEngagement({ windows = [], stimuli = [], engagement = [
     fidgetMean: r2(mean(windows.map((w) => w.angVelRms)) ?? 0),
     intentMatchMean: intentVals.length ? r3(mean(intentVals)) : null,
     topSegments: top,
+    focusSegments: focusSegmentsOf({ windows, stimuli, engagement }, P), // 카드·비교 화면의 "가장 차분히 집중한 순간"(B231)
     lowSegments: low,
     laughEpisodes: mergeSegments(laughWins, P.WINDOW_SEC + 0.5),
     dropPoint: changePoint(engagement),

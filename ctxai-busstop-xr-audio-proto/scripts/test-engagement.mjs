@@ -2,7 +2,7 @@
 // 합성 자세 시퀀스(72Hz)로 잔움직임 창·탐침 레코드·집중도 합성·요약이 설계 문서(§4.6)대로 나오는지 본다.
 
 import assert from "node:assert/strict";
-import { createEngagementSensor, windowFeatures, changePoint, summarizeEngagement, ENGAGE_PARAMS } from "../lib/engagementSense.js";
+import { createEngagementSensor, windowFeatures, changePoint, summarizeEngagement, focusSegmentsOf, ENGAGE_PARAMS } from "../lib/engagementSense.js";
 
 let n = 0;
 function test(name, fn) { try { fn(); n++; console.log("ok ", name); } catch (e) { console.log("FAIL", name, "—", e.message); process.exitCode = 1; } }
@@ -286,6 +286,29 @@ test("잠정 레코드: track 종류(S1 94초)는 응시 중이면 닫히기 훨
 
 test("windowFeatures 는 표본 4개 미만이면 null", () => {
   assert.equal(windowFeatures([{ t: 0, yaw: 0, pitch: 0, roll: 0, x: 0, y: 0, z: 0 }], { yaw: 0, pitch: 0, z: 0 }, ENGAGE_PARAMS), null);
+});
+
+test("요약 focusSegments(B231): 가장 차분히 집중한 구간은 사건 관측 밖(stimRatio 0)·첫 사건 뒤 창에서 고르고 사건 이름을 붙이지 않는다 — topSegments 는 종전 규칙 그대로", () => {
+  // 0~60초 2초 창 30개 — 사건 창(20~26초 · stimRatio 1)이 0.9 로 점수 최고, 첫 사건(포스터 6초) 전 세 창이 0.85, 사건 뒤 40~42초가 0.8
+  const windows = [], engagement = [];
+  for (let i = 0; i < 30; i++) {
+    const t1 = (i + 1) * 2, inStim = i >= 10 && i <= 12;
+    windows.push({ t0: t1 - 2, t1, angVelRms: 5, intentMatch: null, stimRatio: inStim ? 1 : 0 });
+    engagement.push({ t: t1, score: inStim ? 0.9 : i < 3 ? 0.85 : i === 20 ? 0.8 : 0.4, calm: 0.5, laugh: 0 });
+  }
+  const stimuli = [{ name: "cat", onset: 21, responded: 1, preLook: 0 }, { name: "poster", onset: 6, responded: 0, preLook: 0 }];
+  const sum = summarizeEngagement({ windows, stimuli, engagement });
+  assert.equal(sum.topSegments[0].near?.name, "cat", "topSegments 는 사건 창 · 사건 이름(종전)");
+  assert.deepEqual(sum.focusSegments[0], { t0: 40, t1: 42, score: 0.8, near: null }, "사건 창(0.9)과 첫 사건 전 창(0.85)을 빼고 사건 뒤 최고");
+  assert.deepEqual(focusSegmentsOf({ windows, stimuli, engagement }), sum.focusSegments, "요약과 같은 함수");
+  // 첫 사건 뒤에 사건 밖 창이 없으면 첫 사건 전 창까지 넓힌다(이웃 창 병합)
+  assert.deepEqual(focusSegmentsOf({ windows: windows.slice(0, 3), stimuli, engagement: engagement.slice(0, 3) }), [{ t0: 0, t1: 6, score: 0.85, near: null }]);
+  // 사건이 없으면 사건 밖 창 전부가 후보 · 창이 없으면 []
+  assert.equal(focusSegmentsOf({ windows, stimuli: [], engagement })[0].t0, 0);
+  assert.deepEqual(focusSegmentsOf({ windows: [], stimuli, engagement: [] }), []);
+  // stimRatio 가 없는 옛 창은 사건 밖으로 본다
+  const old = windows.map(({ stimRatio, ...w }) => w);
+  assert.deepEqual(focusSegmentsOf({ windows: old, stimuli, engagement })[0], { t0: 20, t1: 26, score: 0.9, near: null });
 });
 
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);

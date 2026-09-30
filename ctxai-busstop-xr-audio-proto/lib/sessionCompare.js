@@ -13,6 +13,7 @@
 // 순수 함수만 둔다(node 로 테스트: scripts/test-session-compare.mjs).
 
 import { estimateTensionSeries, isObserved } from "./tensionEstimate.js";
+import { focusSegmentsOf } from "./engagementSense.js";
 import { probeMarks } from "./interimProbes.js";
 import { T as INTERIM_T } from "./interimTimeline.js";
 import { adaptText } from "./interimAdapt.js";
@@ -86,7 +87,9 @@ export function sessionBadges(sess) {
  *  /interim  → control.adapt(판정 뒤 인사 구간의 관객별 연출 · B170b)가 있으면 그 네 값과 성향, 고정이면 그 이유. 옛 세션은 바꾼 것이 없다는 사실.
  *  /film OFF → 고정 연출.
  *  /film ON  → 슬롯 변형(개구리·고양이) · 미세 자극 횟수 · 연속 구동(켜진 틱의 평균 u 와 평균 오프셋).
- * 연속 구동의 오프셋은 deriveParams 기본값에 더한 값이라, 같은 관객의 OFF 회차 대비 차이와 같은 뜻이다.
+ * 연속 구동의 괄호 값은 켜진 틱의 구동량(deriveParams 기본값에 더한 오프셋) 평균 자체다 — 그래서 "ON 구동량 평균" 을 앞에 적는다(B236).
+ * 같은 관객의 OFF 회차 대비 차이(수치표 B3 · OFF 틱마다 영화 시각 최근접 ON 틱을 짝지은 ON−OFF 평균)와 방향은 같지만 가중이 달라
+ * 값이 조금 다르다(1배속 b152 쌍: 침묵 +0.49s vs +0.54s · 거리 +0.16m vs +0.18m).
  */
 export function directionChangeText(sess) {
   if (!sess) return "";
@@ -117,7 +120,7 @@ export function directionChangeText(sess) {
     if (shows(o.npcGaze * 100, 0)) axes.push(`시선 ${sgn(o.npcGaze * 100, 0)}%`);
     if (shows(o.fogDensity, 3)) axes.push(`안개 ${sgn(o.fogDensity, 3)}`);
     if (shows(o.bgmGain)) axes.push(`BGM ×${(1 + o.bgmGain).toFixed(2)}`);
-    parts.push(`연속 구동 ${act.active}틱 평균 u ${sgn(act.meanU)}${axes.length ? ` (${axes.join(" · ")})` : ""}`);
+    parts.push(`연속 구동 ${act.active}틱 평균 u ${sgn(act.meanU)}${axes.length ? ` (ON 구동량 평균 · ${axes.join(" · ")})` : ""}`);
   }
   return parts.length ? `이 관객에게 바꾼 연출: ${parts.join(" · ")}` : "제어 ON — 바꾼 연출이 기록되지 않았습니다";
 }
@@ -135,6 +138,40 @@ export function actuationStats(sess) {
   const meanOffsets = Object.fromEntries(keys.map((k) => [k, on.length ? r2(on.reduce((s, e) => s + (e.detail.offsets?.[k] || 0), 0) / on.length * 1000) / 1000 : 0]));
   const meanU = on.length ? r2(on.reduce((s, e) => s + (e.detail.u || 0), 0) / on.length) : 0;
   return { ticks: ticks.length, active: on.length, modes, meanU, meanOffsets };
+}
+
+/** 버스 도착 시각(영화 시간) — phase "bus" 이벤트, 없으면 마지막 phase(라벨 "끝"). phase 가 없으면 null. */
+function arrivalOf(sess) {
+  const ph = movieEvents(sess).filter((e) => e.name === "phase");
+  const bus = ph.find((e) => e.detail === "bus");
+  if (bus) return { t: bus.t, label: "버스 도착" };
+  return ph.length ? { t: ph[ph.length - 1].t, label: "끝" } : null;
+}
+
+/**
+ * 배합 그래프 아래 "길이 차이" 한 구절(B221) — /film 쌍에서 제어 ON 회차가 OFF 보다 길어 OFF 칸 궤적이 먼저 끝나 보이는 이유.
+ * 기준은 버스 도착(phase bus) 시각 — 판정 뒤 장면(대사 01~13)의 길이 차이가 여기까지 쌓인다(수치표 B4: b152 쌍 ON 2:37 · OFF 2:30 · +7.1초).
+ * 원인은 둘을 적는다: 긴 쪽이 제어 ON 이고 침묵 오프셋 평균이 양수면 "대사 간격 제어(침묵 +N s)가 대사마다 쌓임",
+ * 콜백 대사(callback 이벤트 · R-01)의 수가 다르면 그 수 — 콜백 가중치가 문턱 근처라 제어와 무관하게 갈린다(B174·B186).
+ * 둘 다 /film 이 아니거나 차이가 1초 미만이면 null. /interim 은 타임라인이 고정(2:20)이라 적지 않는다. 배속 회차는 movieEvents 로 영화 시간.
+ * @returns {string|null}
+ */
+export function lengthNote(a, b) {
+  if (!a || !b || sessionRoute(a) !== "film" || sessionRoute(b) !== "film") return null;
+  const A = arrivalOf(a), B = arrivalOf(b);
+  if (!A || !B) return null;
+  const d = A.t - B.t;
+  if (Math.abs(d) < 1) return null;
+  const where = A.label === B.label ? `${A.label} A ${mmss(A.t)} · B ${mmss(B.t)}` : `A ${A.label} ${mmss(A.t)} · B ${B.label} ${mmss(B.t)}`;
+  let text = `길이 차이 ${sgn(d, 1)}초(${where})`;
+  const longer = d > 0 ? "A" : "B";
+  const st = actuationStats(d > 0 ? a : b);
+  const sil = st.meanOffsets.npcSilence;
+  if (st.active && sil > 0) text += ` = 제어 ON(${longer})의 대사 간격 제어(침묵 ${sgn(sil)}s)가 대사마다 쌓임`;
+  const cb = (s) => (s.events || []).filter((e) => e.name === "callback").length;
+  const ca = cb(a), cbb = cb(b);
+  if (ca !== cbb) text += ` · 콜백 대사 A ${ca} · B ${cbb}`;
+  return text;
 }
 
 /**
@@ -353,8 +390,14 @@ export function momentsOf(sess, summary = sess?.engagement?.summary) {
   const series = xhatSeries(sess);
   const peak = xhatPeak(series, eventMarks(sess));
   const sp = sess?.speed || 1;
-  const span = focusSpan(summary, sp);
-  let text = span ? focusText(summary, { events: movieEvents(sess), speed: sp }) : null;
+  // 옛 세션(요약에 focusSegments 없음 · B231 전)은 저장된 창·집중도 점수 계열로 같은 규칙(사건 관측 밖 · 첫 사건 뒤 창)을 다시 계산한다.
+  // 종료 카드는 새 요약을 넘기고, 창·계열이 없는 요약은 종전대로 topSegments.
+  const eng = sess?.engagement;
+  const sum = summary && !summary.focusSegments && eng?.windows?.length && eng?.engagement?.length
+    ? { ...summary, focusSegments: focusSegmentsOf({ windows: eng.windows, stimuli: eng.stimuli || [], engagement: eng.engagement }) }
+    : summary;
+  const span = focusSpan(sum, sp);
+  let text = span ? focusText(sum, { events: movieEvents(sess), speed: sp }) : null;
   // /interim 은 사건 이름 앞에 S 번호 — 같은 카드의 "가장 크게 반응한 순간 S1 우비 인물" 과 표기를 맞춘다
   const sig = span?.near && sessionRoute(sess) === "interim" ? probeMarks().find((m) => m.name === span.near)?.label : null;
   if (sig) text = `${sig} ${text}`;
