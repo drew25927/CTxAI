@@ -3,7 +3,8 @@
 import assert from "node:assert/strict";
 import { simulateViewer, summarize, summarizeAtPeaks, ARCHETYPES, rng, randomViewer, SIM_PARAMS } from "../lib/tensionSim.js";
 import { MICRO_PARAMS } from "../lib/slotController.js";
-import { PROBE_DOSE } from "../lib/slotActuate.js";
+import { PROBE_DOSE, DECIDE_AT } from "../lib/slotActuate.js";
+import { tensionAt, TENSION_PARAMS } from "../lib/tensionEstimate.js";
 
 let n = 0;
 function test(name, fn) { try { fn(); n++; console.log("ok ", name); } catch (e) { console.log("FAIL", name, "—", e.message); process.exitCode = 1; } }
@@ -94,9 +95,18 @@ test("B87 현실 조건: 개구리·고양이 결정은 그 시각까지 닫힌 
   assert.ok(real.stimuli.every((r) => r.closeAt >= r.onset), "닫히는 시각은 자극 뒤");
   const off = simulateViewer({ track: "H", theta: ARCHETYPES.typical, mode: "off" });
   assert.ok(off.stimuli.every((r) => r.closeAt === r.onset), "기본값은 이상 조건(즉시 닫힘)");
+  // B194: 결정 x̂ 도 닫힌 레코드만 — 고양이 결정(DECIDE_AT.cat)에 개구리(37s) 반응 꼬리가 들어가면 안 된다(/film decideSlotNow 와 같다)
+  const P0 = { ...TENSION_PARAMS, BASE: 0 };
+  const catReal = real.plan.find((p) => p.slotId === "cat"), catIdeal = ideal.plan.find((p) => p.slotId === "cat");
+  const closed = real.stimuli.filter((r) => r.closeAt <= DECIDE_AT.cat);
+  assert.equal(closed.length, 2, "고양이 결정 시각에 닫힌 레코드는 포스터·물보라 둘");
+  assert.equal(catReal.x0, Math.round(Math.min(1, TENSION_PARAMS.BASE + tensionAt(closed, DECIDE_AT.cat, null, P0)) * 1000) / 1000, "현실 조건 결정 x̂ = 닫힌 레코드만의 값");
+  const withOpen = Math.min(1, TENSION_PARAMS.BASE + tensionAt(real.stimuli.filter((r) => r.onset <= DECIDE_AT.cat), DECIDE_AT.cat, null, P0));
+  assert.ok(catReal.x0 < withOpen - 0.02, `열린 개구리 꼬리를 넣으면 ${withOpen.toFixed(3)} > 닫힌 것만 ${catReal.x0}`);
+  assert.ok(catIdeal.x0 > catReal.x0, "이상 조건은 개구리 응답까지 넣어 더 높다");
 });
 
-// 40명에서는 H 가 현실 0.154 · 이상 0.153 으로 거의 같아(표본 흔들림) 120명으로 본다. sim:plot 200명: 봉우리 std H −16%→−13% · R −19%→−14% · C −14%→−12%.
+// 40명에서는 H 가 현실 0.154 · 이상 0.153 으로 거의 같아(표본 흔들림) 120명으로 본다. sim:plot 200명(B194 뒤): 봉우리 std H −16%→−10% · R −19%→−14% · C −14%→−8%.
 for (const track of ["H", "R", "C"]) test(`B87 ${track}: 현실 조건에서도 full 이 off 보다 봉우리 분산·목표 오차를 줄이지만, 감소 폭은 이상 조건보다 크지 않다 (무작위 120명)`, () => {
   const red = (o, f, k) => 1 - f[k] / o[k];
   const io = summarizeAtPeaks(cloud(track, "off", 120)), iF = summarizeAtPeaks(cloud(track, "full", 120));

@@ -14,7 +14,11 @@
 // 이상 조건 vs 현실 조건(B87) — 기본값은 이상 조건이다: 레코드가 자극 시각에 바로 닫혀 결정 순간 앞 자극의 응답을 전부 쓴다.
 // /film 은 레코드가 자극 뒤 dur + tail(4초) 에 닫히고(engagementSense observeUntil), 개구리·고양이는 DECIDE_AT 에 정한다.
 // `opts.realistic` 을 켜면 (1) 결정·θ̂ 적합에 그 시각까지 닫힌 레코드만 쓰고 (2) 결정 시각을 DECIDE_AT 으로 (3) 탐침 용량을
-// /film 큐 볼륨(PROBE_DOSE)으로 맞춘다. 관측 잡음(peakAmp 흔들림)과 제어 OFF 의 큐 볼륨 척도(0.8)는 넣지 않았다.
+// /film 큐 볼륨(PROBE_DOSE)으로 맞춘다. 결정에 쓰는 x̂ 도 그 시각까지 닫힌 레코드로만 계산한다(B194 — /film decideSlotNow 는
+// engagementSense.data() 의 닫힌 자극(done)만 보므로, 예컨대 고양이 결정(42s)에 개구리(37s) 반응 꼬리가 들어가지 않는다).
+//
+// 모델링하지 않은 것: 관측 잡음(peakAmp 흔들림) · 제어 OFF 의 큐 볼륨 척도(0.8) · /film 결정 x̂ 의 지연(실제 /film 은 마지막으로
+// 닫힌 2초 창 끝의 값을 쓰므로 최대 2초 늦고 잔움직임(사건 사이 머리 움직임)이 더해지지만, 여기서는 결정 시각의 순간값이다).
 //
 // 참 관객 모델(지상진실)은 tensionEstimate 와 같은 커널이다: 자극 k 마다 A_k = K_RESP · g·d_k·(1−ρ)^{n_k} 봉우리가
 // RISE_SEC 에 올라 τ 로 감쇠한다. 레코드 필드를 engagementSense report().stimuli 와 같게 만들어 x̂ 는 실제 코드
@@ -136,12 +140,13 @@ export function simulateViewer({ track, theta, mode = "off", opts = {}, params =
     // 고정 슬롯 발동(시각 도달 시 한 번) — 변형은 그 순간의 x̂·θ̂ 로 고른다.
     while (slotIdx < cands.length && t >= cands[slotIdx].t) {
       const slot = cands[slotIdx];
-      let dose = mid(slot).dose, variantId = mid(slot).id, reason = "중립(가운데 변형)", nFit = null;
+      let dose = mid(slot).dose, variantId = mid(slot).id, reason = "중립(가운데 변형)", nFit = null, x0 = null;
       if (realistic && slotIdx < P.N_PROBE && Number.isFinite(PROBE_DOSE[slot.id])) { dose = PROBE_DOSE[slot.id]; variantId = null; reason = "중립 탐침(/film 큐 볼륨)"; }
       if (mode === "full" && slotIdx >= P.N_PROBE) {
         const tDec = realistic && Number.isFinite(DECIDE_AT[slot.id]) ? DECIDE_AT[slot.id] : slot.t;
         nFit = refit(tDec);
-        const x0 = clamp01(TENSION_PARAMS.BASE + tensionAt(records, tDec, null, P0) + (contModel === "slow" ? xcHat : 0));
+        // 결정 x̂ 도 θ̂ 와 같은 레코드(현실 조건은 tDec 까지 닫힌 것만)로 계산한다 — /film decideSlotNow 와 같다(B194)
+        x0 = clamp01(TENSION_PARAMS.BASE + tensionAt(usable(tDec), tDec, null, P0) + (contModel === "slow" ? xcHat : 0));
         const c = chooseVariant(track, cands, slotIdx, x0, thetaHat, channelCounts, prevSlot);
         dose = c.dose; variantId = c.variantId; reason = c.reason;
       }
@@ -150,7 +155,7 @@ export function simulateViewer({ track, theta, mode = "off", opts = {}, params =
       rec.closeAt = realistic ? slot.t + (SLOT_SENSE_DUR[slot.id] ?? 1) + P.TAIL : slot.t;
       records.push(rec);
       channelCounts[slot.channel] = nth + 1;
-      plan.push({ slotId: slot.id, t: slot.t, channel: slot.channel, variantId, dose, nth, reason, ...(nFit != null ? { nFit } : {}) });
+      plan.push({ slotId: slot.id, t: slot.t, channel: slot.channel, variantId, dose, nth, reason, ...(nFit != null ? { nFit, x0: r3(x0) } : {}) });
       prevSlot = { t: slot.t, channel: slot.channel };
       slotIdx++; thetaDirty = true;
     }
