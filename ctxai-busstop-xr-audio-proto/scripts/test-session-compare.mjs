@@ -5,7 +5,7 @@ import {
   sessionRoute, biasOf, movieEvents, movieTrajectory, sessionBadges, directionChangeText, actuationStats,
   xhatSeries, eventMarks, markBefore, MARK_NEAR_SEC, judgeTime, judgeLine, lookResponses, lookText, xhatPeak, xhatGap, pairWarning,
   momentsOf, peakText, NO_PEAK_TEXT, leaderBands, labelRows, labelWidth, labelOverlaps, LABEL_LAYOUT, eventPeaks, EVENT_PEAK_SPAN_SEC, lengthNote,
-  pairHeadline, gapText, conditionDiff, SAME_NIGHT_EPS, sessionOptionLabel, pickerOptions, xhatLegendText, XHAT_LEGEND,
+  pairHeadline, gapText, conditionDiff, SAME_NIGHT_EPS, SAME_CURVE_EPS, sessionOptionLabel, pickerOptions, xhatLegendText, XHAT_LEGEND,
 } from "../lib/sessionCompare.js";
 import { interimAdapt } from "../lib/interimAdapt.js";
 
@@ -544,5 +544,25 @@ test("xhatLegendText(B198): 비교 화면 x̂ 범례는 두 카드에 실제로 
   assert.equal(xhatLegendText(null, null), XHAT_LEGEND.between);
   // /interim 종료 카드와 같은 규칙 — 봉우리가 있을 때만 "●"(app/interim/page.js 는 endEngine.moments?.peak 로 같은 판단)
   assert.equal(xhatLegendText({ peak: mPeak.peak, calm: null }, null), `${XHAT_LEGEND.peak} · ${XHAT_LEGEND.between}`);
+});
+test("gapText(B255): 두 x̂ 계열이 같으면(가장 벌어진 |a−b| < SAME_CURVE_EPS) '가장 벌어진 순간' 을 빼고 '두 곡선이 같습니다' — 부제 ④ '거의 같습니다' 와 어긋나지 않는다", () => {
+  assert.equal(SAME_CURVE_EPS, 0.005);
+  assert.ok(SAME_CURVE_EPS < SAME_NIGHT_EPS, "범례의 '같다' 는 부제의 '거의 같다' 보다 좁다");
+  // review84 nopeak×nopeak(같은 세션을 A·B 에 고름)의 값 — 종전 "평균 차이 |Δx̂| 0.00 · 가장 벌어진 순간 0:01 (A 0.12 · B 0.12)"
+  const same = { n: 68, meanAbs: 0, maxGap: { t: 1.2, a: 0.12, b: 0.12 } };
+  assert.equal(gapText(same, { label: "S1 우비 인물", t: 0 }), "평균 차이 |Δx̂| 0.00 · 두 곡선이 같습니다", "직전 사건이 있어도 시각·값을 안 적는다");
+  assert.equal(gapText(same, null, { values: false }), "평균 |Δx̂| 0.00 · 두 곡선이 같습니다");
+  assert.doesNotMatch(gapText(same, null), /가장 벌어진|\(A /);
+  // 실제 계열끼리 — 같은 세션의 xhatGap 은 maxGap a = b · meanAbs 0
+  const f = xhatSeries(FEARFUL), g = xhatGap(f, f);
+  assert.equal(g.meanAbs, 0); assert.equal(g.maxGap.a, g.maxGap.b);
+  assert.equal(gapText(g, markBefore(eventMarks(FEARFUL), g.maxGap.t)), "평균 차이 |Δx̂| 0.00 · 두 곡선이 같습니다");
+  // 경계 — 문턱 이상 벌어지면 종전 문구 그대로(평균은 0.00 이어도 가장 벌어진 순간을 적는다)
+  const near = { n: 68, meanAbs: 0, maxGap: { t: 1.2, a: 0.13, b: 0.12 } };
+  assert.equal(gapText(near, null), "평균 차이 |Δx̂| 0.00 · 가장 벌어진 순간 0:01 (A 0.13 · B 0.12)");
+  assert.equal(gapText(near, { label: "S1 우비 인물" }, { values: false }), "평균 |Δx̂| 0.00 · 가장 벌어진 순간 S1 우비 인물 뒤 0:01");
+  // 부제 ④ 는 gapText 를 거치지 않으므로 그대로 — "거의 같습니다" 와 범례 "같습니다" 가 서로 어긋나지 않는다
+  assert.equal(pairHeadline(CALM, { ...CALM, id: "z" }, { gap: same }).sub, "배합 궤적도 긴장 추정 x̂(평균 |Δx̂| 0.00)도 거의 같습니다.");
+  assert.equal(pairHeadline(CALM, { ...CALM, id: "z" }, { gap: same }).title, "둘 다 로맨스였고, 거의 같은 밤을 만났습니다");
 });
 console.log(`\n${n} passed`);

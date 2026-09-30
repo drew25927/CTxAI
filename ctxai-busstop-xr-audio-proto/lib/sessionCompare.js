@@ -482,19 +482,23 @@ export function pairWarning(a, b) {
   return null;
 }
 
+export const SAME_CURVE_EPS = 0.005; // 잠정치 — 두 x̂ 계열의 가장 벌어진 |a−b| 가 이보다 작으면(소수 둘째 자리에서 0.00) "두 곡선이 같습니다"(B255). 부제의 SAME_NIGHT_EPS(0.02 · "거의 같은 밤")보다 좁다.
+
 /**
  * x̂ 차이 한 구절 — 비교 화면 x̂ 그래프 범례와 머리글 부제가 같은 값을 같은 말로 적는다(B240).
  *   "평균 차이 |Δx̂| 0.07 · 가장 벌어진 순간 먼 문 소리 뒤 1:09 (A 0.98 · B 0.62)"   values=true(범례)
  *   "평균 |Δx̂| 0.07 · 가장 벌어진 순간 먼 문 소리 뒤 1:09"                        values=false(부제)
+ *   "평균 차이 |Δx̂| 0.00 · 두 곡선이 같습니다"                                     두 계열이 같으면(B255 · 가장 벌어진 순간 생략)
  * @param {{meanAbs, maxGap:{t, a, b}}|null} gap xhatGap 결과
  * @param {{label}|null} gapAt 가장 벌어진 시각 직전 사건(markBefore)
  */
 export function gapText(gap, gapAt, { values = true } = {}) {
   if (!gap) return "";
+  const mean = `평균${values ? " 차이" : ""} |Δx̂| ${gap.meanAbs.toFixed(2)}`;
+  // B255 — 두 계열이 같으면(같은 세션을 A·B 에 고른 개발 화면 · 가공 반응 0 쌍) 가장 벌어진 곳이 없다. 종전에는 "가장 벌어진 순간 0:01 (A 0.12 · B 0.12)" 을 적어 벌어진 곳을 찾게 했다.
+  if (Math.abs(gap.maxGap.a - gap.maxGap.b) < SAME_CURVE_EPS) return `${mean} · 두 곡선이 같습니다`;
   const at = `가장 벌어진 순간 ${gapAt ? `${gapAt.label} 뒤 ` : ""}${mmss(gap.maxGap.t)}`;
-  return values
-    ? `평균 차이 |Δx̂| ${gap.meanAbs.toFixed(2)} · ${at} (A ${gap.maxGap.a.toFixed(2)} · B ${gap.maxGap.b.toFixed(2)})`
-    : `평균 |Δx̂| ${gap.meanAbs.toFixed(2)} · ${at}`;
+  return values ? `${mean} · ${at} (A ${gap.maxGap.a.toFixed(2)} · B ${gap.maxGap.b.toFixed(2)})` : `${mean} · ${at}`;
 }
 
 /**
