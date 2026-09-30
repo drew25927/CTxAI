@@ -464,3 +464,71 @@ export function pairWarning(a, b) {
   if ((a.speed || 1) !== (b.speed || 1)) return `두 세션의 배속이 다릅니다(A ×${a.speed || 1} · B ×${b.speed || 1})`;
   return null;
 }
+
+/**
+ * x̂ 차이 한 구절 — 비교 화면 x̂ 그래프 범례와 머리글 부제가 같은 값을 같은 말로 적는다(B240).
+ *   "평균 차이 |Δx̂| 0.07 · 가장 벌어진 순간 먼 문 소리 뒤 1:09 (A 0.98 · B 0.62)"   values=true(범례)
+ *   "평균 |Δx̂| 0.07 · 가장 벌어진 순간 먼 문 소리 뒤 1:09"                        values=false(부제)
+ * @param {{meanAbs, maxGap:{t, a, b}}|null} gap xhatGap 결과
+ * @param {{label}|null} gapAt 가장 벌어진 시각 직전 사건(markBefore)
+ */
+export function gapText(gap, gapAt, { values = true } = {}) {
+  if (!gap) return "";
+  const at = `가장 벌어진 순간 ${gapAt ? `${gapAt.label} 뒤 ` : ""}${mmss(gap.maxGap.t)}`;
+  return values
+    ? `평균 차이 |Δx̂| ${gap.meanAbs.toFixed(2)} · ${at} (A ${gap.maxGap.a.toFixed(2)} · B ${gap.maxGap.b.toFixed(2)})`
+    : `평균 |Δx̂| ${gap.meanAbs.toFixed(2)} · ${at}`;
+}
+
+/**
+ * 두 세션의 조건 차이 — 같은 판정에 배합 궤적이 같은 쌍에서 "무엇이 달랐는가" 의 첫 후보(제어 ON/OFF · 판정 뒤 연출 켬/끔 · 합성 관객 프로필).
+ * @returns {string|null} "제어(A ON · B OFF)" 처럼 괄호 안에 A·B 값
+ */
+export function conditionDiff(a, b) {
+  if (!a || !b) return null;
+  const ra = sessionRoute(a), rb = sessionRoute(b);
+  if (ra === "film" && rb === "film" && a.control?.actuation && b.control?.actuation && !!a.control.actuation.on !== !!b.control.actuation.on)
+    return `제어(A ${a.control.actuation.on ? "ON" : "OFF"} · B ${b.control.actuation.on ? "ON" : "OFF"})`;
+  if (ra === "interim" && rb === "interim" && a.control?.adapt && b.control?.adapt && !!a.control.adapt.adapted !== !!b.control.adapt.adapted)
+    return `판정 뒤 관객별 연출(A ${a.control.adapt.adapted ? "켬" : "고정"} · B ${b.control.adapt.adapted ? "켬" : "고정"})`;
+  const la = a.viewer?.synthetic ? a.viewer.label || a.viewer.profile : null, lb = b.viewer?.synthetic ? b.viewer.label || b.viewer.profile : null;
+  if (la && lb && la !== lb) return `합성 관객(A ${la} · B ${lb})`;
+  return null;
+}
+
+export const SAME_NIGHT_EPS = 0.02; // 잠정치 — 배합 궤적이 갈라지지 않고 x̂ 평균 차이가 이보다 작으면 "거의 같은 밤" (1배속 b152 ON/OFF 쌍은 0.07)
+
+/**
+ * 비교 화면 머리글(제목·부제) — 부제가 제목을 부정하지 않게 한 함수가 둘을 함께 정한다(B240).
+ * 제목: 판정이 같으면 "둘 다 공포였지만, 같은 밤은 아니었습니다", 다르면 "A는 공포, B는 로맨스를 만났습니다".
+ * 부제(위에서부터 먼저 맞는 것):
+ *  1. 한쪽만 ?bias 로 트랙을 고정 → 배합 궤적은 시작부터 다르고 갈라진 시각은 관객 차이가 아니다(B96)
+ *  2. 배합 궤적이 갈라진 시각(divergeAt · page 의 diverge)이 있으면 "두 정류장은 1:13 부터 갈라졌습니다."
+ *  3. 갈라진 시각이 없고 x̂ 차이가 있으면(제어 ON/OFF 쌍 — 배합 궤적은 거의 같고 차이는 x̂·구동에 있다) 어디가 달랐는지를 적는다:
+ *     "배합 궤적은 거의 같습니다. 차이는 긴장 추정 x̂(평균 |Δx̂| 0.07 · 가장 벌어진 순간 먼 문 소리 뒤 1:09)와 제어(A ON · B OFF)가 바꾼 연출에 있습니다."
+ *     — 아래 x̂ 그래프 범례(gapText)와 같은 값. 종전 "두 궤적이 거의 같습니다." 는 제목 "같은 밤은 아니었습니다" 를 부정하는 것으로 읽혔다.
+ *  4. 갈라진 시각이 없고 x̂ 평균 차이도 SAME_NIGHT_EPS 미만이면(같은 판정) 제목도 "둘 다 공포였고, 거의 같은 밤을 만났습니다" 로 눕힌다.
+ *  5. x̂ 계열이 없으면(옛 세션 · 라우트가 다른 쌍) 종전 "두 궤적이 거의 같습니다."
+ * @param {object|null} a @param {object|null} b
+ * @param {{divergeAt?:number|null, gap?:object|null, gapAt?:{label}|null}} opts page 가 계산한 값(diverge · xhatGap · markBefore)
+ * @returns {{title:string, sub:string}}
+ */
+export function pairHeadline(a, b, { divergeAt = null, gap = null, gapAt = null } = {}) {
+  if (!a || !b) return { title: "세션을 고르세요", sub: "" };
+  const la = GENRE_LABEL[a.dominant] || "-", lb = GENRE_LABEL[b.dominant] || "-";
+  const same = a.dominant === b.dominant;
+  let title = same ? `둘 다 ${la}였지만, 같은 밤은 아니었습니다` : `A는 ${la}, B는 ${lb}를 만났습니다`;
+  const biasA = biasOf(a), biasB = biasOf(b);
+  if ((biasA?.g || null) !== (biasB?.g || null)) {
+    const bias = biasA || biasB;
+    return { title, sub: `${biasA ? "A" : "B"} 는 ?bias 로 ${GENRE_LABEL[bias.g]} 트랙에 고정한 세션이라 배합 궤적은 시작부터 다릅니다 — 갈라진 시각은 관객 차이가 아닙니다.` };
+  }
+  if (divergeAt != null) return { title, sub: `두 정류장은 ${mmss(divergeAt)} 부터 갈라졌습니다.` };
+  if (!gap) return { title, sub: "두 궤적이 거의 같습니다." };
+  const cond = conditionDiff(a, b);
+  if (gap.meanAbs < SAME_NIGHT_EPS) {
+    if (same) title = `둘 다 ${la}였고, 거의 같은 밤을 만났습니다`;
+    return { title, sub: `배합 궤적도 긴장 추정 x̂(평균 |Δx̂| ${gap.meanAbs.toFixed(2)})도 거의 같습니다.${cond ? ` 조건은 ${cond}로 달랐습니다.` : ""}` };
+  }
+  return { title, sub: `배합 궤적은 거의 같습니다. 차이는 긴장 추정 x̂(${gapText(gap, gapAt, { values: false })})${cond ? `와 ${cond}가 바꾼 연출` : ""}에 있습니다.` };
+}

@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import s from "../../story/story.module.css";
 import f from "../film.module.css";
 import { mixLines, verdictOf, mmss, fingerprintText, MOMENT_TEXT, MOMENT_BASIS } from "@/lib/viewerText";
-import { lengthNote, labelRows, LABEL_LAYOUT, sessionRoute, sessionBadges, directionChangeText, xhatSeries, eventMarks, judgeTime, judgeLine, lookResponses, lookText, momentsOf, peakText, NO_PEAK_TEXT, xhatGap, pairWarning, biasOf, movieTrajectory, markBefore, eventPeaks, leaderBands } from "@/lib/sessionCompare";
+import { pairHeadline, gapText, lengthNote, labelRows, LABEL_LAYOUT, sessionRoute, sessionBadges, directionChangeText, xhatSeries, eventMarks, judgeTime, judgeLine, lookResponses, lookText, momentsOf, peakText, NO_PEAK_TEXT, xhatGap, pairWarning, biasOf, movieTrajectory, markBefore, eventPeaks, leaderBands } from "@/lib/sessionCompare";
 import { observedSegments } from "@/lib/tensionEstimate";
 
 const GENRE = { R: { label: "로맨스", accent: "#f2a7c0" }, H: { label: "공포", accent: "#8fae95" }, C: { label: "블랙코미디", accent: "#e0a86a" } };
@@ -214,7 +214,6 @@ export default function ComparePage() {
   }, [ids]);
 
   const divergeAt = useMemo(() => diverge(a, b), [a, b]);
-  const same = a && b && a.dominant === b.dominant;
   const sa = useMemo(() => xhatSeries(a), [a]);
   const sb = useMemo(() => xhatSeries(b), [b]);
   const ma = useMemo(() => momentsOf(a), [a]); // 두 순간(B144) — 종료 카드와 같은 함수
@@ -229,6 +228,9 @@ export default function ComparePage() {
   const biasSplit = a && b && (biasA?.g || null) !== (biasB?.g || null);
   // 가장 벌어진 순간의 이름 — 두 세션의 눈금을 합쳐 본다(ON 에만 있는 미세 자극도 잡히게)
   const gapAt = gap ? markBefore([...eventMarks(a), ...eventMarks(b)], gap.maxGap.t) : null;
+  // 제목·부제는 한 함수가 함께 정한다(B240) — 갈라진 시각이 없는 쌍(제어 ON/OFF)의 부제 "두 궤적이 거의 같습니다." 가 제목
+  // "같은 밤은 아니었습니다" 를 부정하는 것으로 읽혔다. 이제 어디가 달랐는지(x̂ 차이 · 조건)를 아래 범례와 같은 값으로 적는다.
+  const head = useMemo(() => pairHeadline(a, b, { divergeAt, gap, gapAt }), [a, b, divergeAt, gap, gapAt]);
 
   return (
     <div className={s.stage} style={{ overflow: "auto" }}>
@@ -238,14 +240,8 @@ export default function ComparePage() {
         <span />
       </div>
       <div style={{ maxWidth: 960, margin: "70px auto 40px", padding: "0 20px", wordBreak: "keep-all" /* 한글 단어 안에서 접지 않는다(B163) */ }}>
-        <h1 className={f.endTitle} style={{ fontSize: 26 }}>
-          {a && b ? (same ? `둘 다 ${GENRE[a.dominant].label}였지만, 같은 밤은 아니었습니다` : `A는 ${GENRE[a.dominant]?.label}, B는 ${GENRE[b.dominant]?.label}를 만났습니다`) : "세션을 고르세요"}
-        </h1>
-        <p className={f.endSub}>
-          {biasSplit
-            ? `${biasA ? "A" : "B"} 는 ?bias 로 ${GENRE[(biasA || biasB).g].label} 트랙에 고정한 세션이라 배합 궤적은 시작부터 다릅니다 — 갈라진 시각은 관객 차이가 아닙니다.`
-            : divergeAt != null ? `두 정류장은 ${mmss(divergeAt)} 부터 갈라졌습니다.` : a && b ? "두 궤적이 거의 같습니다." : ""}
-        </p>
+        <h1 className={f.endTitle} style={{ fontSize: 26 }}>{head.title}</h1>
+        <p className={f.endSub}>{head.sub}</p>
         {warn && <p style={{ margin: "0 0 8px", fontSize: 12.5, color: "#ffcf7a" }}>⚠ {warn}</p>}
         <p className={s.dim} style={{ margin: "0 0 4px", fontSize: 12 }}>장르 배합 궤적 — {bothInterim ? "팀 5신호 드리프트" : "연출 상태"}</p>
         <Chart a={a} b={b} divergeAt={biasSplit ? null : divergeAt} />
@@ -265,7 +261,7 @@ export default function ComparePage() {
               <span><i style={{ background: XHAT_COLOR.a }} />A 실선</span>
               <span><i style={{ background: XHAT_COLOR.b }} />B 점선</span>
               <span className={s.dim}>● 가장 크게 반응 · ▬ 가장 차분히 집중 · 흐린 선 = 사건 사이(잔움직임만)</span>
-              {gap && <span className={s.dim}>평균 차이 |Δx̂| {gap.meanAbs.toFixed(2)} · 가장 벌어진 순간 {gapAt ? `${gapAt.label} 뒤 ` : ""}{mmss(gap.maxGap.t)} (A {gap.maxGap.a.toFixed(2)} · B {gap.maxGap.b.toFixed(2)})</span>}
+              {gap && <span className={s.dim}>{gapText(gap, gapAt)}</span>}
             </div>
           </div>
         )}

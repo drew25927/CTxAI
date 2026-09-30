@@ -5,6 +5,7 @@ import {
   sessionRoute, biasOf, movieEvents, movieTrajectory, sessionBadges, directionChangeText, actuationStats,
   xhatSeries, eventMarks, markBefore, MARK_NEAR_SEC, judgeTime, judgeLine, lookResponses, lookText, xhatPeak, xhatGap, pairWarning,
   momentsOf, peakText, NO_PEAK_TEXT, leaderBands, labelRows, labelWidth, labelOverlaps, LABEL_LAYOUT, eventPeaks, EVENT_PEAK_SPAN_SEC, lengthNote,
+  pairHeadline, gapText, conditionDiff, SAME_NIGHT_EPS,
 } from "../lib/sessionCompare.js";
 import { interimAdapt } from "../lib/interimAdapt.js";
 
@@ -409,5 +410,44 @@ test("lengthNote(B221): /film 쌍의 버스 도착 시각 차이와 원인 — �
   // 배속 회차는 영화 시간으로(movieEvents × speed)
   const fast = { ...on, speed: 4, events: on.events.map((e) => ({ ...e, t: e.t / 4 })) };
   assert.match(lengthNote(fast, off), /^길이 차이 \+7\.1초\(버스 도착 A 2:37 · B 2:30\)/);
+});
+test("pairHeadline(B240): 제목·부제가 서로 부정하지 않는다 — 갈라진 시각이 없는 제어 ON/OFF 쌍은 '두 궤적이 거의 같습니다.' 대신 x̂ 차이·조건을 적고, /interim 공포형 vs 차분형 부제는 그대로", () => {
+  // 1배속 b152 ON/OFF 쌍의 값: 같은 판정(H) · 배합 궤적 갈라짐 없음 · x̂ 평균 차이 0.07 · 가장 벌어진 순간 먼 문 소리 뒤 1:09
+  const gap = { n: 80, meanAbs: 0.07, maxGap: { t: 69.4, a: 0.98, b: 0.62 } };
+  const gapAt = { label: "먼 문 소리", t: 66 };
+  const h = pairHeadline(ON, OFF, { divergeAt: null, gap, gapAt });
+  assert.equal(h.title, "둘 다 공포였지만, 같은 밤은 아니었습니다");
+  assert.equal(h.sub, "배합 궤적은 거의 같습니다. 차이는 긴장 추정 x̂(평균 |Δx̂| 0.07 · 가장 벌어진 순간 먼 문 소리 뒤 1:09)와 제어(A ON · B OFF)가 바꾼 연출에 있습니다.");
+  assert.doesNotMatch(h.sub, /두 궤적이 거의 같습니다/);
+  assert.equal(gapText(gap, gapAt), "평균 차이 |Δx̂| 0.07 · 가장 벌어진 순간 먼 문 소리 뒤 1:09 (A 0.98 · B 0.62)", "범례는 값까지");
+  assert.equal(gapText(gap, null, { values: false }), "평균 |Δx̂| 0.07 · 가장 벌어진 순간 1:09", "직전 사건이 없으면 시각만");
+  assert.equal(gapText(null, gapAt), "");
+  // 사건 반응 조건이 같은 ON/ON 쌍은 조건 구절 없이 x̂ 차이만
+  assert.equal(pairHeadline(ON, { ...ON, id: "x" }, { gap, gapAt }).sub, "배합 궤적은 거의 같습니다. 차이는 긴장 추정 x̂(평균 |Δx̂| 0.07 · 가장 벌어진 순간 먼 문 소리 뒤 1:09)에 있습니다.");
+  // 갈라진 시각이 있으면 종전 문장 그대로(/interim 공포형 vs 차분형 · 1:13)
+  const i = pairHeadline(FEARFUL, CALM, { divergeAt: 73, gap: { n: 60, meanAbs: 0.31, maxGap: { t: 97, a: 1, b: 0.2 } }, gapAt: { label: "S5 개구리" } });
+  assert.deepEqual(i, { title: "A는 공포, B는 로맨스를 만났습니다", sub: "두 정류장은 1:13 부터 갈라졌습니다." });
+  // 한쪽만 ?bias 고정(B96) — 갈라진 시각보다 먼저
+  const noBias = filmSession({ on: true, bias: false });
+  assert.equal(pairHeadline(ON, noBias, { divergeAt: 5, gap, gapAt }).sub, "A 는 ?bias 로 공포 트랙에 고정한 세션이라 배합 궤적은 시작부터 다릅니다 — 갈라진 시각은 관객 차이가 아닙니다.");
+  // x̂ 계열이 없으면(옛 세션) 종전 문장
+  assert.equal(pairHeadline(ON, OFF, { divergeAt: null, gap: null }).sub, "두 궤적이 거의 같습니다.");
+  // 갈라지지도 않고 x̂ 차이도 SAME_NIGHT_EPS 미만이면 제목을 눕힌다(같은 판정) — 조건이 다르면 그 사실만
+  assert.equal(SAME_NIGHT_EPS, 0.02);
+  const tiny = { n: 80, meanAbs: 0.01, maxGap: { t: 30, a: 0.5, b: 0.49 } };
+  assert.deepEqual(pairHeadline(ON, { ...ON, id: "y" }, { gap: tiny }), { title: "둘 다 공포였고, 거의 같은 밤을 만났습니다", sub: "배합 궤적도 긴장 추정 x̂(평균 |Δx̂| 0.01)도 거의 같습니다." });
+  assert.equal(pairHeadline(ON, OFF, { gap: tiny }).sub, "배합 궤적도 긴장 추정 x̂(평균 |Δx̂| 0.01)도 거의 같습니다. 조건은 제어(A ON · B OFF)로 달랐습니다.");
+  assert.equal(pairHeadline(ON, { ...OFF, dominant: "R" }, { gap: tiny }).title, "A는 공포, B는 로맨스를 만났습니다", "판정이 다르면 제목은 그대로");
+  assert.deepEqual(pairHeadline(null, OFF, { gap }), { title: "세션을 고르세요", sub: "" });
+  // conditionDiff — 제어 ON/OFF · /interim 판정 뒤 연출 켬/고정 · 합성 관객 프로필 · 같으면 null
+  assert.equal(conditionDiff(ON, OFF), "제어(A ON · B OFF)");
+  assert.equal(conditionDiff(OFF, ON), "제어(A OFF · B ON)");
+  assert.equal(conditionDiff(ON, ON), null);
+  const adaptOn = { ...FEARFUL, control: { ...FEARFUL.control, adapt: interimAdapt({ theta: { g: 1.142, L: 0.167, tau: 0.648, rho: 0.001, n: 5, nResp: 5, levels: 3, confidence: 1 }, xhatPeak: 1, genre: "H" }) } };
+  const adaptOff = { ...FEARFUL, id: "z", control: { ...FEARFUL.control, adapt: { adapted: false, reason: "?adapt=0 → 고정 연출" } } };
+  assert.equal(conditionDiff(adaptOn, adaptOff), "판정 뒤 관객별 연출(A 켬 · B 고정)");
+  assert.equal(conditionDiff(FEARFUL, CALM), "합성 관객(A 공포형 · B 차분형)");
+  assert.equal(conditionDiff(FEARFUL, FEARFUL), null);
+  assert.equal(conditionDiff(null, CALM), null);
 });
 console.log(`\n${n} passed`);
