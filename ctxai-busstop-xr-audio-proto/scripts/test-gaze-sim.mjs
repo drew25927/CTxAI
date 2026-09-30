@@ -393,4 +393,32 @@ test("B234 setRest pitch: 주면 쉴 때 그 각도(SEATED_LOOK_PITCH −8°)로
   }
 });
 
+// B241 — 시선을 내리는 것(B234)이 잔움직임(집중도 센서의 2초 창 각속도 RMS · 세션 fidgetMean)을 키우지 않는다. /interim 인사 구간과 같은 시나리오
+// (앉은 옆사람 곁눈질 setRest(63) → 인사 큐에 말하는 옆사람을 본다 setRest(87, {talk}) · 사건 없음)로 pitch 0 과 −8 을 같은 seed 로 돌려 인사 구간 창 평균을 비교한다.
+// 내려가는 한 번(최대 약 30°/s · 0.5초)만 들어가므로 차이는 0.5 안(실측 +0.05 · 브라우저 1배속 7회차 +0.23 · work/evidence/b241/). 세션 fidgetMean 의 회차 변동(23.3~26.8)은
+// pitch 가 0 인 118초 앞 구간이 만든다(fps). 이 단언이 깨지면 pitch 수렴 속도(step 의 4/s)나 sway 가 바뀐 것이다.
+test("B241 SEATED_LOOK_PITCH 가 잔움직임을 키우지 않는다: 인사 구간 2초 창 angVelRms 평균 차이(−8 − 0) < 0.5 · 창별 최대 차이 < 1.5 · 내려가는 최대 각속도 10~60°/s (공포형 seed 1~3 · 60Hz)", () => {
+  const GREET = 6, UNTIL = 28;
+  const run = (seed, pitch) => {
+    const sim = createGazeSim("fearful", { seed }); const eng = createEngagementSensor({});
+    let maxDp = 0, prev = null;
+    for (let t = 0; t < UNTIL; t += DT) {
+      if (t >= GREET) sim.setRest(NPC_AZ, { talk: true, pitch }); else sim.setRest(REST_CAP);
+      const p = sim.step(t, DT); if (prev) maxDp = Math.max(maxDp, Math.abs(p.pitch - prev.pitch) / DT); prev = p; eng.update(p, DT);
+    }
+    const W = eng.data().windows.filter((w) => w.t0 >= GREET);
+    return { W, mean: W.reduce((a, w) => a + w.angVelRms, 0) / W.length, maxDp };
+  };
+  for (const seed of [1, 2, 3]) {
+    const a = run(seed, 0), b = run(seed, SEATED_LOOK_PITCH);
+    assert.ok(a.W.length >= 8 && a.W.length === b.W.length, `seed ${seed}: 인사 구간 창 ${a.W.length}/${b.W.length}`);
+    const d = b.mean - a.mean;
+    assert.ok(Math.abs(d) < 0.5, `seed ${seed}: 인사 구간 창 평균 ${a.mean.toFixed(2)} → ${b.mean.toFixed(2)} (차이 ${d.toFixed(2)}) < 0.5`);
+    const maxWin = Math.max(...a.W.map((w, i) => Math.abs(b.W[i].angVelRms - w.angVelRms)));
+    assert.ok(maxWin < 1.5, `seed ${seed}: 창별 최대 차이 ${maxWin.toFixed(2)} < 1.5`);
+    assert.ok(b.maxDp < 60 && b.maxDp > 10, `seed ${seed}: 내려가는 최대 각속도 ${b.maxDp.toFixed(1)}°/s (10~60)`);
+    assert.ok(a.maxDp < 10, `seed ${seed}: pitch 0 은 흔들림만 (${a.maxDp.toFixed(1)}°/s)`);
+  }
+});
+
 console.log(`\n${n} 통과 (gaze-sim)`);
