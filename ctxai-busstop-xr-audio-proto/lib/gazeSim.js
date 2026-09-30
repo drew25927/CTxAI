@@ -104,6 +104,14 @@ export function doseFactor(dose) {
 // "가로젓기"(폭 12°)로 읽혀 가짜 응답이 된다(scripts/test-gaze-sim.mjs 가 확인).
 export const TALK = Object.freeze({ factor: 0.9, rate: 2.5 });
 
+// 앉은 옆사람을 볼 때의 쉬는 시선 pitch(도 · 위 +)(B234) — /interim 인사 구간·?look=1 처럼 "앉아 있는 옆사람" 을 쉬는 시선으로 볼 때
+// 페이지가 setRest(az, { pitch: SEATED_LOOK_PITCH }) 로 준다. 카메라(눈높이 1.15 m · 세로 fov 60°)가 1.3~1.7 m 옆의 옆사람 얼굴을
+// 수평으로 보면 프레임 아랫변이 좌면 높이(0.5 m) 언저리에 걸려 무릎·좌면이 잘리고, 앉은 사람이 선 사람처럼 읽혔다(검토 턴 62 인사 프레임).
+// 8° 내리면 아랫변이 0.1~0.2 m 까지 내려와 좌면·무릎이 들어온다. 창작값이다. 사건(hold) 중에는 0 으로 돌아가 사건 쪽을 본다.
+// 헤드셋 관객에게는 해당 없다(합성 관객 전용). 주지 않으면 0 이라 종전 궤적과 같다.
+export const SEATED_LOOK_PITCH = -8;
+const REST_PITCH_MAX = 20; // 쉬는 pitch 상한(도) — 흔들림·후퇴 항을 더해도 |pitch| ≤ 30 안에 두기 위해
+
 /** ?viewer= 값이 합성 관객 프로필인가. */
 export function isGazeProfile(name) { return typeof name === "string" && Object.prototype.hasOwnProperty.call(GAZE_PROFILES, name); }
 
@@ -145,6 +153,7 @@ export function createGazeSim(profile, { seed = 1, probes = [], speed = 1 } = {}
   let yaw = 0, pitch = 0, z = 0, y = SEAT_Y;
   let targetYaw = 0, targetZ = 0, targetY = SEAT_Y, rate = P.returnRate, holdUntil = -Infinity, standUntil = -Infinity;
   let restAz = 0;                      // 쉴 때 보는 곳(옆사람 방향 × restFactor 등). 페이지가 setRest 로 준다
+  let restPitch = 0;                   // 쉴 때의 시선 pitch(도 · 위 +) — 앉은 옆사람의 무릎·좌면이 프레임에 들어오게 내릴 때(B234). setRest(az, {pitch})
   let talking = false;                 // 옆사람이 말하는 중(B67) — setRest(az, {talk}) 로 페이지가 준다
   let wanderOff = 0, nextWanderAt = P.wander ? between(rng, P.wander.every) : Infinity;
   let nextGlanceAt = P.glance ? 3 : Infinity;
@@ -173,11 +182,14 @@ export function createGazeSim(profile, { seed = 1, probes = [], speed = 1 } = {}
 
   /** 쉴 때 보는 방위(도). 옆사람이 앉으면 페이지가 그 방위를 넣는다. null 이면 정면.
    *  talk: 그 사람이 지금 말하는 중이면 true — 방위의 max(restFactor, TALK.factor) 만큼 본다(B67).
-   *  factor: 비율을 직접 준다(1 = 그 방위를 똑바로 본다) — /interim ?look=1 증거·시연용(B170b). 주지 않으면 종전과 같다. */
-  function setRest(az, { talk = false, factor = null } = {}) {
+   *  factor: 비율을 직접 준다(1 = 그 방위를 똑바로 본다) — /interim ?look=1 증거·시연용(B170b). 주지 않으면 종전과 같다.
+   *  pitch: 쉴 때의 시선 pitch(도 · 위 +) — 앉은 옆사람의 무릎·좌면이 프레임에 들어오게 내릴 때 SEATED_LOOK_PITCH(B234). 주지 않으면 0(종전과 같다).
+   *         사건(hold) 중에는 무시하고 0 을 향한다. ±REST_PITCH_MAX 로 자른다. */
+  function setRest(az, { talk = false, factor = null, pitch = 0 } = {}) {
     talking = !!talk && Number.isFinite(az);
     const f = Number.isFinite(factor) ? factor : talking ? Math.max(P.restFactor, TALK.factor) : P.restFactor;
     restAz = Number.isFinite(az) ? az * f : 0;
+    restPitch = Number.isFinite(pitch) ? Math.max(-REST_PITCH_MAX, Math.min(REST_PITCH_MAX, pitch)) : 0;
   }
 
   /**
@@ -222,7 +234,9 @@ export function createGazeSim(profile, { seed = 1, probes = [], speed = 1 } = {}
     yaw += Math.max(-P.maxVel * ds, Math.min(P.maxVel * ds, dYaw));
     z += (targetZ - z) * Math.min(1, 6 * ds);
     y += (targetY - y) * Math.min(1, 8 * ds);
-    pitch += ((z > 0.02 ? -3 : 0) - pitch) * Math.min(1, 4 * ds); // 물러날 때 턱을 살짝 당긴다
+    // pitch — 쉴 때는 restPitch(앉은 옆사람을 볼 때 −8° · B234), 사건(hold) 중에는 0(사건 쪽을 본다), 물러날 때는 턱을 살짝 당긴다(−3°)
+    const pitchTarget = (holding ? 0 : restPitch) + (z > 0.02 ? -3 : 0);
+    pitch += (pitchTarget - pitch) * Math.min(1, 4 * ds);
 
     // 저주파 흔들림 — 두 정현파의 합(같은 seed 면 같은 위상)
     const w = 2 * Math.PI * P.sway.hz;

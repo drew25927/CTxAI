@@ -2,7 +2,7 @@
 // 세 프로필을 /interim·/film 타임라인 위에서 돌려 센서 → 관객 응답 모델 θ̂ 가 의도한 순서로 갈리는지,
 // 같은 시드가 같은 궤적을 재현하는지, 자세값이 물리적으로 말이 되는 범위인지 본다.
 import assert from "node:assert/strict";
-import { createGazeSim, GAZE_PROFILE_NAMES, GAZE_PROFILES, isGazeProfile, SEAT_Y, TALK } from "../lib/gazeSim.js";
+import { createGazeSim, GAZE_PROFILE_NAMES, GAZE_PROFILES, isGazeProfile, SEAT_Y, TALK, SEATED_LOOK_PITCH } from "../lib/gazeSim.js";
 import { answerWatchStart, answerWatchUpdate, answerWatchResult, beatOf, playsLine, nextPlayedBeat, subtitleHoldSec, splitLead, dialogueQuiet } from "../lib/dialogueBeats.js";
 import { DIALOGUE_V2_LINES } from "../lib/dialogueV2Lines.js";
 import { createEngagementSensor } from "../lib/engagementSense.js";
@@ -363,4 +363,34 @@ for (const p of GAZE_PROFILE_NAMES) {
   const { theta } = runFilm(p);
   console.log(`  ${p.padEnd(8)} g=${theta.g} L=${theta.L}s τ=${theta.tau}s ρ=${theta.rho} 응답 ${theta.nResp}/${theta.n} 확신 ${Math.round(theta.confidence * 100)}%`);
 }
+// B234 — 앉은 옆사람을 볼 때 시선을 내린다(/interim 인사 구간 · ?look=1). pitch 를 주지 않으면(또는 0) 종전 궤적과 같다.
+test("B234 setRest pitch: 주면 쉴 때 그 각도(SEATED_LOOK_PITCH −8°)로 내려가 머물고, 사건 hold 중엔 0 쪽으로 돌아오며, 안 주면 pitch 0 과 같은 궤적 · |pitch| ≤ 30", () => {
+  assert.ok(SEATED_LOOK_PITCH < 0 && SEATED_LOOK_PITCH >= -20, `SEATED_LOOK_PITCH ${SEATED_LOOK_PITCH}`);
+  const meanP = (arr, t0, t1) => { let s = 0, c = 0; for (let i = 0; i < arr.length; i++) { const t = i * DT; if (t > t0 && t < t1) { s += arr[i].pitch; c++; } } return s / c; };
+  for (const p of GAZE_PROFILE_NAMES) {
+    const a = createGazeSim(p, { seed: 3 }), b = createGazeSim(p, { seed: 3 }), c = createGazeSim(p, { seed: 3 });
+    const pa = [], pb = [], pc = [];
+    const hold = GAZE_PROFILES[p].hold.startle; // 방위 90° 는 뒤쪽(≥ 100°)이 아니라 startle hold
+    for (let t = 0; t < 30; t += DT) {
+      a.setRest(60, { talk: true });
+      b.setRest(60, { talk: true, pitch: 0 });
+      c.setRest(60, { talk: true, pitch: t >= 10 ? SEATED_LOOK_PITCH : 0 });
+      if (Math.abs(t - 20) < DT / 2) c.trigger({ name: "x", azimuth: 90, dur: 2, kind: "startle" });
+      pa.push(a.step(t, DT)); pb.push(b.step(t, DT)); pc.push(c.step(t, DT));
+    }
+    assert.deepEqual(pa, pb, `${p}: pitch 를 안 준 궤적 == pitch 0 궤적`);
+    assert.ok(Math.abs(meanP(pc, 2, 10)) < 1.5, `${p}: 주기 전 pitch 평균 ${meanP(pc, 2, 10).toFixed(2)} ≈ 0`);
+    assert.ok(Math.abs(meanP(pc, 11, 20) - SEATED_LOOK_PITCH) < 1.5, `${p}: 준 뒤 pitch 평균 ${meanP(pc, 11, 20).toFixed(2)} ≈ ${SEATED_LOOK_PITCH}`);
+    assert.ok(Math.abs(pc[Math.round(11 / DT)].pitch - SEATED_LOOK_PITCH) < 2.5, `${p}: 1초 안에 수렴 ${pc[Math.round(11 / DT)].pitch.toFixed(2)}`);
+    // 사건 hold 중(20 ~ 20+hold) — 목표가 0(후퇴 중이면 −3)이라 −8 에서 위로 올라온다. 차분형은 hold 0.3초라 다 못 올라와도 2° 이상은 움직인다
+    let maxInHold = -Infinity; for (let i = Math.round(20.2 / DT); i < Math.round((20 + hold) / DT); i++) maxInHold = Math.max(maxInHold, pc[i].pitch);
+    assert.ok(maxInHold > SEATED_LOOK_PITCH + 2, `${p}: hold 중 최대 pitch ${maxInHold.toFixed(2)} > ${SEATED_LOOK_PITCH + 2}`);
+    assert.ok(Math.abs(meanP(pc, 20 + hold + 2, 30) - SEATED_LOOK_PITCH) < 1.5, `${p}: hold 뒤 다시 ${meanP(pc, 20 + hold + 2, 30).toFixed(2)} ≈ ${SEATED_LOOK_PITCH}`);
+    for (const q of pc) assert.ok(Math.abs(q.pitch) <= 30 && Number.isFinite(q.pitch), `${p}: |pitch| ≤ 30 (${q.pitch})`);
+    // 상한 — ±REST_PITCH_MAX(20) 로 잘린다
+    const d = createGazeSim(p, { seed: 3 }); d.setRest(60, { pitch: -45 }); let q = null; for (let t = 0; t < 5; t += DT) q = d.step(t, DT);
+    assert.ok(q.pitch > -25 && q.pitch < -15, `${p}: pitch −45 는 −20 으로 잘림 (${q.pitch.toFixed(2)})`);
+  }
+});
+
 console.log(`\n${n} 통과 (gaze-sim)`);

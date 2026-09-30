@@ -74,7 +74,7 @@ import {
   gradeS2FromWebcam, gradeS4FromWebcam,
 } from "@/lib/interimGrader";
 import { createEngagementSensor } from "@/lib/engagementSense";
-import { createGazeSim, isGazeProfile, GAZE_PROFILES } from "@/lib/gazeSim";
+import { createGazeSim, isGazeProfile, GAZE_PROFILES, SEATED_LOOK_PITCH } from "@/lib/gazeSim";
 import { fitViewerModel } from "@/lib/viewerModel";
 import { estimateTensionSeries, isProvisional, recentPeak } from "@/lib/tensionEstimate";
 import { selectTrack } from "@/lib/trackSelect";
@@ -205,10 +205,12 @@ function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, engagemen
       const npc = actorsRef.current.npc;
       const npcAz = npc?.visible && npc.seated ? MathUtils.radToDeg(Math.atan2(npc.x - cp.x, -(npc.z - cp.z))) : null;
       // ?look=1(B170b 증거·시연) — 앉은 옆사람을 상한·비율 없이 똑바로 본다. 판정(1:55)은 이미 끝난 뒤라 판정·θ̂ 에는 영향이 없다
-      if (lookAt && npcAz != null) sim.setRest(npcAz, { factor: 1 });
+      if (lookAt && npcAz != null) sim.setRest(npcAz, { factor: 1, pitch: SEATED_LOOK_PITCH });
       // 인사 구간(greeting 큐 ~ 끝)에는 말하는 옆사람을 본다 — /film 의 B67 과 같은 규칙(TALK.factor 0.9 · 63° 상한 없음)(B214).
-      // 판정(1:55)은 끝난 뒤라 θ̂·판정에는 영향이 없고, 옆사람이 화면 안에 들어와 관객별 거리 차이가 보인다
-      else if (greetedRef.current && npcAz != null) sim.setRest(npcAz, { talk: true });
+      // 판정(1:55)은 끝난 뒤라 θ̂·판정에는 영향이 없고, 옆사람이 화면 안에 들어와 관객별 거리 차이가 보인다.
+      // 시선은 8° 내려(SEATED_LOOK_PITCH · B234) 앉은 옆사람의 좌면·무릎이 프레임 아랫변 안에 들어오게 한다 — 수평으로 보면 아랫변이
+      // 좌면 높이에 걸려 앉은 사람이 선 사람처럼 읽혔다. 잔움직임 항(각속도 RMS)에 내려가는 0.5초가 한 번 들어갈 뿐 θ̂·봉우리 x̂ 는 사건 창만 쓴다.
+      else if (greetedRef.current && npcAz != null) sim.setRest(npcAz, { talk: true, pitch: SEATED_LOOK_PITCH });
       else sim.setRest(npcAz != null ? Math.min(63, npcAz) : 0);
     }
 
