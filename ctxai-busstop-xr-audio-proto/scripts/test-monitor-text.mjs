@@ -1,6 +1,7 @@
 // 모니터 문구 회귀 테스트(B65·B154) — 라벨과 숫자가 다른 줄로 갈리지 않고, 도달 점수 줄이 트랙 변경으로 읽히지 않는다
 import assert from "node:assert/strict";
-import { glueNumbers, pair, reachText, reachParts, actuateLine, ACT_MODE } from "../lib/monitorText.js";
+import { glueNumbers, pair, reachText, reachParts, actuateLine, ACT_MODE, goalRowText, NO_TARGET_LABEL } from "../lib/monitorText.js";
+import { xhatReading } from "../lib/tensionEstimate.js";
 import { actuationFor, offsetsFor, actuationText } from "../lib/controlActuate.js";
 
 let n = 0;
@@ -101,6 +102,43 @@ test("reachText: 판정 전 배합 객체(B92)·현재 없음이면 유지 문�
 test("reachText: sel 없음 → null", () => {
   assert.equal(reachText(null, "H"), null);
   assert.equal(reachText({ track: "H" }, "H"), null);
+});
+
+// B227 — 목표 곡선이 없는 구간(/interim 전체 · /film 판정 전)에서 진행 중 탐침은 왼쪽에 한 번만. 1배속 /interim S1 구간(0:15~1:53)은 왼쪽
+// "목표 곡선 없음(중립 탐침)" + 오른쪽 "추정 x̂ 0.12 · S1 진행 중" 이 292px 를 넘어 행이 36px(두 줄)였다(b216/interim-samples.jsonl 30/67 표본)
+const WJ = "\u2060";
+test("goalRowText: 목표 없음 + 탐침 진행 중 → 왼쪽 '중립 탐침 S1 진행 중', 오른쪽 꼬리표 없음", () => {
+  const reading = xhatReading({ tension: 0.12, fromStim: 0, fromActive: 0 }, { active: ["S1"] });
+  assert.equal(reading.state, "between"); assert.equal(reading.label, `S1${NB}진행${NB}중`, "전제: xhatReading 은 종전대로 '진행 중' 을 준다(B159)");
+  const r = goalRowText({ hasTarget: false, active: ["S1"], reading });
+  assert.equal(r.left, `중립${NB}탐침 S1${NB}진행${NB}중`);
+  assert.equal(r.right, "", "오른쪽에 '진행 중' 을 되풀이하지 않는다");
+  assert.ok(!r.left.includes("목표"), "이 순간은 '목표 곡선 없음' 대신 탐침을 적는다");
+  const two = goalRowText({ hasTarget: false, active: ["S1", "S3"], reading: xhatReading({ tension: 0.12, fromStim: 0 }, { active: ["S1", "S3"] }) }); // 계열 점은 fromStim 0 을 가진다(없으면 isObserved 가 참)
+  assert.equal(two.left, `중립${NB}탐침 S1·S3${NB}진행${NB}중`);
+});
+test("goalRowText: 탐침 진행 중인데 잠정 반응이면 '잠정' 은 오른쪽에 남는다", () => {
+  const reading = xhatReading({ tension: 0.45, fromStim: 0.3, fromActive: 0.3 }, { active: ["S2"] });
+  assert.equal(reading.label, "잠정", "전제"); assert.equal(reading.provisional, true);
+  const r = goalRowText({ hasTarget: false, active: ["S2"], reading });
+  assert.equal(r.left, `중립${NB}탐침 S2${NB}진행${NB}중`);
+  assert.equal(r.right, "잠정");
+});
+test("goalRowText: 탐침 없음이면 종전 그대로 — 왼쪽 NBSP·WORD JOINER 라벨(B217), 오른쪽 '사건 사이'/빈 꼬리표", () => {
+  const between = goalRowText({ hasTarget: false, active: [], reading: xhatReading({ tension: 0.16, fromStim: 0 }, {}) });
+  assert.equal(between.left, NO_TARGET_LABEL);
+  assert.equal(NO_TARGET_LABEL, `목표${NB}곡선${NB}없음${WJ}(중립${NB}탐침)`);
+  assert.equal(between.right, "사건 사이");
+  const closed = goalRowText({ hasTarget: false, active: [], reading: xhatReading({ tension: 0.31, fromStim: 0.2 }, {}) });
+  assert.equal(closed.left, NO_TARGET_LABEL); assert.equal(closed.right, "");
+  assert.deepEqual(goalRowText(), { left: NO_TARGET_LABEL, right: "" }, "reading 없음(첫 틱 '추정 x̂ -')");
+});
+test("goalRowText: 목표 곡선이 있으면(/film 판정 뒤) 왼쪽은 패널 몫(null), 오른쪽은 '먼 문 소리 진행 중' 그대로 — 왼쪽 '지금 목표 0.45' 가 짧아 한 줄에 든다", () => {
+  const reading = xhatReading({ tension: 0.12, fromStim: 0 }, { target: 0.45, tol: 0.1, active: ["먼 문 소리"] });
+  const r = goalRowText({ hasTarget: true, active: ["먼 문 소리"], reading });
+  assert.equal(r.left, null);
+  assert.equal(r.right, `먼 문 소리${NB}진행${NB}중`);
+  assert.equal(goalRowText({ hasTarget: true, active: [], reading: xhatReading({ tension: 0.7, fromStim: 0.5 }, { target: 0.45, tol: 0.1 }) }).right, "");
 });
 
 console.log(`${n} passed`);

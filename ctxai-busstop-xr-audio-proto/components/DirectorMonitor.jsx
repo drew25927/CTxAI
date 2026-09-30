@@ -22,7 +22,7 @@
 
 import { curveAt, trackLabel } from "@/lib/tensionCurve";
 import { observedSegments, xhatReading, xhatScopeNote, isProvisional } from "@/lib/tensionEstimate";
-import { actuateLine, glueNumbers, reachText } from "@/lib/monitorText";
+import { actuateLine, glueNumbers, goalRowText, reachText } from "@/lib/monitorText";
 import { stimulusLabel } from "@/lib/viewerText";
 
 export const MOMENT_COLOR = { peak: "#ffffff", calm: "rgba(143,214,143,0.85)" }; // 종료 카드 범례와 같은 색(B144)
@@ -109,6 +109,8 @@ export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTar
   const last = monitor.series?.length ? monitor.series[monitor.series.length - 1] : null;
   const activeLabels = (monitor.active || []).map((n) => eventLabel[n] || stimulusLabel(n)); // micro-1 → "먼 문 소리"(viewerText 와 같은 표), 그 밖은 원래 이름
   const reading = xhatReading(last ?? (Number.isFinite(monitor.xhat) ? { tension: monitor.xhat } : null), { ...(hasTarget ? { target: monitor.target, tol: monitor.tol } : {}), active: activeLabels });
+  // 행의 두 문구(B227) — 목표 곡선이 없는데 탐침이 진행 중이면 왼쪽 "중립 탐침 S1 진행 중" · 오른쪽은 값(과 "잠정")만. 함께 적으면 한 줄을 넘었다
+  const row = goalRowText({ hasTarget, active: activeLabels, reading });
   const XHAT_COLOR = { above: "#e0a86a", below: "#8fae95", in: "#cfe", between: "rgba(230,233,240,0.55)" };
   const xhatColor = XHAT_COLOR[reading.state] || "#7fd1ff";
   const scopeNote = showTarget ? xhatScopeNote({ scene: !!monitor.scene, control: !!monitor.control }) : null;
@@ -120,10 +122,10 @@ export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTar
       <MonitorChart series={monitor.series} track={monitor.track || "H"} tNow={tNow} ceiling={monitor.ceiling ?? 1} tMax={tMax} showTarget={showTarget} marks={marks} />
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, margin: "6px 0" }}>
         {/* "지금 목표" — 현재 시각의 곡선값. "다음" 줄의 "슬롯 시각 목표" 는 슬롯 시각(예: 고양이 0:45+RISE)의 곡선값이라 값이 다르다(B109) */}
-        {/* "목표 곡선 없음(중립 탐침)" 은 NBSP 로 묶고 "(" 앞에 WORD JOINER(U+2060) — keep-all 이어도 한글 뒤 여는 괄호 앞은 줄바꿈 자리라 오른쪽 라벨이 길면 "없음 / (중립 탐침)" 으로 갈렸다(B217 · 1배속 S1 구간 span 높이 36px) */}
-        {hasTarget ? <span>지금 목표 <b>{fmt2(monitor.target)}</b></span> : <span style={{ opacity: 0.6 }}>목표{"\u00a0"}곡선{"\u00a0"}없음{"\u2060"}(중립{"\u00a0"}탐침)</span>}
-        {/* 오른쪽 라벨이 길면("S1 진행 중 · 잠정") " · " 에서 두 줄이 된다 — 둘째 줄도 오른쪽에 붙이고(textAlign) 왼쪽 라벨과 사이(gap 8)를 둔다(B217) */}
-        <span style={{ textAlign: "right" }}>추정 x̂ <b style={{ color: xhatColor }}>{fmt2(monitor.xhat)}</b>{reading.label && <span style={{ opacity: 0.6 }}> · {reading.label}</span>}</span>
+        {/* 목표 없는 구간의 왼쪽 문구는 lib/monitorText goalRowText — "목표 곡선 없음(중립 탐침)"(NBSP·WORD JOINER · B217) 또는 탐침 진행 중이면 "중립 탐침 S1 진행 중"(B227 · 오른쪽에서 같은 말을 뺀다) */}
+        {hasTarget ? <span>지금 목표 <b>{fmt2(monitor.target)}</b></span> : <span style={{ opacity: 0.6 }}>{row.left}</span>}
+        {/* 오른쪽 라벨이 길면 " · " 에서 두 줄이 된다 — 둘째 줄도 오른쪽에 붙이고(textAlign) 왼쪽 라벨과 사이(gap 8)를 둔다(B217). 1배속 표본에서 이 행은 18px 한 줄이어야 한다(B227) */}
+        <span style={{ textAlign: "right" }}>추정 x̂ <b style={{ color: xhatColor }}>{fmt2(monitor.xhat)}</b>{row.right && <span style={{ opacity: 0.6 }}> · {row.right}</span>}</span>
       </div>
       {/* 최근 봉우리 잔상(B216) — 회복이 빠른 관객의 봉우리는 x̂ 숫자에 한 창(2초)만 머문다. 봉우리 뒤 6초 동안 값·사건·경과를 남긴다 */}
       {monitor.recent && (() => {

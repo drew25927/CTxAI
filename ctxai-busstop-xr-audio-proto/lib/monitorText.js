@@ -6,6 +6,7 @@
 //       selectTrack 의 track 은 도달 점수(0.7)와 장르 성향(0.3)을 섞은 선택이라 도달 점수 최고와 다를 수 있다
 //       (bias=R:6 완주: R 0.869 · H 0.947 · C 0.89 인데 선택 R). 둘 다 참고값이고 판정 트랙은 바뀌지 않는다.
 //   (3) 연속 구동 한 줄(actuateLine) — 장면이 끝난 뒤 되돌림 구간을 "유지 u 0.00" 이 아니라 "장면 끝" 으로 적는다(B135).
+//   (4) "지금 목표 | 추정 x̂" 행의 두 문구(goalRowText) — 목표 곡선이 없는 구간에서 진행 중 탐침은 왼쪽에 한 번만 적는다(B227).
 
 import { actuationText } from "./controlActuate.js";
 
@@ -73,4 +74,28 @@ export function actuateLine(a) {
   if (a.mode === "ended") return { head: ACT_MODE.ended, body: "· 구동 0(기본 연출)" };
   const left = a.mode === "settle" && Number.isFinite(a.settleLeft) ? ` ${a.settleLeft.toFixed(1)}s` : "";
   return { head: `${ACT_MODE[a.mode] || a.mode}${left}`, body: glueNumbers(`u ${sgn(a.u || 0)} · ${actuationText(a.offsets, a.base)}`) };
+}
+
+const WJ = "\u2060";
+
+/** 목표 곡선이 없는 구간의 왼쪽 문구 — NBSP 로 묶고 "(" 앞에 WORD JOINER(B217 · keep-all 이어도 한글 뒤 여는 괄호 앞은 줄바꿈 자리라 "없음 / (중립 탐침)" 으로 갈렸다) */
+export const NO_TARGET_LABEL = `목표${NBSP}곡선${NBSP}없음${WJ}(중립${NBSP}탐침)`;
+
+/**
+ * 디렉터 모니터 "지금 목표 | 추정 x̂" 행의 두 문구(B227). reading 은 tensionEstimate.xhatReading 결과, active 는 진행 중 사건의 이름표.
+ *   목표 곡선이 있으면(/film 판정 뒤 장면) left 는 null(패널이 "지금 목표 0.45" 를 찍는다) · right 는 reading.label 그대로("먼 문 소리 진행 중"·"잠정").
+ *   목표 곡선이 없고(/interim 전체 · /film 판정 전) 진행 중 탐침이 있으면 left 를 "중립 탐침 S1 진행 중" 으로 적고 right 에서 같은 말을 뺀다 —
+ *   왼쪽 "목표 곡선 없음(중립 탐침)" 과 오른쪽 "추정 x̂ 0.12 · S1 진행 중" 을 함께 두면 패널 한 줄(292px · 12px 모노스페이스)을 넘어
+ *   오른쪽 라벨이 " · " 에서 두 줄로 갈렸다(1배속 /interim S1 구간 0:15~1:53 내내 행 높이 36px · work/evidence/b216/interim-samples.jsonl).
+ *   "사건 사이" 보다 짧은 "S1 중" 으로 줄여도 두 사건("S1·S3 진행 중")이면 다시 넘치므로, 줄이는 대신 자리를 옮긴다.
+ *   잠정 반응의 "잠정" 은 right 에 남긴다(반응이 잠정이라는 정보는 "진행 중" 과 다른 말이고 짧다).
+ * @returns {{left:string|null, right:string}}
+ */
+export function goalRowText({ hasTarget = false, active = [], reading = null } = {}) {
+  const label = reading?.label || "";
+  const names = (active || []).filter(Boolean);
+  if (hasTarget) return { left: null, right: label };
+  if (!names.length) return { left: NO_TARGET_LABEL, right: label };
+  // "중립 탐침" 과 "S1 진행 중" 은 각각 NBSP 로 묶고 그 사이만 보통 공백 — 혹시 넘치면 단어 안이 아니라 거기서 접힌다
+  return { left: `중립${NBSP}탐침 ${names.join("·")}${NBSP}진행${NBSP}중`, right: reading?.state === "between" ? "" : label };
 }
