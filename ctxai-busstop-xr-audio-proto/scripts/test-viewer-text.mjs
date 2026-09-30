@@ -1,6 +1,6 @@
 // 관객 결과 문장 회귀 테스트(B86·B84·B117·B121) — 종료 카드·비교 화면의 배합 줄이 판정과 모순되지 않고, 반응 지문·집중한 순간이 세 화면에서 같은 규칙으로 나온다
 import assert from "node:assert/strict";
-import { mixText, verdictOf, mixLines, mmss, GENRE_LABEL, fingerprintText, focusText, focusSpan, MOMENT_TEXT, MOMENT_BASIS, talkAt, sceneAt, stimulusLabel, filmTimeEvents, prevStimulus, lookKind, LOOK_KIND_SHORT, hudEventText, HUD_LOOK_BASIS, RESPONSE_BASIS } from "../lib/viewerText.js";
+import { mixText, verdictOf, mixLines, mmss, GENRE_LABEL, fingerprintText, focusText, focusSpan, MOMENT_TEXT, MOMENT_BASIS, talkAt, sceneAt, stimulusLabel, filmTimeEvents, prevStimulus, lookKind, LOOK_KIND_SHORT, hudEventText, HUD_LOOK_BASIS, RESPONSE_BASIS, RECOVERY_INSTANT_SEC } from "../lib/viewerText.js";
 
 let n = 0;
 function test(name, fn) { try { fn(); n++; console.log("ok ", name); } catch (e) { console.log("FAIL", name, "—", e.message); process.exitCode = 1; } }
@@ -280,16 +280,31 @@ test("hudEventText(B102): /film HUD 사건 표가 '봤음/안 봄' 대신 카드
   const frogRec = { name: "frog", turned: 0, responded: 1, atOnset: 0, looked: 0 };
   assert.equal(hudEventText(frog, frogRec), "움찔만 · 속도 509°/s · 후퇴 0.04m");
   const poster = { looked: true, lookSec: 2.4, maxVel: 492, retreat: 0.03, recoverySec: 1.1, recheck: 0 };
-  assert.equal(hudEventText(poster, { turned: 1, responded: 1, atOnset: 0, looked: 1 }), "돌아봄 2.4s · 속도 492°/s · 후퇴 0.03m · 회복 1.1s");
+  assert.equal(hudEventText(poster, { turned: 1, responded: 1, atOnset: 0, looked: 1 }), "돌아봄 2.4s · 속도 492°/s · 후퇴 0.03m · 복귀 1.1s");
   const spray = { looked: true, lookSec: 3.9, maxVel: 307, retreat: 0.09, recoverySec: null, recheck: 1 };
   assert.equal(hudEventText(spray, { turned: 0, responded: 0, atOnset: 1, looked: 1 }), "보고만 있음 3.9s · 재확인 · 속도 307°/s · 후퇴 0.09m");
   assert.equal(hudEventText(frog, { ...frogRec, provisional: 1, elapsed: 1.2 }), "움찔만 · 잠정 · 속도 509°/s · 후퇴 0.04m", "진행 중 잠정 레코드");
   assert.equal(hudEventText({ looked: false, lookSec: 1.2, maxVel: 20, retreat: 0, recoverySec: null, recheck: 0 }, { turned: 0, responded: 0, atOnset: 0, looked: 1 }), "반응 없음 · 응시 1.2s · 속도 20°/s · 후퇴 0.00m", "응답 창 뒤에 늦게 본 사건은 응시 초를 따로");
   // 레코드가 없으면(집중도 센서 없음·옛 세션) 헤드 포즈 looked 로 둘만 — lookResponses 의 옛 세션 규칙과 같다
   assert.equal(hudEventText(frog, null), "반응 없음 · 속도 509°/s · 후퇴 0.04m");
-  assert.equal(hudEventText(poster, undefined), "돌아봄 2.4s · 속도 492°/s · 후퇴 0.03m · 회복 1.1s");
+  assert.equal(hudEventText(poster, undefined), "돌아봄 2.4s · 속도 492°/s · 후퇴 0.03m · 복귀 1.1s");
   assert.equal(hudEventText({}, null), "반응 없음 · 속도 0°/s · 후퇴 0.00m", "feats 가 비어도 깨지지 않는다");
   for (const t of [hudEventText(frog, frogRec), hudEventText(frog, null), hudEventText(poster, null)]) assert.ok(!/봤음|안 봄/.test(t), t);
+});
+
+test("hudEventText(B253·B254): 헤드 포즈 복귀 시간은 '복귀' 로 적어 θ̂ 의 '회복 τ' 와 가르고, 0.05초 미만은 '복귀 즉시'", () => {
+  const rec = { turned: 1, responded: 1, atOnset: 0, looked: 1 };
+  const base = { looked: true, lookSec: 10.3, maxVel: 511, retreat: 0.09, recheck: 1 };
+  const head = "돌아봄 10.3s · 재확인 · 속도 511°/s · 후퇴 0.09m";
+  assert.equal(RECOVERY_INSTANT_SEC, 0.05);
+  assert.equal(hudEventText({ ...base, recoverySec: 0 }, rec), `${head} · 복귀\u00a0즉시`, "눈을 뗀 스텝에 이미 기준선 안이면 recoverySec 0 — '회복 0.0s' 대신 '복귀 즉시'(우비 인물 행 · review84) · 두 낱말은 NBSP 로 묶여 HUD 칸에서 안 갈린다");
+  assert.equal(hudEventText({ ...base, recoverySec: 0.049 }, rec), `${head} · 복귀\u00a0즉시`);
+  assert.equal(hudEventText({ ...base, recoverySec: 0.06 }, rec), `${head} · 복귀 0.1s`, "문턱 위는 그대로 소수 한 자리");
+  assert.equal(hudEventText({ ...base, recoverySec: 1.2 }, rec), `${head} · 복귀 1.2s`);
+  assert.equal(hudEventText({ ...base, recoverySec: null }, rec), head, "복귀를 못 잰 사건(관측 창 안에 기준선으로 안 돌아옴)은 항 없음");
+  for (const r of [0, 0.049, 0.06, 1.2, null]) { const t = hudEventText({ ...base, recoverySec: r }, rec); assert.ok(!/회복/.test(t) && !/0\.0s/.test(t), t); }
+  assert.ok(HUD_LOOK_BASIS.includes("복귀 = 사건 방향에서 눈을 뗀 뒤") && HUD_LOOK_BASIS.includes("±16.8°") && HUD_LOOK_BASIS.includes('"회복 τ"'), HUD_LOOK_BASIS);
+  assert.ok(!/속도·후퇴·회복/.test(HUD_LOOK_BASIS), "툴팁의 수치 항 이름도 복귀");
 });
 
 test("HUD·모니터 기준 문장(B102): 툴팁이 네 갈래 기준과 '응답 = 돌아봄 + 움찔만(봤는지와 별개)' 을 같은 수치로 적는다", () => {

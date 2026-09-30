@@ -275,15 +275,20 @@ export function lookKind(rec) {
 /** HUD 사건 표의 짧은 갈래 이름(B102) — MOMENT_TEXT 의 "돌아본 사건 · 움찔만 한 사건 · 보고만 있던 사건 · 반응 없던 사건" 과 같은 낱말. */
 export const LOOK_KIND_SHORT = { turned: "돌아봄", flinched: "움찔만", watched: "보고만 있음", missed: "반응 없음" };
 
-/** HUD 사건 표 툴팁(B102) — 네 갈래의 기준과 모니터 "응답" 의 관계. 수치는 lib/engagementSense.js ENGAGE_PARAMS 그대로. */
-export const HUD_LOOK_BASIS = `돌아봄 = 사건 방향 ±${ENGAGE_PARAMS.LOOK_TOL_DEG}° 안으로 고개를 돌림 · 움찔만 = 돌아보지는 않았지만 빠른 고개 움직임(${ENGAGE_PARAMS.MOVE_RESP_DEG_S}°/s)·후퇴(${ENGAGE_PARAMS.RETREAT_M}m) · 보고만 있음 = 시작할 때 이미 그쪽을 보고 있었고 움찔하지 않음 · 반응 없음 = 셋 다 아님 · 디렉터 모니터 θ̂ 의 "응답" = 돌아봄 + 움찔만(봤는지와 별개) · 속도·후퇴·회복 수치는 헤드 포즈 채점(lib/headPoseSense.js)`;
+/** HUD 사건 행 "복귀" 항의 즉시 문턱(초 · 잠정치 · B253) — 헤드 포즈 채점의 recoverySec 는 눈을 뗀 스텝에 이미 기준선 안이면 0 이 되므로, 이 값 미만은 "복귀 즉시" 로 적는다. */
+export const RECOVERY_INSTANT_SEC = 0.05;
+
+/** HUD 사건 표 툴팁(B102) — 네 갈래의 기준과 모니터 "응답" 의 관계. 수치는 lib/engagementSense.js ENGAGE_PARAMS 그대로.
+ *  "복귀" 는 헤드 포즈 복귀 시간(lib/headPoseSense.js · 기준선 ±LOOK_TOLERANCE_DEG×0.6)이고 디렉터 모니터 θ̂ 의 "회복 τ" 와 다른 값이라 낱말을 갈랐다(B254). */
+export const HUD_LOOK_BASIS = `돌아봄 = 사건 방향 ±${ENGAGE_PARAMS.LOOK_TOL_DEG}° 안으로 고개를 돌림 · 움찔만 = 돌아보지는 않았지만 빠른 고개 움직임(${ENGAGE_PARAMS.MOVE_RESP_DEG_S}°/s)·후퇴(${ENGAGE_PARAMS.RETREAT_M}m) · 보고만 있음 = 시작할 때 이미 그쪽을 보고 있었고 움찔하지 않음 · 반응 없음 = 셋 다 아님 · 디렉터 모니터 θ̂ 의 "응답" = 돌아봄 + 움찔만(봤는지와 별개) · 속도·후퇴·복귀 수치는 헤드 포즈 채점(lib/headPoseSense.js) · 복귀 = 사건 방향에서 눈을 뗀 뒤 고개가 기준선 ±${(ENGAGE_PARAMS.LOOK_TOL_DEG * 0.6).toFixed(1)}° 안으로 돌아오기까지(${RECOVERY_INSTANT_SEC}초 미만이면 "즉시") · 모니터 θ̂ 의 "회복 τ" 는 반응이 가라앉는 시상수라 다른 값`;
 
 /** 디렉터 모니터 "응답 N/N" 툴팁(B102) — 응답의 정의 한 줄. HUD 사건 표·종료 카드·비교 화면과 같은 이름을 쓴다. */
 export const RESPONSE_BASIS = `응답 = 돌아봄 + 움찔만(빠른 고개 움직임 ${ENGAGE_PARAMS.MOVE_RESP_DEG_S}°/s · 후퇴 ${ENGAGE_PARAMS.RETREAT_M}m) · 봤는지(응시)와 별개 — 보고만 있음·반응 없음은 응답이 아님 · HUD 사건 표·종료 카드·비교 화면의 같은 이름`;
 
 /**
- * `/film` HUD 사건 표 한 줄(B102) — "돌아봄 2.4s · 재확인 · 속도 492°/s · 후퇴 0.03m · 회복 1.1s".
- * 갈래는 집중도 센서 레코드(rec · 카드와 같은 기준 · lookKind)로, 초·속도·후퇴·회복 수치는 헤드 포즈 채점 feats 로 적는다(종전 그대로).
+ * `/film` HUD 사건 표 한 줄(B102) — "돌아봄 2.4s · 재확인 · 속도 492°/s · 후퇴 0.03m · 복귀 1.1s".
+ * 갈래는 집중도 센서 레코드(rec · 카드와 같은 기준 · lookKind)로, 초·속도·후퇴·복귀 수치는 헤드 포즈 채점 feats 로 적는다(종전 그대로).
+ * 복귀(feats.recoverySec · 눈을 뗀 뒤 기준선 안으로 돌아오기까지)는 θ̂ 의 "회복 τ" 와 다른 값이라 "복귀" 로 적고(B254), RECOVERY_INSTANT_SEC 미만이면 "복귀 즉시"(B253 · "회복 0.0s" 가 찍히던 문제).
  * 응시 초(feats.lookSec)는 돌아봄·보고만 있음이면 갈래 뒤에("돌아봄 2.4s"), 움찔만·반응 없음인데 0 이 아니면(응답 창 뒤에 늦게 봄) "· 응시 1.2s".
  * 진행 중 잠정 레코드면 "· 잠정". rec 가 없으면(집중도 센서 없음·옛 세션) feats 의 looked 로 돌아봄/반응 없음만 가른다.
  */
@@ -296,6 +301,10 @@ export function hudEventText(feats = {}, rec = null) {
   if (feats.recheck) parts.push("재확인");
   parts.push(`속도 ${(Number(feats.maxVel) || 0).toFixed(0)}°/s`);
   parts.push(`후퇴 ${(Number(feats.retreat) || 0).toFixed(2)}m`);
-  if (feats.recoverySec != null) parts.push(`회복 ${Number(feats.recoverySec).toFixed(1)}s`);
+  if (feats.recoverySec != null) {
+    const r = Number(feats.recoverySec);
+    // "복귀 즉시" 는 두 낱말이라 좁은 HUD 칸에서 "복귀 / 즉시" 로 갈린다(page.js glueNumbers 는 숫자 앞 공백만 묶는다) — monitorText 와 같은 NBSP 로 잇는다
+    parts.push(Number.isFinite(r) && r < RECOVERY_INSTANT_SEC ? "복귀\u00a0즉시" : `복귀 ${r.toFixed(1)}s`);
+  }
   return parts.join(" · ");
 }
