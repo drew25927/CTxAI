@@ -5,7 +5,7 @@ import {
   sessionRoute, biasOf, movieEvents, movieTrajectory, sessionBadges, directionChangeText, actuationStats,
   xhatSeries, eventMarks, markBefore, MARK_NEAR_SEC, judgeTime, judgeLine, lookResponses, lookText, xhatPeak, xhatGap, pairWarning,
   momentsOf, peakText, NO_PEAK_TEXT, leaderBands, labelRows, labelWidth, labelOverlaps, LABEL_LAYOUT, eventPeaks, EVENT_PEAK_SPAN_SEC, lengthNote,
-  pairHeadline, gapText, conditionDiff, SAME_NIGHT_EPS,
+  pairHeadline, gapText, conditionDiff, SAME_NIGHT_EPS, sessionOptionLabel, pickerOptions,
 } from "../lib/sessionCompare.js";
 import { interimAdapt } from "../lib/interimAdapt.js";
 
@@ -477,5 +477,34 @@ test("pairHeadline(B240): 제목·부제가 서로 부정하지 않는다 — �
   assert.equal(conditionDiff(FEARFUL, CALM), "합성 관객(A 공포형 · B 차분형)");
   assert.equal(conditionDiff(FEARFUL, FEARFUL), null);
   assert.equal(conditionDiff(null, CALM), null);
+});
+test("sessionOptionLabel·pickerOptions(B239): kiosk 의 세션 선택 상자는 고른 세션 하나로 잠긴다 — 다른 세션 이름이 심사 화면 텍스트에 찍히지 않는다", () => {
+  // /api/session 목록 모양(b224 회차의 data/sessions/ 5개 가운데 셋)
+  const items = [
+    { id: "cu", savedAt: "2026-09-30T06:11:02.000Z", route: "interim", dominant: "R", viewer: { profile: "curious", label: "호기심형", seed: 1 }, speed: 1, selfReport: null },
+    { id: "on", savedAt: "2026-09-30T03:28:10.000Z", route: "film", dominant: "H", viewer: { profile: "fearful", label: "공포형", seed: 1 }, speed: 1, selfReport: null },
+    { id: "x3", savedAt: "2026-09-30T03:25:00.000Z", route: "film", dominant: "H", viewer: null, speed: 3, selfReport: "R" },
+  ];
+  assert.equal(sessionOptionLabel(items[0]), "09-30 06:11 · interim · 로맨스 · 합성 호기심형");
+  assert.equal(sessionOptionLabel(items[1]), "09-30 03:28 · film · 공포 · 합성 공포형");
+  assert.equal(sessionOptionLabel(items[2]), "09-30 03:25 · film · 공포 · ×3 (본인 로맨스)", "배속·본인 답은 종전 option 문구 그대로");
+  assert.equal(sessionOptionLabel(null), "");
+  // 세션 JSON 자체(savedAt 없는 고정 세션)도 같은 함수 — id 를 앞에, 라우트는 sessionRoute 로
+  assert.equal(sessionOptionLabel(ON), "2026-09-29T17-31-05-597Z_H · film · 공포 · 합성 공포형");
+  assert.equal(sessionOptionLabel(CALM), `${CALM.id} · interim · 로맨스 · 합성 차분형`);
+  // 개발 화면은 전체 목록, kiosk 는 고른 것 하나
+  assert.equal(pickerOptions(items, "on"), items);
+  assert.deepEqual(pickerOptions(items, "on", { kiosk: true }), [items[1]]);
+  assert.deepEqual(pickerOptions(items, "x3", { kiosk: true }), [items[2]]);
+  // 목록에 없는 id(200개 넘는 날·목록 실패)는 읽어 둔 세션 JSON 으로, 그것도 없거나 id 가 다르면 빈 배열
+  assert.deepEqual(pickerOptions(items, ON.id, { kiosk: true, fallback: ON }), [ON]);
+  assert.deepEqual(pickerOptions(items, "nope", { kiosk: true, fallback: ON }), []);
+  assert.deepEqual(pickerOptions(items, null, { kiosk: true, fallback: ON }), []);
+  assert.deepEqual(pickerOptions([], "on", { kiosk: true }), []);
+  // 완료 판정과 같은 검사 — kiosk 두 상자의 문구를 합치면 a·b 두 줄뿐이고 다른 세션(호기심형)은 없다
+  const shown = ["on", "x3"].flatMap((id) => pickerOptions(items, id, { kiosk: true })).map(sessionOptionLabel);
+  assert.equal(shown.length, 2);
+  assert.doesNotMatch(shown.join("\n"), /호기심형|06:11/);
+  assert.equal(["on", "x3"].flatMap((id) => pickerOptions(items, id)).length, 6, "개발 화면은 상자마다 3줄");
 });
 console.log(`\n${n} passed`);

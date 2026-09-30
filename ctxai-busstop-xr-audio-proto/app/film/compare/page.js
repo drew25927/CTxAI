@@ -11,17 +11,18 @@
 //
 // /film/compare            → 최근 두 세션
 // /film/compare?a=<id>&b=<id>
-// /film/compare?…&kiosk=1  → 전시·녹화용(개발용 링크 숨김)
+// /film/compare?…&kiosk=1  → 전시·녹화용(개발용 링크 숨김 · A·B 세션 선택 상자는 고른 세션 하나로 잠김 — B239)
 
 import { useEffect, useMemo, useState } from "react";
 import s from "../../story/story.module.css";
 import f from "../film.module.css";
 import { mixLines, verdictOf, mmss, fingerprintText, MOMENT_TEXT, MOMENT_BASIS } from "@/lib/viewerText";
-import { pairHeadline, gapText, lengthNote, labelRows, LABEL_LAYOUT, sessionRoute, sessionBadges, directionChangeText, xhatSeries, eventMarks, judgeTime, judgeLine, lookResponses, lookText, momentsOf, peakText, NO_PEAK_TEXT, xhatGap, pairWarning, biasOf, movieTrajectory, markBefore, eventPeaks, leaderBands } from "@/lib/sessionCompare";
+import { pairHeadline, gapText, lengthNote, labelRows, LABEL_LAYOUT, sessionRoute, sessionBadges, directionChangeText, xhatSeries, eventMarks, judgeTime, judgeLine, lookResponses, lookText, momentsOf, peakText, NO_PEAK_TEXT, xhatGap, pairWarning, biasOf, movieTrajectory, markBefore, eventPeaks, leaderBands, sessionOptionLabel, pickerOptions } from "@/lib/sessionCompare";
 import { observedSegments } from "@/lib/tensionEstimate";
 
 const GENRE = { R: { label: "로맨스", accent: "#f2a7c0" }, H: { label: "공포", accent: "#8fae95" }, C: { label: "블랙코미디", accent: "#e0a86a" } };
 const XHAT_COLOR = { a: "#7fd1ff", b: "#ffcf7a" }; // x̂ 곡선 — A 하늘색 실선, B 호박색 점선
+const PICKER_STYLE = { background: "rgba(0,0,0,0.4)", color: "#fff", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 6, padding: "4px 8px", fontSize: 12 }; // A·B 세션 선택 상자 — kiosk 의 잠긴 상자도 같은 모양(B239)
 
 function useQuery() {
   const [q, setQ] = useState({});
@@ -192,7 +193,9 @@ function diverge(a, b) {
 
 export default function ComparePage() {
   const q = useQuery();
-  const kiosk = q.kiosk === "1"; // ?kiosk=1 — 전시·녹화용: 개발용 "← /film" 링크를 숨긴다(/film·/interim 과 같은 규칙, B122)
+  // ?kiosk=1 — 전시·녹화용: 개발용 "← /film" 링크를 숨기고(/film·/interim 과 같은 규칙, B122), A·B 세션 선택 상자를 고른 세션 하나로
+  // 잠근다(B239) — <select> 는 data/sessions/ 전체를 option 으로 담아 심사용 캡처 텍스트에 그날 다른 관객의 세션 이름까지 찍혔다.
+  const kiosk = q.kiosk === "1";
   const [list, setList] = useState([]);
   const [a, setA] = useState(null);
   const [b, setB] = useState(null);
@@ -269,9 +272,14 @@ export default function ComparePage() {
           <div key={key} style={{ margin: "10px 0 16px", padding: "12px 14px", borderRadius: 12, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 6 }}>
               <b>{label}</b>
-              <select value={ids[key] || ""} onChange={(e) => setIds((p) => ({ ...p, [key]: e.target.value }))} style={{ background: "rgba(0,0,0,0.4)", color: "#fff", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 6, padding: "4px 8px", fontSize: 12 }}>
-                {list.map((i) => <option key={i.id} value={i.id}>{i.savedAt?.slice(5, 16).replace("T", " ")} · {i.route === "interim" ? "interim" : "film"} · {GENRE[i.dominant]?.label || "-"}{i.viewer?.label ? ` · 합성 ${i.viewer.label}` : ""}{i.speed && i.speed !== 1 ? ` · ×${i.speed}` : ""}{i.selfReport ? ` (본인 ${GENRE[i.selfReport]?.label})` : ""}</option>)}
-              </select>
+              {kiosk ? (
+                // 잠긴 상자 — 문구는 개발 화면의 option 과 같고(sessionOptionLabel), 세션 id 는 툴팁으로만
+                <span title={ids[key] || ""} style={{ ...PICKER_STYLE, display: "inline-block" }}>{sessionOptionLabel(pickerOptions(list, ids[key], { kiosk, fallback: sess })[0]) || "세션 없음"}</span>
+              ) : (
+                <select value={ids[key] || ""} onChange={(e) => setIds((p) => ({ ...p, [key]: e.target.value }))} style={PICKER_STYLE}>
+                  {pickerOptions(list, ids[key]).map((i) => <option key={i.id} value={i.id}>{sessionOptionLabel(i)}</option>)}
+                </select>
+              )}
               {sessionBadges(sess).map((bd) => (
                 <span key={bd.key} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 999, border: `1px solid ${bd.tone === "warn" ? "rgba(255,207,122,0.55)" : "rgba(255,255,255,0.2)"}`, color: bd.tone === "warn" ? "#ffcf7a" : "rgba(255,255,255,0.7)" }}>{bd.text}</span>
               ))}

@@ -536,3 +536,28 @@ export function pairHeadline(a, b, { divergeAt = null, gap = null, gapAt = null 
   }
   return { title, sub: `배합 궤적은 거의 같습니다. 차이는 긴장 추정 x̂(${gapText(gap, gapAt, { values: false })})${cond ? `와 ${cond}가 바꾼 연출` : ""}에 있습니다.` };
 }
+
+// ── 세션 선택 상자(A·B 카드) — 항목 문구와 kiosk 잠금(B239) ──
+// /api/session 목록 항목(또는 세션 JSON 자체)을 "09-30 03:28 · film · 공포 · 합성 공포형 · ×3 (본인 로맨스)" 로.
+// savedAt 이 없는 세션(옛 파일)은 id 를 앞에 둔다. viewer 는 합성 관객일 때만 파일에 남는다(label 있음).
+export function sessionOptionLabel(item) {
+  if (!item) return "";
+  const when = item.savedAt ? item.savedAt.slice(5, 16).replace("T", " ") : item.id || "?";
+  let s = `${when} · ${sessionRoute(item)} · ${GENRE_LABEL[item.dominant] || "-"}`;
+  if (item.viewer?.label) s += ` · 합성 ${item.viewer.label}`;
+  if (item.speed && item.speed !== 1) s += ` · ×${item.speed}`;
+  if (item.selfReport) s += ` (본인 ${GENRE_LABEL[item.selfReport] || item.selfReport})`;
+  return s;
+}
+
+/**
+ * 선택 상자에 넣을 항목. 개발 화면은 data/sessions/ 전체 목록, kiosk(전시·녹화)에서는 지금 고른 세션 하나만 — 상자를 잠근다.
+ * 비교 화면의 innerText 에 <select> 의 option 이 모두 찍혀 심사용 캡처에 다른 세션(그날 다른 관객)의 이름이 섞이던 문제(B239).
+ * 고른 id 가 목록에 없으면(목록은 최근 200개) 이미 읽어 둔 세션 JSON(fallback)으로, 그것도 없으면 빈 배열.
+ */
+export function pickerOptions(list = [], id, { kiosk = false, fallback = null } = {}) {
+  if (!kiosk) return list;
+  if (!id) return [];
+  const it = list.find((i) => i.id === id);
+  return it ? [it] : fallback && fallback.id === id ? [fallback] : [];
+}
