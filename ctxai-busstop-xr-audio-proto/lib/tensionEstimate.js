@@ -226,13 +226,17 @@ export function peaks(series, stimuli = [], minProm = 0.1) {
  * 최근 봉우리(B216) — 모니터의 "추정 x̂" 숫자는 창(2초)마다 바뀌어, 회복이 빠른 관객(합성 공포형 미세 자극 recoverySec 0.07~0.44초)의
  * 봉우리는 한 창만 머물고 사람 눈에도 2초 표본에도 잘 안 잡힌다(1배속 micro-1 봉우리 창 69~71초가 표본 간격에 걸려 숫자에 없었다).
  * 그래서 가장 최근의 국소 최댓값(관측 창 · 바닥 위 minProm 이상)을 hold 초 동안 "최근 봉우리 1.00 · 먼 문 소리 · 3초 전" 으로 남긴다.
- * 마지막 점은 아직 내려오지 않았어도 봉우리 후보다(지금 오르는 중 → current). 이름은 봉우리 시각(tPeak)을 관측 창
+ * 마지막 점은 아직 내려오지 않았어도 봉우리 후보다(current). 그 점의 창 안 최댓값이 창 끝(t1)에 있으면 커널 꼭대기(onset+RISE)가
+ * 창 뒤에 있다는 뜻이라 값은 봉우리가 아니라 오르는 중의 현재값이다 → rising(B235 · 1배속 물보라가 "최근 봉우리 0.22" 뒤 2초 만에
+ * "0.96" 이 됐다). 모니터는 rising 이면 "x̂ 오르는 중 0.22 · 물보라" 로 적는다(`monitorText.recentPeakText`). 창 안 꼭대기가
+ * 이미 지났거나(tPeak < t1) 상한 1.0 에 닿았으면 마지막 점이어도 봉우리다. 잠정 점(진행 중 레코드)의 봉우리 높이는 레코드가 닫힐 때까지
+ * 위로만 재추정될 수 있다(engagementSense 머리말 — 잠정 진폭은 지금까지의 최댓값) — 그것은 "잠정" 표시가 알린다. 이름은 봉우리 시각(tPeak)을 관측 창
  * [onset, onset + dur + NAME_TAIL] 에 품은 자극 중 가장 늦게 시작한 것 — 없으면 null(모니터는 이름 없이 값·시각만 적는다).
  * 시간 기준은 계열·자극과 같은 축(센서 실제 초). 배속 페이지는 ago 를 배속으로 곱해 영화 초로 적는다.
  * @param {Array} series  estimateTensionSeries 결과(진행 중 자극 포함 가능 · 잠정 점은 provisional 로 표시)
  * @param {Array} stimuli  닫힌 레코드 + 진행 중 잠정 레코드(이름표용)
  * @param {{tNow?:number, hold?:number, minProm?:number, eps?:number}} [o]
- * @returns {{t:number, tPeak:number, tension:number, name:string|null, ago:number, provisional:boolean, current:boolean}|null}
+ * @returns {{t:number, tPeak:number, tension:number, name:string|null, ago:number, provisional:boolean, current:boolean, rising:boolean}|null}
  */
 export const RECENT_PEAK = Object.freeze({ HOLD_SEC: 6, MIN_PROM: 0.1, NAME_TAIL: 6 }); // 잠정치 — hold 는 2초 표본 세 개가 걸리는 길이
 export function recentPeak(series = [], stimuli = [], { tNow = Infinity, hold = RECENT_PEAK.HOLD_SEC, minProm = RECENT_PEAK.MIN_PROM, eps = OBS_EPS } = {}) {
@@ -255,5 +259,9 @@ export function recentPeak(series = [], stimuli = [], { tNow = Infinity, hold = 
     if (!Number.isFinite(on) || on > tPeak + 0.5 || tPeak > on + (st.dur || 0) + RECENT_PEAK.NAME_TAIL) continue;
     if (on > lastOnset) { lastOnset = on; name = st.name ?? null; }
   }
-  return { t: p.t, tPeak, tension: p.tension, name, ago: Math.max(0, Math.round((now - tPeak) * 10) / 10), provisional: isProvisional(p, eps), current: idx === pts.length - 1 };
+  const current = idx === pts.length - 1;
+  // tPeak 는 0.01 초로 반올림돼 있다 — 창 끝과 0.01 안이면 창 끝(오르는 중). 옛 점(tPeak 없음)은 tPeak=t 라 current 면 rising.
+  // 상한 1.0 에 닿은 점은 더 오를 수 없으니 봉우리로 둔다("x̂ 오르는 중 1.00" 은 읽는 이를 헷갈리게 한다 · 1배속 비명 s27)
+  const rising = current && tPeak >= p.t - 0.011 && p.tension < 1;
+  return { t: p.t, tPeak, tension: p.tension, name, ago: Math.max(0, Math.round((now - tPeak) * 10) / 10), provisional: isProvisional(p, eps), current, rising };
 }

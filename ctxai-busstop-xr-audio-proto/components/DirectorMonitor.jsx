@@ -22,7 +22,7 @@
 
 import { curveAt, trackLabel } from "@/lib/tensionCurve";
 import { observedSegments, xhatReading, xhatScopeNote, isProvisional } from "@/lib/tensionEstimate";
-import { actuateLine, glueNumbers, goalRowText, reachText } from "@/lib/monitorText";
+import { actuateLine, glueNumbers, goalRowText, reachText, recentPeakText } from "@/lib/monitorText";
 import { stimulusLabel } from "@/lib/viewerText";
 
 export const MOMENT_COLOR = { peak: "#ffffff", calm: "rgba(143,214,143,0.85)" }; // 종료 카드 범례와 같은 색(B144)
@@ -127,11 +127,12 @@ export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTar
         {/* 오른쪽 라벨이 길면 " · " 에서 두 줄이 된다 — 둘째 줄도 오른쪽에 붙이고(textAlign) 왼쪽 라벨과 사이(gap 8)를 둔다(B217). 1배속 표본에서 이 행은 18px 한 줄이어야 한다(B227) */}
         <span style={{ textAlign: "right" }}>추정 x̂ <b style={{ color: xhatColor }}>{fmt2(monitor.xhat)}</b>{row.right && <span style={{ opacity: 0.6 }}> · {row.right}</span>}</span>
       </div>
-      {/* 최근 봉우리 잔상(B216) — 회복이 빠른 관객의 봉우리는 x̂ 숫자에 한 창(2초)만 머문다. 봉우리 뒤 6초 동안 값·사건·경과를 남긴다 */}
+      {/* 최근 봉우리 잔상(B216) — 회복이 빠른 관객의 봉우리는 x̂ 숫자에 한 창(2초)만 머문다. 봉우리 뒤 6초 동안 값·사건·경과를 남긴다.
+          마지막 점이 아직 오르는 중(rising)이면 봉우리가 아니라 현재값이므로 "x̂ 오르는 중 0.22 · 물보라" 로 적는다(B235 · monitorText.recentPeakText) */}
       {monitor.recent && (() => {
         const rc = monitor.recent;
-        const rname = rc.name ? (eventLabel[rc.name] || stimulusLabel(rc.name)) : null;
-        return <div style={{ opacity: 0.7, fontSize: 11, marginTop: -4, marginBottom: 4, wordBreak: "keep-all" }}>최근 봉우리 <b>{fmt2(rc.tension)}</b>{rname ? ` · ${rname}` : ""} · {rc.ago < 1 ? "지금" : `${Math.round(rc.ago)}초\u00a0전`}{rc.provisional ? " · 잠정" : ""}</div>;
+        const rp = recentPeakText(rc, rc.name ? (eventLabel[rc.name] || stimulusLabel(rc.name)) : null);
+        return rp && <div style={{ opacity: 0.7, fontSize: 11, marginTop: -4, marginBottom: 4, wordBreak: "keep-all" }}>{rp.label} <b>{rp.value}</b>{rp.tail}</div>;
       })()}
       {scopeNote && <div style={{ opacity: 0.6, fontSize: 11, marginTop: -4, marginBottom: 4, wordBreak: "keep-all" }}>{scopeNote}</div>}
       {theta && (

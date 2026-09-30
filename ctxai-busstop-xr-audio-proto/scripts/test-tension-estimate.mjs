@@ -243,8 +243,8 @@ test("잔움직임 항(B152): 사건 관측 안에 든 창은 그 비율만큼 �
 test("최근 봉우리(B216): 가장 최근 국소 최댓값을 hold 초 동안 이름·경과와 함께 남긴다 — 마지막 점(오르는 중)도 후보 · 사건 사이 바닥·작은 봉우리는 없음 · 배속 무관한 실제 초", () => {
   const s = [{ t: 2, tension: 0.12, fromStim: 0 }, { t: 4, tension: 0.5, fromStim: 0.38 }, { t: 6, tension: 1.0, fromStim: 0.88, tPeak: 5.2, fromActive: 0.88 }, { t: 8, tension: 0.3, fromStim: 0.18 }, { t: 10, tension: 0.13, fromStim: 0.01 }];
   const st = [{ name: "micro-1", onset: 4.0, dur: 1.5 }, { name: "poster", onset: 20, dur: 3 }];
-  assert.deepEqual(recentPeak(s, st, { tNow: 6 }), { t: 6, tPeak: 5.2, tension: 1, name: "micro-1", ago: 0.8, provisional: true, current: true }); // 지금 오르는 중
-  assert.deepEqual(recentPeak(s, st, { tNow: 10 }), { t: 6, tPeak: 5.2, tension: 1, name: "micro-1", ago: 4.8, provisional: true, current: false }); // 내려온 뒤에도 남는다
+  assert.deepEqual(recentPeak(s, st, { tNow: 6 }), { t: 6, tPeak: 5.2, tension: 1, name: "micro-1", ago: 0.8, provisional: true, current: true, rising: false }); // 마지막 점이지만 창 안 꼭대기(5.2)가 지났다 → 봉우리
+  assert.deepEqual(recentPeak(s, st, { tNow: 10 }), { t: 6, tPeak: 5.2, tension: 1, name: "micro-1", ago: 4.8, provisional: true, current: false, rising: false }); // 내려온 뒤에도 남는다
   assert.equal(recentPeak(s, st, { tNow: 12 }).ago, 6.8); // 봉우리 점(t 6) 뒤 6초까지
   assert.equal(recentPeak(s, st, { tNow: 12.1 }), null, "hold 6초가 지나면 없음");
   assert.equal(RECENT_PEAK.HOLD_SEC, 6);
@@ -260,6 +260,27 @@ test("최근 봉우리(B216): 가장 최근 국소 최댓값을 hold 초 동안 
   const flat = [{ t: 2, tension: 0.5, fromStim: 0.38 }, { t: 4, tension: 1.0, fromStim: 0.9 }, { t: 6, tension: 1.0, fromStim: 0.95 }, { t: 8, tension: 0.4, fromStim: 0.28 }];
   assert.equal(recentPeak(flat, [], { tNow: 8 }).t, 6);
   assert.equal(recentPeak([], st, { tNow: 8 }), null);
+});
+
+test("최근 봉우리 rising(B235): 마지막 점의 창 안 최댓값이 창 끝에 있으면(커널 꼭대기가 창 뒤) 봉우리가 아니라 오르는 중 — 다음 창이 닫히면 그 점이 봉우리", () => {
+  // 1배속 물보라: 창 끝 직전에 시작한 자극 → 창 끝 값 0.22 는 오르는 중, 다음 창 최댓값 0.96 이 봉우리
+  const st = [{ name: "splash", onset: 3.9, dur: 1.2 }];
+  const rise = [{ t: 2, tension: 0.12, fromStim: 0, tPeak: 2 }, { t: 4, tension: 0.22, fromStim: 0.1, tPeak: 4, fromActive: 0.1 }];
+  const a = recentPeak(rise, st, { tNow: 4.5 });
+  assert.equal(a.rising, true); assert.equal(a.current, true); assert.equal(a.name, "splash"); assert.equal(a.tension, 0.22);
+  const next = [...rise, { t: 6, tension: 0.96, fromStim: 0.84, tPeak: 4.3 }];
+  const b = recentPeak(next, st, { tNow: 6 });
+  assert.equal(b.rising, false, "창 안 꼭대기 4.3 < 창 끝 6 → 봉우리"); assert.equal(b.current, true); assert.equal(b.tension, 0.96);
+  assert.equal(recentPeak([...next, { t: 8, tension: 0.3, fromStim: 0.18, tPeak: 6 }], st, { tNow: 8 }).rising, false, "내려온 뒤는 current 도 rising 도 아님");
+  assert.equal(recentPeak(rise, st, { tNow: 4.5 }).ago, 0.5, "rising 이어도 ago 는 창 끝 기준(모니터는 안 적는다)");
+  // 0.01 반올림 오차 — tPeak 3.995 → 4 로 반올림된 값도 창 끝
+  assert.equal(recentPeak([{ t: 2, tension: 0.12, fromStim: 0, tPeak: 2 }, { t: 4.004, tension: 0.22, fromStim: 0.1, tPeak: 4 }], st, { tNow: 4.5 }).rising, true);
+  // 상한 1.0 에 닿은 마지막 점 — 꼭대기가 창 안(tPeak < t)이면 rising 아님(B216 "최근 봉우리 1.00 · 먼 문 소리 · 지금" 그대로)
+  assert.equal(recentPeak([{ t: 2, tension: 0.12, fromStim: 0, tPeak: 2 }, { t: 4, tension: 1, fromStim: 0.9, tPeak: 2.4 }], [{ name: "micro-1", onset: 2.2, dur: 1 }], { tNow: 4 }).rising, false);
+  // 상한 1.0 에 닿은 점은 창 끝이어도 rising 아님 — 더 오를 수 없다(1배속 비명: 창 끝 1.00 → "최근 봉우리 1.00 · 비명 · 지금")
+  assert.equal(recentPeak([{ t: 2, tension: 0.12, fromStim: 0, tPeak: 2 }, { t: 4, tension: 1, fromStim: 0.95, tPeak: 4 }], [{ name: "scream", onset: 3.9, dur: 1 }], { tNow: 4 }).rising, false);
+  // 옛 점(tPeak 없음)은 tPeak = t 라 마지막 점이면 rising — 저장 세션에는 tPeak 가 늘 있어 실제로는 안 생긴다
+  assert.equal(recentPeak([{ t: 2, tension: 0.12, fromStim: 0 }, { t: 4, tension: 0.5, fromStim: 0.38 }], st, { tNow: 4 }).rising, true);
 });
 
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);

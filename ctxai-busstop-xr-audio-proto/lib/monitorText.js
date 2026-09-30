@@ -7,6 +7,7 @@
 //       (bias=R:6 완주: R 0.869 · H 0.947 · C 0.89 인데 선택 R). 둘 다 참고값이고 판정 트랙은 바뀌지 않는다.
 //   (3) 연속 구동 한 줄(actuateLine) — 장면이 끝난 뒤 되돌림 구간을 "유지 u 0.00" 이 아니라 "장면 끝" 으로 적는다(B135).
 //   (4) "지금 목표 | 추정 x̂" 행의 두 문구(goalRowText) — 목표 곡선이 없는 구간에서 진행 중 탐침은 왼쪽에 한 번만 적는다(B227).
+//   (5) 최근 봉우리 잔상 한 줄(recentPeakText) — 마지막 점이 아직 오르는 중이면 "봉우리" 가 아니라 "x̂ 오르는 중" 으로 적는다(B235).
 
 import { actuationText } from "./controlActuate.js";
 
@@ -98,4 +99,23 @@ export function goalRowText({ hasTarget = false, active = [], reading = null } =
   if (!names.length) return { left: NO_TARGET_LABEL, right: label };
   // "중립 탐침" 과 "S1 진행 중" 은 각각 NBSP 로 묶고 그 사이만 보통 공백 — 혹시 넘치면 단어 안이 아니라 거기서 접힌다
   return { left: `중립${NBSP}탐침 ${names.join("·")}${NBSP}진행${NBSP}중`, right: reading?.state === "between" ? "" : label };
+}
+
+/**
+ * 최근 봉우리 잔상 줄(B216)의 세 조각 — 모니터는 value 만 굵게 찍는다(B235).
+ *   rising(마지막 점 · 창 안 최댓값이 창 끝 = 아직 오르는 중): "x̂ 오르는 중 | 0.22 | · 물보라 · 잠정" — 경과("N초 전")는 적지 않는다.
+ *   그 밖: "최근 봉우리 | 0.96 | · 물보라 · 3초 전 · 잠정". ago < 1 이면 "지금".
+ * @param {{tension:number, ago:number, provisional?:boolean, rising?:boolean}} rc  tensionEstimate.recentPeak 결과(배속이면 ago 는 영화 초)
+ * @param {string|null} name  사건 표시 이름(eventLabel/stimulusLabel 을 거친 것) — 없으면 이름 없이
+ * @returns {{label:string, value:string, tail:string}|null}
+ */
+export function recentPeakText(rc, name = null) {
+  if (!rc || !Number.isFinite(rc.tension)) return null;
+  const value = rc.tension.toFixed(2);
+  const parts = [];
+  if (name) parts.push(name);
+  if (!rc.rising) parts.push(rc.ago < 1 ? "지금" : `${Math.round(rc.ago)}초${NBSP}전`);
+  if (rc.provisional) parts.push("잠정");
+  // 라벨은 보통 공백 — 줄이 짧아(≤ 30자 · 11px) 접힐 일이 없고, 기존 관찰 하네스가 '최근 봉우리' 를 보통 공백으로 찾는다
+  return { label: rc.rising ? "x̂ 오르는 중" : "최근 봉우리", value, tail: parts.map((x) => ` · ${x}`).join("") };
 }

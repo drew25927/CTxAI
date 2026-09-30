@@ -1,6 +1,6 @@
 // 모니터 문구 회귀 테스트(B65·B154) — 라벨과 숫자가 다른 줄로 갈리지 않고, 도달 점수 줄이 트랙 변경으로 읽히지 않는다
 import assert from "node:assert/strict";
-import { glueNumbers, pair, reachText, reachParts, actuateLine, ACT_MODE, goalRowText, NO_TARGET_LABEL } from "../lib/monitorText.js";
+import { glueNumbers, pair, reachText, reachParts, actuateLine, ACT_MODE, goalRowText, NO_TARGET_LABEL, recentPeakText } from "../lib/monitorText.js";
 import { xhatReading } from "../lib/tensionEstimate.js";
 import { actuationFor, offsetsFor, actuationText } from "../lib/controlActuate.js";
 
@@ -139,6 +139,15 @@ test("goalRowText: 목표 곡선이 있으면(/film 판정 뒤) 왼쪽은 패널
   assert.equal(r.left, null);
   assert.equal(r.right, `먼 문 소리${NB}진행${NB}중`);
   assert.equal(goalRowText({ hasTarget: true, active: [], reading: xhatReading({ tension: 0.7, fromStim: 0.5 }, { target: 0.45, tol: 0.1 }) }).right, "");
+});
+
+test("recentPeakText(B235): 오르는 중이면 '봉우리' 대신 'x̂ 오르는 중' 이고 경과는 없음 · 봉우리면 종전 그대로(이름 · N초 전 · 잠정) · 값만 굵게 찍도록 세 조각", () => {
+  assert.deepEqual(recentPeakText({ tension: 0.22, ago: 1.0, provisional: true, rising: true }, "물보라"), { label: "x̂ 오르는 중", value: "0.22", tail: " · 물보라 · 잠정" });
+  assert.deepEqual(recentPeakText({ tension: 0.96, ago: 3.2, provisional: true, rising: false }, "물보라"), { label: "최근 봉우리", value: "0.96", tail: ` · 물보라 · 3초${NB}전 · 잠정` });
+  assert.deepEqual(recentPeakText({ tension: 1, ago: 0.4, provisional: false, current: true, rising: false }, "먼 문 소리"), { label: "최근 봉우리", value: "1.00", tail: " · 먼 문 소리 · 지금" });
+  assert.deepEqual(recentPeakText({ tension: 0.84, ago: 7, rising: false }, null), { label: "최근 봉우리", value: "0.84", tail: ` · 7초${NB}전` }, "이름 없음(자극 목록 밖)");
+  assert.deepEqual(recentPeakText({ tension: 0.3, ago: 0, rising: true }, null), { label: "x̂ 오르는 중", value: "0.30", tail: "" });
+  assert.equal(recentPeakText(null), null); assert.equal(recentPeakText({ tension: NaN, ago: 0 }), null);
 });
 
 console.log(`${n} passed`);
