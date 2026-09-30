@@ -628,7 +628,7 @@ export default function InterimPage() {
           <div className={s.introCard} style={{ width: "min(640px, 94vw)" }}>
             <p className={s.introEyebrow}>정류장 · 중간시연</p>
             <h1 className={s.introTitle}>{genre ? GENRE_META[genre].label : "-"}</h1>
-            <p className={s.introSub} style={{ marginBottom: 14 }}>체험이 끝났습니다.{savedId ? <><br /><span style={{ opacity: 0.6, fontSize: "0.85em" }}>세션 저장: {savedId}</span></> : null}</p>
+            <p className={s.introSub} style={{ marginBottom: 14 }}>체험이 끝났습니다.{savedId ? <><br /><span style={{ opacity: 0.6, fontSize: "0.85em" }}>{kiosk ? "기록을 저장했습니다" : `세션 저장: ${savedId}`}</span></> : null}</p>{/* ?kiosk=1 전시·녹화 화면에는 개발용 세션 id 를 찍지 않는다(B191 · /film kiosk 가 세션 JSON 버튼을 숨기는 규칙과 같음) */}
             {/* 관객 반응 지문·x̂ 미니 그래프·두 순간(가장 크게 반응·가장 차분히 집중, B144) — 같은 다섯 사건에 다른 두 사람이 다른 카드를 받는다(B14a) */}
             {endEngine && (
               <div style={{ textAlign: "left", margin: "0 auto 20px", maxWidth: 520, wordBreak: "keep-all" /* "…유지됐습 / 니다" 처럼 단어 안에서 접지 않는다(B163) */ }}>

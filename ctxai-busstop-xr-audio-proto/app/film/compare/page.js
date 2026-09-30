@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import s from "../../story/story.module.css";
 import f from "../film.module.css";
 import { mixLines, verdictOf, mmss, fingerprintText, MOMENT_TEXT, MOMENT_BASIS } from "@/lib/viewerText";
-import { sessionRoute, sessionBadges, directionChangeText, xhatSeries, eventMarks, judgeTime, judgeLine, lookResponses, lookText, momentsOf, peakText, NO_PEAK_TEXT, xhatGap, pairWarning, biasOf, movieTrajectory, markBefore, leaderBands } from "@/lib/sessionCompare";
+import { labelRows, LABEL_LAYOUT, sessionRoute, sessionBadges, directionChangeText, xhatSeries, eventMarks, judgeTime, judgeLine, lookResponses, lookText, momentsOf, peakText, NO_PEAK_TEXT, xhatGap, pairWarning, biasOf, movieTrajectory, markBefore, leaderBands } from "@/lib/sessionCompare";
 import { observedSegments } from "@/lib/tensionEstimate";
 
 const GENRE = { R: { label: "로맨스", accent: "#f2a7c0" }, H: { label: "공포", accent: "#8fae95" }, C: { label: "블랙코미디", accent: "#e0a86a" } };
@@ -33,8 +33,10 @@ function useQuery() {
 // layer="lines" 는 곡선 아래에, layer="labels" 는 곡선 위에 그린다 — 이름표를 곡선보다 먼저 그리면 "판정"·사건 이름이
 // 선에 가려진다(B197, B 칸 바닥의 "판정" 이 블랙코미디 선과 겹침). 이름표 글자에는 배경색 테두리(halo)를 둔다.
 const HALO = { paintOrder: "stroke", stroke: "#0b0f14", strokeWidth: 3, strokeLinejoin: "round" };
+// 이름표 줄은 i%3 순환이 아니라 폭을 보고 배치한다(lib/sessionCompare labelRows · B210) — 0:37~0:53 에 몰린 개구리·고양이·비명이 붙지 않는다.
 function Marks({ marks, judgeT, x, H, PAD, labelTop = PAD, layer = "both" }) {
   const lines = layer !== "labels", labels = layer !== "lines";
+  const rows = labelRows(marks, x);
   return (
     <>
       {judgeT != null && (
@@ -46,7 +48,7 @@ function Marks({ marks, judgeT, x, H, PAD, labelTop = PAD, layer = "both" }) {
       {marks.map((m, i) => (
         <g key={i}>
           {lines && <line x1={x(m.t)} x2={x(m.t)} y1={PAD} y2={H - PAD} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />}
-          {labels && <text x={x(m.t) + 3} y={labelTop + 10 + (i % 3) * 11} fill="rgba(255,255,255,0.45)" fontSize="9" style={HALO}>{m.label}</text>}
+          {labels && <text x={x(m.t) + LABEL_LAYOUT.offset} y={labelTop + 10 + rows[i] * LABEL_LAYOUT.rowH} fill="rgba(255,255,255,0.45)" fontSize="9" style={HALO}>{m.label}</text>}
         </g>
       ))}
     </>
@@ -113,13 +115,18 @@ function describe(sess) {
 // /interim 두 세션이면 "같은 다섯 사건, 다른 두 사람" 이 이 그림 하나로 보인다.
 // 사건 사이(사건 반응 몫 없음)는 흐린 가는 선 — 모니터·종료 카드와 같은 규칙(B151, observedSegments). 두 순간(B144)은 세션 색으로:
 // 가장 크게 반응(x̂ 최고)은 점, 가장 차분히 집중(집중도 최고 2초)은 바닥 막대(A 아래 줄 · B 위 줄).
+// 이름표는 곡선 위 띠(BAND)에 따로 두어 봉우리 점(●, 상한 1.0 이면 맨 위)과 겹치지 않는다(B210). 띠 높이는 실제로 쓴 줄 수만큼.
 function XhatChart({ a, b, sa, sb, ma, mb }) {
-  const W = 900, H = 160, PAD = 10;
+  const W = 900, PLOT = 140, PAD = 10;
   const tMax = Math.max(sa.at(-1)?.t || 1, sb.at(-1)?.t || 1, movieTrajectory(a).at(-1)?.t || 1, movieTrajectory(b).at(-1)?.t || 1);
   const x = (t) => PAD + (t / tMax) * (W - PAD * 2);
-  const y = (v) => H - PAD - v * (H - PAD * 2);
-  const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.tension).toFixed(1)}`).join(" ");
   const ref = a || b;
+  const marks = eventMarks(ref);
+  const nRows = marks.length ? Math.max(...labelRows(marks, x)) + 1 : 0;
+  const BAND = nRows ? 10 + nRows * LABEL_LAYOUT.rowH : 0; // 마지막 줄 글자 바닥과 상한 1.0 봉우리 점(r 5 + 테두리)의 사이를 남긴다
+  const H = PAD * 2 + BAND + PLOT;
+  const y = (v) => H - PAD - v * PLOT;
+  const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.tension).toFixed(1)}`).join(" ");
   const curve = (sr, color, dash) => observedSegments(sr).map((g, i) => (
     <path key={i} d={path(g.points)} fill="none" stroke={color} strokeWidth={g.observed ? 2.2 : 1.2} strokeOpacity={g.observed ? 1 : 0.4} strokeDasharray={dash} />
   ));
@@ -128,16 +135,16 @@ function XhatChart({ a, b, sa, sb, ma, mb }) {
   );
   const peakDot = (m, color) => m?.peak && <circle cx={x(m.peak.t)} cy={y(m.peak.tension)} r={5} fill={color} stroke="#0b0f14" strokeWidth={1.5} />;
   return (
-    <svg className={f.chart} style={{ height: 160 }} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+    <svg className={f.chart} style={{ height: H }} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
       {[0.5, 1].map((v) => <line key={v} x1={PAD} x2={W - PAD} y1={y(v)} y2={y(v)} stroke="rgba(255,255,255,0.07)" />)}
-      <Marks marks={eventMarks(ref)} judgeT={judgeTime(ref)} x={x} H={H} PAD={PAD} layer="lines" />
+      <Marks marks={marks} judgeT={judgeTime(ref)} x={x} H={H} PAD={PAD} layer="lines" />
       {calmBar(ma, XHAT_COLOR.a, 0)}
       {calmBar(mb, XHAT_COLOR.b, 1)}
       {sa.length > 0 && curve(sa, XHAT_COLOR.a)}
       {sb.length > 0 && curve(sb, XHAT_COLOR.b, "6 4")}
       {peakDot(ma, XHAT_COLOR.a)}
       {peakDot(mb, XHAT_COLOR.b)}
-      <Marks marks={eventMarks(ref)} judgeT={judgeTime(ref)} x={x} H={H} PAD={PAD} layer="labels" />
+      <Marks marks={marks} judgeT={judgeTime(ref)} x={x} H={H} PAD={PAD} layer="labels" />
     </svg>
   );
 }

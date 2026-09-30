@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   sessionRoute, biasOf, movieEvents, movieTrajectory, sessionBadges, directionChangeText, actuationStats,
   xhatSeries, eventMarks, markBefore, MARK_NEAR_SEC, judgeTime, judgeLine, lookResponses, lookText, xhatPeak, xhatGap, pairWarning,
-  momentsOf, peakText, NO_PEAK_TEXT, leaderBands,
+  momentsOf, peakText, NO_PEAK_TEXT, leaderBands, labelRows, labelWidth, labelOverlaps, LABEL_LAYOUT,
 } from "../lib/sessionCompare.js";
 import { interimAdapt } from "../lib/interimAdapt.js";
 
@@ -336,4 +336,29 @@ test("pairWarning: 라우트나 배속이 다르면 경고, 같으면 null", () 
   assert.equal(pairWarning(null, CALM), null);
 });
 
+test("labelRows(B210): 0:37~0:53 에 몰린 /film 사건 이름표가 같은 줄에서 겹치지 않고, 줄 수는 maxRows 안 — 옛 i%3 순환은 겹쳤다", () => {
+  // /film ON 세션의 사건 눈금(영화 시간) — 비교 화면 x̂ 그래프와 같은 축(W 900 · PAD 10 · tMax 200)
+  const marks = [["포스터", 14], ["우비 인물", 21], ["물보라", 30], ["개구리", 37], ["고양이", 45], ["비명", 52], ["먼 문 소리", 68], ["먼 문 소리", 99], ["먼 문 소리", 127]].map(([label, t]) => ({ t, label }));
+  const x = (t) => 10 + (t / 200) * 880;
+  const rows = labelRows(marks, x);
+  assert.equal(rows.length, marks.length);
+  assert.deepEqual(labelOverlaps(marks, x, rows), [], "같은 줄 겹침 없음");
+  assert.ok(Math.max(...rows) < LABEL_LAYOUT.maxRows, `줄 ${Math.max(...rows) + 1}`);
+  // 더 몰린 눈금(2초 간격 넷): 옛 규칙 i%3 은 첫째·넷째가 같은 줄에서 겹치고, 폭을 보는 배치는 겹치지 않는다
+  const dense = [["개구리", 37], ["고양이", 39], ["비명", 41], ["먼 문 소리", 43]].map(([label, t]) => ({ t, label }));
+  assert.ok(labelOverlaps(dense, x, dense.map((_, i) => i % 3)).length > 0, "옛 규칙(i%3)은 겹친다 — 테스트가 의미 있음");
+  assert.deepEqual(labelOverlaps(dense, x, labelRows(dense, x)), []);
+  // 폭 추정: 한글은 charW, 공백·숫자는 asciiW
+  assert.equal(labelWidth("개구리"), 3 * LABEL_LAYOUT.charW);
+  assert.ok(Math.abs(labelWidth("S1 우비 인물") - (4 * LABEL_LAYOUT.asciiW + 4 * LABEL_LAYOUT.charW)) < 1e-9, String(labelWidth("S1 우비 인물")));
+  // 입력 순서가 뒤섞여도 결과는 입력 순서대로 돌아오고 배치는 시각 순
+  const shuffled = [marks[5], marks[3], marks[4]];
+  const r2 = labelRows(shuffled, x);
+  assert.deepEqual(labelOverlaps(shuffled, x, r2), []);
+  assert.equal(r2[1], 0, "가장 이른 개구리가 맨 윗줄");
+  // /interim 다섯 눈금(S1~S5 · 간격 넓음)은 한 줄에 다 들어간다
+  const interim = [["S1 우비 인물", 16], ["S2 물보라", 40], ["S3 포스터", 62], ["S4 고양이", 84], ["S5 개구리", 100]].map(([label, t]) => ({ t, label }));
+  const xi = (t) => 10 + (t / 140) * 880;
+  assert.deepEqual(labelRows(interim, xi), [0, 0, 0, 0, 0]);
+});
 console.log(`\n${n} passed`);

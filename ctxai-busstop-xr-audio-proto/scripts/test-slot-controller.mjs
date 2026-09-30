@@ -51,6 +51,23 @@ test("reason 문자열에 목표·예측이 들어간다", () => {
   assert.ok(/도달 한계/.test(c.reason), c.reason); // 이득 낮으니 도달 한계 표시
 });
 
+test("reason(B193): 목표에서 벗어난 이유를 화면이 말한다 — 가장 약한 변형으로도 초과 · 상한 넘어 벌점 · 1.0 에서 잘림, '상한 눌림' 은 없다", () => {
+  const cands = candidateSlots();
+  const frog = cands.findIndex((s) => s.id === "frog"), cat = cands.findIndex((s) => s.id === "cat");
+  const mid = chooseVariant("H", cands, frog, 0.3, { g: 0.8, L: 0.5, tau: 2, rho: 0.1 }, {}, null);
+  assert.equal(mid.variantId, "once", "가장 약한 변형");
+  assert.match(mid.reason, /\(가장 약한 변형으로도 목표 초과\)$/, mid.reason);
+  assert.doesNotMatch(mid.reason, /상한/, "0.92 아래면 상한 이야기를 하지 않는다");
+  const high = chooseVariant("H", cands, cat, 0.5, { g: 1.2, L: 0.5, tau: 2, rho: 0.1 }, { audio: 1 }, null);
+  assert.match(high.reason, /가장 약한 변형으로도 목표 초과 · 상한 0\.92 넘어 벌점\)$/, high.reason);
+  const clip = chooseVariant("H", cands, cat, 0.5, { g: 2.0, L: 0.5, tau: 2, rho: 0.1 }, { audio: 1 }, null);
+  assert.match(clip.reason, /상한 0\.92 넘어 벌점 · 예측 1\.0 에서 잘림\)$/, clip.reason);
+  const near = chooseVariant("H", cands, frog, 0.3, { g: 0.3, L: 0.5, tau: 2, rho: 0.1 }, {}, null);
+  assert.equal(near.reason, `슬롯 시각 목표 ${near.target} / 예측 ${near.predTension}`, "목표 근처(|차| ≤ 0.08)면 사유 없음");
+  for (const r of [mid, high, clip, near, chooseVariant("H", cands, 2, 0.3, { g: 0.2, L: 0.5, tau: 2, rho: 0.1 }, {}, null)]) assert.doesNotMatch(r.reason, /눌림/, r.reason);
+  assert.equal(near.ceiling, 0.92, "결정에 곡선 상한이 실린다");
+});
+
 
 // microDecision (판정 뒤 미세 자극 액추에이터)
 import { microDecision } from "../lib/slotController.js";

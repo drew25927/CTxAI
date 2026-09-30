@@ -169,6 +169,42 @@ export function eventMarks(sess) {
       : { t: e.t, label: stimulusLabel(e.detail?.name), name: e.detail?.name }));
 }
 
+// ── 비교 화면 사건 이름표 줄 배치(B210) ──
+// 사건이 0:37~0:53 에 몰리는 /film 쌍에서 이름표를 i%3 줄로 돌리면 "개구리" 가 봉우리 점에 가리고 "고양이"·"비명" 이 붙었다
+// (review51/crop-film-xhat-labels.png). 시각 순서로 훑으며 앞 이름표의 끝 + 간격이 이 이름표의 시작보다 왼쪽인 첫 줄에 놓고,
+// 그런 줄이 없으면 새 줄(최대 maxRows)을, 그것도 없으면 가장 먼저 끝나는 줄을 쓴다. 글자 폭은 fontSize 9 기준의 추정치(잠정치).
+export const LABEL_LAYOUT = Object.freeze({ charW: 9, asciiW: 5.2, gap: 6, maxRows: 4, rowH: 11, offset: 3 });
+const WIDE_CHAR = /[\u1100-\u11FF\u3130-\u318F\uAC00-\uD7AF\u3000-\u303F\uFF00-\uFFEF\u4E00-\u9FFF]/;
+/** 이름표 한 개의 추정 폭(px) — 한글·전각은 charW, 그 밖(숫자·영문·공백·기호)은 asciiW. */
+export function labelWidth(label, L = LABEL_LAYOUT) {
+  let w = 0;
+  for (const ch of String(label ?? "")) w += WIDE_CHAR.test(ch) ? L.charW : L.asciiW;
+  return w;
+}
+/** 눈금마다 이름표 줄 번호(0 = 맨 위). 입력 순서 그대로 돌려주고, 배치는 t 오름차순으로 한다. */
+export function labelRows(marks, xOf, L = LABEL_LAYOUT) {
+  const order = marks.map((_, i) => i).sort((a, b) => marks[a].t - marks[b].t);
+  const rows = new Array(marks.length).fill(0);
+  const end = []; // 줄마다 마지막 이름표의 오른쪽 끝
+  for (const i of order) {
+    const x0 = xOf(marks[i].t) + L.offset, x1 = x0 + labelWidth(marks[i].label, L);
+    let r = end.findIndex((e) => e + L.gap <= x0);
+    if (r < 0) { if (end.length < L.maxRows) { r = end.length; end.push(-Infinity); } else { r = end.indexOf(Math.min(...end)); } }
+    end[r] = x1; rows[i] = r;
+  }
+  return rows;
+}
+/** 같은 줄에서 겹치는 이름표 쌍 — 테스트·검수용. 빈 배열이면 이름표끼리 겹치지 않는다. */
+export function labelOverlaps(marks, xOf, rows, L = LABEL_LAYOUT) {
+  const box = marks.map((m, i) => { const x0 = xOf(m.t) + L.offset; return { i, row: rows[i], x0, x1: x0 + labelWidth(m.label, L) }; });
+  const out = [];
+  for (let a = 0; a < box.length; a++) for (let b = a + 1; b < box.length; b++) {
+    if (box[a].row !== box[b].row) continue;
+    if (box[a].x1 + L.gap > box[b].x0 && box[b].x1 + L.gap > box[a].x0) out.push([marks[a].label, marks[b].label]);
+  }
+  return out;
+}
+
 /** 시각 t 직전(1초 여유)의 사건 눈금 — MARK_NEAR_SEC 안에 없으면 null. 여러 세션의 눈금을 합쳐 넘겨도 된다. */
 export function markBefore(marks, t, near = MARK_NEAR_SEC) {
   let best = null;

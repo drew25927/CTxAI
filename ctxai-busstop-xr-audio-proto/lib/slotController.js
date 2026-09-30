@@ -86,13 +86,31 @@ export function chooseVariant(track, cands, idx, x0, theta, channelCounts, prev,
     const x1 = next ? decayTo(r.peak, next.t - slot.t, tauOf(theta, P)) : r.peak;
     const future = horizonCost(track, cands, idx + 1, x1, theta, cc, { t: slot.t, channel: slot.channel }, P.HORIZON - 1, P);
     const total = r.cost + future;
-    if (!best || total < best.total) best = { variantId: v.id, dose: v.dose, predTension: r3(r.peak), target: r3(r.target), cost: r3(total), nth: r.nth, total };
+    if (!best || total < best.total) best = { variantId: v.id, dose: v.dose, predTension: r3(r.peak), target: r3(r.target), cost: r3(total), nth: r.nth, total, ceiling: r.ceiling };
   }
   const gap = best.predTension - best.target;
   // "슬롯 시각 목표" — 슬롯 시각(t+RISE)의 곡선값. 모니터 머리의 "지금 목표"(현재 시각 곡선값)와 이름을 나눈다(B109)
-  const reason = `슬롯 시각 목표 ${best.target} / 예측 ${best.predTension}${gap < -0.08 ? " (도달 한계 — 최대 자극)" : gap > 0.08 ? " (상한 눌림)" : ""}${best.nth > 0 ? ` · 채널 ${slot.channel} ${best.nth}번째` : ""}`;
+  // 목표에서 벗어난 이유는 화면이 스스로 말한다(B193): 예전의 "(상한 눌림)" 은 정의 없는 말이었고, 가장 약한 변형으로도 목표를
+  // 넘는 경우(이득 높은 관객)와 뒤 슬롯까지 합친 편차가 이 변형에서 최소인 경우를 가르지 않았다. 상한(곡선 ceiling)을 넘으면
+  // 벌점을 받은 사실을, 예측이 1.0 에서 잘렸으면(clamp01) 그 사실을 함께 적는다.
+  const reason = `슬롯 시각 목표 ${best.target} / 예측 ${best.predTension}${gapNote(gap, best, slot)}${best.nth > 0 ? ` · 채널 ${slot.channel} ${best.nth}번째` : ""}`;
   delete best.total;
   return { ...best, reason };
+}
+
+/** 목표와 예측의 차이 사유 한 조각(B193). |gap| ≤ 0.08 이면 빈 문자열(목표 근처). */
+export function gapNote(gap, best, slot) {
+  const doses = (slot?.variants || []).map((v) => v.dose);
+  const weakest = doses.length > 0 && best.dose <= Math.min(...doses);
+  const strongest = doses.length > 0 && best.dose >= Math.max(...doses);
+  const extra = [];
+  // 배합 트랙(mix)의 상한은 장르 상한의 가중 평균이라 0.8845799999 처럼 길게 나온다 → 소수 둘째 자리(턴 60 4배속 확인에서 발견)
+  if (Number.isFinite(best.ceiling) && best.predTension > best.ceiling + 1e-9) extra.push(`상한 ${best.ceiling.toFixed(2)} 넘어 벌점`);
+  if (best.predTension >= 1) extra.push("예측 1.0 에서 잘림");
+  const tail = extra.length ? ` · ${extra.join(" · ")}` : "";
+  if (gap < -0.08) return strongest ? ` (도달 한계 — 가장 센 변형으로도 목표 미달${tail})` : ` (목표 미달 · 뒤 슬롯까지 합친 편차가 이 변형에서 최소${tail})`;
+  if (gap > 0.08) return weakest ? ` (가장 약한 변형으로도 목표 초과${tail})` : ` (목표 초과 · 뒤 슬롯까지 합친 편차가 이 변형에서 최소${tail})`;
+  return tail ? ` (${extra.join(" · ")})` : "";
 }
 
 /** 미세 자극 액추에이터의 기본값(잠정치) — microDecision 과 모니터 안내(nextAdvice)가 같은 값을 쓴다. */
