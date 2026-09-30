@@ -57,7 +57,7 @@ import { beatOf, gazeFor, playsLine, playedCount, beatsTotalSec, nextPlayedBeat,
 import { scoresFromMoodApi } from "@/lib/textKeywords";
 import { analyzeProsody } from "@/lib/voiceProsody";
 import { mixLines, mmss, fingerprintText, STIMULUS_LABEL, MOMENT_TEXT } from "@/lib/viewerText";
-import { momentsOf, peakText } from "@/lib/sessionCompare";
+import { momentsOf, peakText, NO_PEAK_TEXT } from "@/lib/sessionCompare";
 import s from "../story/story.module.css";
 import f from "./film.module.css";
 
@@ -1097,13 +1097,13 @@ export default function FilmPage() {
               {["R", "H", "C"].map((g) => <span key={g}><i style={{ background: GENRE_META[g].accent }} />{GENRE_META[g].label}</span>)}
               <span><i style={{ background: "rgba(255,255,255,0.35)" }} />정착도</span>
             </div>
-            {endMoments?.peak && (
+            {(endMoments?.peak || endMoments?.noPeak) && (
               <p className={f.endSub} style={{ marginTop: 12, marginBottom: 0 }}>
-                {MOMENT_TEXT.peak}: <b style={{ color: accent }}>{peakText(endMoments.peak)}</b>
+                {MOMENT_TEXT.peak}: <b style={{ color: accent }}>{endMoments.peak ? peakText(endMoments.peak) : NO_PEAK_TEXT}</b>
               </p>
             )}
             {engSummary && (
-              <p className={f.endSub} style={{ marginTop: endMoments?.peak ? 4 : 12 }}>
+              <p className={f.endSub} style={{ marginTop: endMoments?.peak || endMoments?.noPeak ? 4 : 12 }}>
                 {MOMENT_TEXT.calm}: <b style={{ color: accent }}>{endMoments?.calm?.text || "-"}</b>
                 {engSummary.probeResponseRate != null && <> · 사건에 반응한 비율 <b>{Math.round(engSummary.probeResponseRate * 100)}%</b></>}
                 {engSummary.laughEpisodes?.length > 0 && <> · 웃음 <b>{engSummary.laughEpisodes.length}회</b></>}

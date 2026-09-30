@@ -11,7 +11,7 @@
 //
 // 순수 함수만 둔다(node 로 테스트: scripts/test-session-compare.mjs).
 
-import { estimateTensionSeries } from "./tensionEstimate.js";
+import { estimateTensionSeries, isObserved } from "./tensionEstimate.js";
 import { probeMarks } from "./interimProbes.js";
 import { T as INTERIM_T } from "./interimTimeline.js";
 import { GENRE_LABEL, mmss, stimulusLabel, filmTimeEvents, focusText, focusSpan, MOMENT_TEXT } from "./viewerText.js";
@@ -240,17 +240,24 @@ export function lookText(lr) {
 
 export const X_CEIL = 0.999; // x̂ 는 1.0 에서 잘린다 — 창 안 최댓값(B150) 뒤 공포형 합성 관객은 봉우리가 1.0 에 여럿 붙는다(B152)
 
+/** 사건 반응이 한 번도 없던 관객의 카드 문구(B189) — xhatPeak 가 null 인데 x̂ 계열은 있을 때. */
+export const NO_PEAK_TEXT = "뚜렷한 반응 없음";
+
 /**
- * x̂ 봉우리 — 계열에서 가장 높은 점과 6초 안의 가장 가까운 사건 눈금.
- * 여러 봉우리가 상한 1.0 에 닿았으면 잘리기 전 사건 반응 몫(fromStim)이 가장 큰 것을 고르고, 상한에 닿은 다른 사건 수를 capped 로 —
- * 그러지 않으면 "가장 크게 반응한 순간" 이 동률 여덟 곳 중 첫째(늘 포스터 0:08)로 정해진다.
- * @returns {{t, tension, label, capped}|null}
+ * x̂ 봉우리 — 사건 반응이 있는 창 중 x̂ 가 가장 높은 점과 6초 안의 가장 가까운 사건 눈금.
+ * 후보는 사건 반응이 있는 창(lib/tensionEstimate isObserved)뿐이다(B189) — 사건 사이 창의 x̂ 는 바닥 + 잔움직임이라, 반응이 한 번도
+ * 없던 관객은 판정 뒤 2:05 잔움직임 봉우리(x̂ 0.27)가 이름 없는 "가장 크게 반응" 이 됐다(검토 턴 44 재현). 그런 관객은 null.
+ * 순서는 곡선에 그린 x̂ 그대로다 — fromStim 순으로 매기면 옛 세션 4개에서 점이 곡선의 더 높은 봉우리(S1 0.35)를 두고 낮은 곳
+ * (S2 0.31)에 찍혔다(b22b-pre/peaks-*.txt). 여러 봉우리가 상한 1.0 에 닿았으면 잘리기 전 사건 반응 몫(fromStim)이 가장 큰 것을
+ * 고르고 상한에 닿은 다른 사건 수를 capped 로 — 그러지 않으면 동률 여덟 곳 중 첫째(늘 포스터 0:08)로 정해진다.
+ * @returns {{t, tension, label, capped}|null}  사건 반응이 있는 창이 없으면 null
  */
 export function xhatPeak(series, marks = []) {
-  if (!series?.length) return null;
+  const cand = (series || []).filter((q) => isObserved(q));
+  if (!cand.length) return null;
   const raw = (q) => (Number.isFinite(q.fromStim) ? q.fromStim : q.tension);
-  let p = series[0];
-  for (const q of series) {
+  let p = cand[0];
+  for (const q of cand) {
     if (q.tension > p.tension + 1e-9 || (q.tension >= X_CEIL && p.tension >= X_CEIL && raw(q) > raw(p))) p = q;
   }
   const nearOf = (q) => {
@@ -261,7 +268,7 @@ export function xhatPeak(series, marks = []) {
   const near = nearOf(p);
   const hit = new Set();
   if (p.tension >= X_CEIL) {
-    for (const q of series) {
+    for (const q of cand) {
       if (q.tension < X_CEIL) continue;
       const m = nearOf(q);
       hit.add(m ? `${m.label}@${m.t}` : `~${Math.round(q.t / 6)}`);
@@ -278,14 +285,16 @@ export function xhatPeak(series, marks = []) {
  * @returns {{peak:{t,tension,label,capped}|null, calm:{text,t0,t1}|null}}
  */
 export function momentsOf(sess, summary = sess?.engagement?.summary) {
-  const peak = xhatPeak(xhatSeries(sess), eventMarks(sess));
+  const series = xhatSeries(sess);
+  const peak = xhatPeak(series, eventMarks(sess));
   const sp = sess?.speed || 1;
   const span = focusSpan(summary, sp);
   let text = span ? focusText(summary, { events: movieEvents(sess), speed: sp }) : null;
   // /interim 은 사건 이름 앞에 S 번호 — 같은 카드의 "가장 크게 반응한 순간 S1 우비 인물" 과 표기를 맞춘다
   const sig = span?.near && sessionRoute(sess) === "interim" ? probeMarks().find((m) => m.name === span.near)?.label : null;
   if (sig) text = `${sig} ${text}`;
-  return { peak, calm: span ? { text, t0: span.t0, t1: span.t1 } : null };
+  // noPeak — x̂ 계열은 있는데 사건 반응이 한 번도 없었다(카드는 NO_PEAK_TEXT). 계열 자체가 없으면 붙이지 않는다
+  return { peak, calm: span ? { text, t0: span.t0, t1: span.t1 } : null, ...(!peak && series.length ? { noPeak: true } : {}) };
 }
 
 /** "고양이 (0:44) · x̂ 1.00(상한에 닿은 8곳 중 최대)" · "물보라 (0:36) · x̂ 0.31" — 사건 이름이 없으면 "2:28 무렵". */
@@ -293,6 +302,28 @@ export function peakText(pk) {
   if (!pk) return null;
   const when = pk.label ? `${pk.label} (${mmss(pk.t)})` : `${mmss(pk.t)} 무렵`;
   return `${when} · x̂ ${pk.tension.toFixed(2)}${pk.capped ? `(상한에 닿은 ${pk.capped}곳 중 최대)` : ""}`;
+}
+
+export const LEAD_EPS = 0.02; // 선두 장르와 2위의 차이가 이보다 작으면 "비슷함"(회색 띠) — 잠정치
+
+/**
+ * 배합 궤적의 선두 장르 띠(B187) — 시각마다 R·H·C 중 가장 큰 장르를 구간으로 묶는다. 비교 화면이 A·B 칸 위에 색 띠로 그린다.
+ * /interim 공포형 vs 차분형은 판정 뒤 블랙코미디 0.67 과 로맨스 0.67 이 같은 높이라, 한 그래프에 겹쳐 그리면 두 선이 포개져
+ * "1:13 부터 갈라졌습니다" 가 그래프에서 안 보였다(검토 턴 44). 선두 장르를 색으로 보이면 높이가 같아도 갈라짐이 보인다.
+ * @returns {Array<{t0, t1, g:"R"|"H"|"C"|null}>}  g null — 1·2위 차이가 LEAD_EPS 미만
+ */
+export function leaderBands(trajectory = [], eps = LEAD_EPS) {
+  const out = [];
+  for (let i = 0; i < trajectory.length; i++) {
+    const p = trajectory[i];
+    const order = ["R", "H", "C"].slice().sort((a, b) => (p[b] || 0) - (p[a] || 0));
+    const g = (p[order[0]] || 0) - (p[order[1]] || 0) >= eps ? order[0] : null;
+    const t1 = trajectory[i + 1]?.t ?? p.t;
+    const cur = out[out.length - 1];
+    if (cur && cur.g === g) cur.t1 = t1;
+    else out.push({ t0: p.t, t1, g });
+  }
+  return out;
 }
 
 /**

@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import {
   sessionRoute, biasOf, movieEvents, movieTrajectory, sessionBadges, directionChangeText, actuationStats,
   xhatSeries, eventMarks, markBefore, MARK_NEAR_SEC, judgeTime, judgeLine, lookResponses, lookText, xhatPeak, xhatGap, pairWarning,
-  momentsOf, peakText,
+  momentsOf, peakText, NO_PEAK_TEXT, leaderBands,
 } from "../lib/sessionCompare.js";
 
 let n = 0;
@@ -254,6 +254,39 @@ test("xhatPeak(B144·B152): 여러 봉우리가 상한 1.0 에 닿으면 잘리�
   assert.equal(peakText({ t: 36, tension: 0.31, label: "S2 물보라", capped: 0 }), "S2 물보라 (0:36) · x̂ 0.31");
   assert.equal(peakText({ t: 148, tension: 0.5, label: null, capped: 0 }), "2:28 무렵 · x̂ 0.50");
   assert.equal(peakText(null), null);
+});
+
+test("xhatPeak(B189): 사건 반응이 있는 창만 후보 — 잔움직임 봉우리는 '가장 크게 반응' 이 아니고, 반응이 한 번도 없으면 null", () => {
+  // 1배속 /interim 차분형(review44): 2:05 사건 기여 0 · 잔움직임 0.15 → x̂ 0.27. 반응을 모두 0 으로 두면 카드가 "2:05 무렵 · x̂ 0.27" 을 적었다
+  const fid = { t: 125.6, tension: 0.27, fromStim: 0, fidget: 0.15 };
+  assert.equal(xhatPeak([{ t: 14, tension: 0.12, fromStim: 0 }, fid, { t: 130, tension: 0.2, fromStim: 0 }], eventMarks(CALM)), null);
+  const p = xhatPeak([{ t: 16, tension: 0.22, fromStim: 0.1 }, fid], eventMarks(CALM));
+  assert.equal(p.t, 16, "잔움직임 봉우리(0.27)가 더 높아도 사건 반응 창(0.22)");
+  assert.equal(p.label, "S1 우비 인물");
+  // 사건 반응이 한 번도 없던 관객의 카드 — x̂ 계열은 있는데 봉우리가 없다
+  const none = interimSession({ id: "2026-09-29T23-52-26-939Z_interim_R", genre: "R", profile: "calm", totals: { R: 5, H: 0, C: 0 }, breakdown: [],
+    stimuli: [stim("figureApproach", 15, 0, { kind: "track" }), stim("truckSplash", 35, 0)] });
+  const m = momentsOf(none);
+  assert.equal(m.peak, null);
+  assert.equal(m.noPeak, true);
+  assert.equal(NO_PEAK_TEXT, "뚜렷한 반응 없음");
+  assert.equal(momentsOf(FEARFUL).noPeak, undefined, "봉우리가 있으면 붙지 않는다");
+  assert.equal(momentsOf({ ...FEARFUL, engagement: undefined, control: {} }).noPeak, undefined, "계열이 없으면 붙지 않는다");
+});
+
+test("leaderBands(B187): 선두 장르 구간 — 값이 대칭인 두 관객(블랙코미디 0.67 vs 로맨스 0.67)도 띠 색으로 갈린다", () => {
+  const mk = (lead) => [
+    { t: 0, R: 0.333, H: 0.333, C: 0.334 },
+    { t: 60, R: 0.333, H: 0.333, C: 0.334 },
+    { t: 74, ...{ R: 0.165, H: 0.165, C: 0.165, [lead]: 0.67 } },
+    { t: 140, ...{ R: 0.165, H: 0.165, C: 0.165, [lead]: 0.67 } },
+  ];
+  const A = leaderBands(mk("C")), B = leaderBands(mk("R"));
+  assert.deepEqual(A, [{ t0: 0, t1: 74, g: null }, { t0: 74, t1: 140, g: "C" }], "1·2위 차이 0.001 은 비슷함(회색)");
+  assert.deepEqual(B.map((b) => b.g), [null, "R"]);
+  assert.notEqual(A.at(-1).g, B.at(-1).g, "같은 높이라도 선두 장르가 다르다");
+  assert.deepEqual(leaderBands([]), []);
+  assert.deepEqual(leaderBands([{ t: 5, R: 0.2, H: 0.7, C: 0.1 }]), [{ t0: 5, t1: 5, g: "H" }], "표본 하나");
 });
 
 test("momentsOf(B144): 가장 크게 반응(x̂ 최고)과 가장 차분히 집중(집중도 최고 2초)은 영화 시간 — 배속 회차도 × speed", () => {

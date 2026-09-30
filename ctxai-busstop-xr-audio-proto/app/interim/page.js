@@ -74,7 +74,7 @@ import { glueNumbers, reachParts } from "@/lib/monitorText";
 import { probeFor, probeMarks, interimTrack } from "@/lib/interimProbes";
 import DirectorMonitor, { MonitorChart, MOMENT_COLOR } from "@/components/DirectorMonitor";
 import { fingerprintText, MOMENT_TEXT } from "@/lib/viewerText";
-import { momentsOf, peakText } from "@/lib/sessionCompare";
+import { momentsOf, peakText, NO_PEAK_TEXT } from "@/lib/sessionCompare";
 import { T } from "@/lib/interimTimeline";
 import s from "../story/story.module.css";
 import f from "../film/film.module.css";
@@ -589,12 +589,13 @@ export default function InterimPage() {
                       긴장 추정 x̂ — S1~S5 다섯 사건에 대한 당신의 반응에서 추정한 곡선
                       {endEngine.moments?.peak && <> · <span style={{ color: MOMENT_COLOR.peak }}>●</span> 가장 크게 반응</>}
                       {endEngine.moments?.calm && <> · <span style={{ color: MOMENT_COLOR.calm }}>▬</span> 가장 차분히 집중</>}
+                      {" "}· {"흐린 선 = 사건 사이(잔움직임만)".replace(/ /g, "\u00a0") /* 구절 안에서 줄이 갈리지 않게 */}
                     </p>
                   </>
                 )}
                 {endEngine.fingerprint && <p className={s.introSub} style={{ margin: "0 0 6px", fontStyle: "italic", color: "rgba(255,255,255,0.82)" }}>당신의 반응: {endEngine.fingerprint}</p>}
-                {endEngine.moments?.peak && (
-                  <p className={s.introSub} style={{ margin: "0 0 2px" }}>{MOMENT_TEXT.peak}: <b style={{ color: accent }}>{peakText(endEngine.moments.peak)}</b></p>
+                {(endEngine.moments?.peak || endEngine.moments?.noPeak) && (
+                  <p className={s.introSub} style={{ margin: "0 0 2px" }}>{MOMENT_TEXT.peak}: <b style={{ color: accent }}>{endEngine.moments.peak ? peakText(endEngine.moments.peak) : NO_PEAK_TEXT}</b></p>
                 )}
                 {endEngine.summary && (
                   <p className={s.introSub} style={{ margin: 0 }}>

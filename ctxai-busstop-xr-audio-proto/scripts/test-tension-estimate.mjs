@@ -54,6 +54,17 @@ test("예감(B158 후속): preTurn 이 있으면 preLook 대신 그것 — 원�
   assert.equal(staring, TENSION_PARAMS.BASE);
 });
 
+test("예감(B195): 직전에 돌려 놓고 보기만 한 관객(preTurn 1 · responded 0)은 예감 봉우리도 없다 — 반응했으면(responded 1) 그대로 오른다", () => {
+  // 검토 턴 44 재현: 1배속 /interim 차분형 물보라에 preTurn 1 · responded 0 → onset 직전 fromStim 0.147·0.18 로 "관측" 창이 생겼다
+  const watched = { name: "truckSplash", kind: "probe", onset: 35, dur: 2.5, peakAmp: 0.6, maxVel: 2.4, lookSec: 3.92, retreat: 0, preLook: 1, preTurn: 1, atOnset: 1, responded: 0 };
+  assert.equal(tensionAt([watched], 34), TENSION_PARAMS.BASE, "자극 1초 전");
+  const s = estimateTensionSeries({ windows: wins(30), stimuli: [watched] });
+  assert.ok(s.every((p) => p.fromStim === 0), `예감 봉우리 ${Math.max(...s.map((p) => p.fromStim))}`);
+  assert.ok(s.every((p) => !isObserved(p)), "사건 사이로만 읽힌다");
+  const reacted = tensionAt([{ ...bigStartle, preTurn: 1, responded: 1 }], 28);
+  assert.ok(reacted > TENSION_PARAMS.BASE + 0.05, `반응한 사건의 예감 ${reacted}`);
+});
+
 test("반응하지 않은 사건(B158): responded 0 이면 응시(lookSec)가 길어도 봉우리가 없다 — responded 가 없으면 예전처럼", () => {
   // 1배속 /interim 차분형 S2 물보라: 편차 0.6° · 2.4°/s · 응시 3.92초(사건 2.5초) · preLook 1 · preTurn 0 → 예전 x̂ 0.31(카드 '가장 크게 반응')
   const watched = { name: "truckSplash", kind: "probe", onset: 35, dur: 2.5, peakAmp: 0.6, maxVel: 2.4, lookSec: 3.92, retreat: 0, preLook: 1, preTurn: 0, atOnset: 1, responded: 0 };
@@ -126,8 +137,10 @@ test("trackingStats: 구간 안 창만 세고, 관측 창의 허용폭 안을 �
 
 test("xhatScopeNote: 장면에서만, 제어 ON 이면 연속 구동이 측정 밖이라고 밝힌다", () => {
   assert.equal(xhatScopeNote({ scene: false, control: true }), null);
-  assert.match(xhatScopeNote({ scene: true, control: true }), /사건 반응만.*연속 구동.*측정 밖/);
-  assert.match(xhatScopeNote({ scene: true, control: false }), /사건 반응만.*측정 밖/);
+  // B189 — "사건 반응만 잰다" 는 코드와 달랐다(사건 사이 창에도 잔움직임 항). 식 그대로 밝힌다
+  assert.match(xhatScopeNote({ scene: true, control: true }), /사건 반응 \+ 잔움직임.*연속 구동.*측정 밖/);
+  assert.match(xhatScopeNote({ scene: true, control: false }), /사건 반응 \+ 잔움직임.*측정 밖/);
+  assert.doesNotMatch(xhatScopeNote({ scene: true, control: true }), /반응만/);
   assert.doesNotMatch(xhatScopeNote({ scene: true, control: false }), /연속 구동/);
 });
 

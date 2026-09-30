@@ -16,7 +16,7 @@ import { useEffect, useMemo, useState } from "react";
 import s from "../../story/story.module.css";
 import f from "../film.module.css";
 import { mixLines, verdictOf, mmss, fingerprintText, MOMENT_TEXT, MOMENT_BASIS } from "@/lib/viewerText";
-import { sessionRoute, sessionBadges, directionChangeText, xhatSeries, eventMarks, judgeTime, judgeLine, lookResponses, lookText, momentsOf, peakText, xhatGap, pairWarning, biasOf, movieTrajectory, markBefore } from "@/lib/sessionCompare";
+import { sessionRoute, sessionBadges, directionChangeText, xhatSeries, eventMarks, judgeTime, judgeLine, lookResponses, lookText, momentsOf, peakText, NO_PEAK_TEXT, xhatGap, pairWarning, biasOf, movieTrajectory, markBefore, leaderBands } from "@/lib/sessionCompare";
 import { observedSegments } from "@/lib/tensionEstimate";
 
 const GENRE = { R: { label: "로맨스", accent: "#f2a7c0" }, H: { label: "공포", accent: "#8fae95" }, C: { label: "블랙코미디", accent: "#e0a86a" } };
@@ -29,7 +29,7 @@ function useQuery() {
 }
 
 // 사건 눈금·판정선 — 두 차트가 같이 쓴다. 눈금은 A 세션 기준(없으면 B), 시각은 영화 시간(lib/sessionCompare.js).
-function Marks({ marks, judgeT, x, H, PAD }) {
+function Marks({ marks, judgeT, x, H, PAD, labelTop = PAD }) {
   return (
     <>
       {judgeT != null && (
@@ -41,7 +41,7 @@ function Marks({ marks, judgeT, x, H, PAD }) {
       {marks.map((m, i) => (
         <g key={i}>
           <line x1={x(m.t)} x2={x(m.t)} y1={PAD} y2={H - PAD} stroke="rgba(255,255,255,0.12)" strokeDasharray="3 3" />
-          <text x={x(m.t) + 3} y={PAD + 10 + (i % 3) * 11} fill="rgba(255,255,255,0.45)" fontSize="9">{m.label}</text>
+          <text x={x(m.t) + 3} y={labelTop + 10 + (i % 3) * 11} fill="rgba(255,255,255,0.45)" fontSize="9">{m.label}</text>
         </g>
       ))}
     </>
@@ -49,23 +49,43 @@ function Marks({ marks, judgeT, x, H, PAD }) {
 }
 
 // 궤적·눈금·판정선은 모두 영화 시간 — /film 배속 회차도 × speed 로 맞춘 것(movieTrajectory·eventMarks·judgeTime)
-function Chart({ a, b }) {
-  const W = 900, H = 220, PAD = 10;
+// A·B 를 위아래 두 칸으로 나누고, 칸마다 맨 위에 그 시각 선두 장르의 색 띠를 깐다(B187). 한 칸에 겹쳐 그리면 /interim 공포형
+// (블랙코미디 0.67 선두)과 차분형(로맨스 0.67 선두)처럼 값이 대칭인 쌍은 선이 같은 높이에 포개져, 머리글의 "1:13 부터 갈라졌습니다"
+// 가 그래프에서 보이지 않았다(검토 턴 44 crop-compare-mix.png). 갈라진 시각(diverge)은 두 칸을 가로지르는 세로선으로.
+function Chart({ a, b, divergeAt }) {
+  const W = 900, LEFT = 24, PAD = 10, LANE = 104, GAP = 14, BAND = 8;
+  const H = PAD * 2 + LANE * 2 + GAP;
   const ta = movieTrajectory(a), tb = movieTrajectory(b);
   const tMax = Math.max(ta.at(-1)?.t || 1, tb.at(-1)?.t || 1);
-  const x = (t) => PAD + (t / tMax) * (W - PAD * 2);
-  const y = (v) => H - PAD - v * (H - PAD * 2);
-  const path = (tr, g) => tr.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p[g]).toFixed(1)}`).join(" ");
+  const x = (t) => LEFT + (t / tMax) * (W - LEFT - PAD);
+  const lanes = [
+    { key: "A", tr: ta, top: PAD },
+    { key: "B", tr: tb, top: PAD + LANE + GAP },
+  ];
   const ref = a || b;
   return (
-    <svg className={f.chart} style={{ height: 220 }} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-      <Marks marks={eventMarks(ref)} judgeT={judgeTime(ref)} x={x} H={H} PAD={PAD} />
-      {["R", "H", "C"].map((g) => (
-        <g key={g}>
-          {ta.length > 0 && <path d={path(ta, g)} fill="none" stroke={GENRE[g].accent} strokeWidth="2.2" />}
-          {tb.length > 0 && <path d={path(tb, g)} fill="none" stroke={GENRE[g].accent} strokeWidth="2.2" strokeDasharray="6 4" opacity="0.85" />}
+    <svg className={f.chart} style={{ height: H }} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
+      <Marks marks={eventMarks(ref)} judgeT={judgeTime(ref)} x={x} H={H} PAD={PAD} labelTop={PAD + BAND + 2} />
+      {lanes.map(({ key, tr, top }) => {
+        const y = (v) => top + BAND + 4 + (1 - v) * (LANE - BAND - 6);
+        const path = (g) => tr.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p[g]).toFixed(1)}`).join(" ");
+        return (
+          <g key={key}>
+            <rect x={LEFT} y={top} width={W - LEFT - PAD} height={LANE} fill="rgba(255,255,255,0.03)" />
+            {leaderBands(tr).map((bd, i) => (
+              <rect key={i} x={x(bd.t0)} y={top} width={Math.max(0.5, x(bd.t1) - x(bd.t0))} height={BAND} fill={bd.g ? GENRE[bd.g].accent : "rgba(255,255,255,0.18)"} />
+            ))}
+            {tr.length > 0 && ["R", "H", "C"].map((g) => <path key={g} d={path(g)} fill="none" stroke={GENRE[g].accent} strokeWidth="2.2" />)}
+            <text x={4} y={top + LANE / 2 + 5} fill="rgba(255,255,255,0.85)" fontSize="14" fontWeight="700">{key}</text>
+          </g>
+        );
+      })}
+      {divergeAt != null && (
+        <g>
+          <line x1={x(divergeAt)} x2={x(divergeAt)} y1={PAD} y2={H - PAD} stroke="#ffffff" strokeWidth="1.4" strokeDasharray="2 3" />
+          <text x={x(divergeAt) - 4} y={PAD + LANE + GAP - 3} fill="#ffffff" fontSize="10" textAnchor="end">갈라짐 {mmss(divergeAt)}</text>
         </g>
-      ))}
+      )}
     </svg>
   );
 }
@@ -208,10 +228,10 @@ export default function ComparePage() {
         </p>
         {warn && <p style={{ margin: "0 0 8px", fontSize: 12.5, color: "#ffcf7a" }}>⚠ {warn}</p>}
         <p className={s.dim} style={{ margin: "0 0 4px", fontSize: 12 }}>장르 배합 궤적 — {bothInterim ? "팀 5신호 드리프트" : "연출 상태"}</p>
-        <Chart a={a} b={b} />
+        <Chart a={a} b={b} divergeAt={biasSplit ? null : divergeAt} />
         <div className={f.legend}>
           {["R", "H", "C"].map((g) => <span key={g}><i style={{ background: GENRE[g].accent }} />{GENRE[g].label}</span>)}
-          <span className={s.dim}>실선 A · 점선 B</span>
+          <span className={s.dim}>위 칸 A · 아래 칸 B · 칸 위 띠 = 그 시각 선두 장르(회색 = 비슷함)</span>
         </div>
         {(sa.length > 0 || sb.length > 0) && (
           <div style={{ margin: "14px 0 6px" }}>
@@ -222,7 +242,7 @@ export default function ComparePage() {
             <div className={f.legend}>
               <span><i style={{ background: XHAT_COLOR.a }} />A 실선</span>
               <span><i style={{ background: XHAT_COLOR.b }} />B 점선</span>
-              <span className={s.dim}>● 가장 크게 반응 · ▬ 가장 차분히 집중 · 흐린 선 = 사건 사이(측정 밖)</span>
+              <span className={s.dim}>● 가장 크게 반응 · ▬ 가장 차분히 집중 · 흐린 선 = 사건 사이(잔움직임만)</span>
               {gap && <span className={s.dim}>평균 차이 |Δx̂| {gap.meanAbs.toFixed(2)} · 가장 벌어진 순간 {gapAt ? `${gapAt.label} 뒤 ` : ""}{mmss(gap.maxGap.t)} (A {gap.maxGap.a.toFixed(2)} · B {gap.maxGap.b.toFixed(2)})</span>}
             </div>
           </div>
@@ -245,10 +265,11 @@ export default function ComparePage() {
               </p>
             ) : null; })()}
             {sess && <p style={{ margin: "6px 0 0", fontSize: 12.5, color: "rgba(255,255,255,0.6)" }}>{directionChangeText(sess)}</p>}
-            {(() => { const m = key === "a" ? ma : mb; return m.peak || m.calm ? (
+            {(() => { const m = key === "a" ? ma : mb; return m.peak || m.noPeak || m.calm ? (
               <p style={{ margin: "4px 0 0", fontSize: 12, color: XHAT_COLOR[key] }}>
                 {m.peak && <>● {MOMENT_TEXT.peak} {peakText(m.peak)}</>}
-                {m.peak && m.calm && " · "}
+                {m.noPeak && <>{MOMENT_TEXT.peak}: {NO_PEAK_TEXT}</>}
+                {(m.peak || m.noPeak) && m.calm && " · "}
                 {m.calm && <>▬ {MOMENT_TEXT.calm} {m.calm.text}</>}
               </p>
             ) : null; })()}

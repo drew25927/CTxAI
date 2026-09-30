@@ -6,7 +6,7 @@
 // 모델(인과·causal):
 //   x̂(t) = clamp01( BASE + Σ_k A_k·kernel(t − onset_k; τ_k) + FID·fidget(t) )
 //   A_k    = K_RESP · responseMagnitude(자극 k)         반응이 클수록 큰 봉우리 · 반응하지 않은 사건(responded 0)은 0
-//   kernel = 자극 뒤 지수 감쇠(회복 시정수 τ_k = recoverySec 또는 기본값), 자극 전 그쪽으로 고개를 돌렸으면(preTurn) 완만한 예감 상승
+//   kernel = 자극 뒤 지수 감쇠(회복 시정수 τ_k = recoverySec 또는 기본값), 자극 전 그쪽으로 고개를 돌렸으면(preTurn) 완만한 예감 상승(반응한 사건만)
 //   fidget = 잔움직임(각속도)에서 온 낮은 지속 각성
 //
 // 사건 창은 탐침 반응이, 사이는 감쇠와 잔움직임이 채운다. 값은 0~1. τ_k 로 "회복이 느린 관객은
@@ -44,8 +44,9 @@ function stimContribution(st, t, P) {
   // 반응 크기로 둔갑하지 않게 한다(B158). responded 가 없는 레코드는 예전처럼 크기만 본다.
   const A = st.responded === 0 ? 0 : P.K_RESP * responseMagnitude(st);
   if (t < onset) {
-    // 예감 — 자극 직전에 그쪽으로 고개를 돌렸을 때만 완만히 오른다
-    const ant = anticipation(st);
+    // 예감 — 자극 직전에 그쪽으로 고개를 돌렸을 때만 완만히 오른다. 반응하지 않은 사건은 예감도 없다(B195) — 직전에 돌려 놓고
+    // 계속 보기만 한 관객(preTurn 1 · responded 0)은 예감 항만으로 onset 직전 fromStim 0.18 봉우리가 생겼다(검토 턴 44)
+    const ant = st.responded === 0 ? 0 : anticipation(st);
     if (!ant) return 0;
     const dt = onset - t;
     if (dt > P.ANT_SEC) return 0;
@@ -82,7 +83,7 @@ function stimMaxInWindow(stimuli, t0, t1, P) {
       const onset = st.onset ?? st.t ?? 0;
       const pk = onset + P.RISE_SEC;                       // 반응 봉우리 꼭대기
       if (pk > t0 && pk < t1) cands.push(pk);
-      if (anticipation(st) && onset > t0 && onset <= t1) cands.push(onset - 1e-6); // 예감 꼭대기(자극 직전)
+      if (anticipation(st) && st.responded !== 0 && onset > t0 && onset <= t1) cands.push(onset - 1e-6); // 예감 꼭대기(자극 직전)
     }
   }
   let best = -Infinity, bestT = t1;
@@ -112,8 +113,8 @@ export function estimateTensionSeries({ windows = [], stimuli = [] } = {}, param
   });
 }
 
-// 관측 범위(B149) — x̂ 는 사건(탐침·미세 자극)에 대한 순간 반응만 잰다. 사건 기여(fromStim)가 OBS_EPS 보다 작은 창은
-// 바닥 긴장 + 잔움직임뿐이라, 작가 곡선이 장면 구간에 적은 "지속 긴장"(대사·안개·침묵이 만드는 분위기)과 견줄 관측이 아니다.
+// 관측 범위(B149) — x̂ 는 사건(탐침·미세 자극)에 대한 순간 반응에 잔움직임(FID, 최대 +0.15)을 더한 값이다. 사건 기여(fromStim)가
+// OBS_EPS 보다 작은 창은 바닥 긴장 + 잔움직임뿐이라, 작가 곡선이 장면 구간에 적은 "지속 긴장"(대사·안개·침묵이 만드는 분위기)과 견줄 관측이 아니다.
 // 1배속 공포형 bias=H 재완주에서 장면 39창 중 목표 허용폭 안 0 — 그중 사건 반응이 있던 창은 몇 개뿐이었다(review31/scene-gap.txt).
 // 그래서 모니터는 사건 사이 창을 "추종 실패" 가 아니라 "측정 밖" 으로 보이고, 연속 구동(개루프)의 효과는 x̂ 로 주장하지 않는다.
 // 연속 채널 효과를 x̂ 에 더하는 모형(B77 가정 B)은 파일럿에서 이득을 재기 전에는 넣지 않는다(B20 결론).
@@ -157,8 +158,9 @@ export function xhatReading(p, { target, tol = 0, eps = OBS_EPS } = {}) {
 /** 장면 구간에서 모니터가 붙이는 한 줄 — 무엇을 재지 않는지 밝힌다(B149). 장면 밖이면 null. */
 export function xhatScopeNote({ scene = false, control = false } = {}) {
   if (!scene) return null;
-  // 모니터 폭(292px · 11px) 한 줄에 들어가는 길이 — "(개루프)" 까지 넣으면 단어 중간에서 줄이 바뀐다(턴 32 프레임)
-  return control ? "x̂ 는 사건 반응만 잰다 · 연속 구동 효과는 측정 밖" : "x̂ 는 사건 반응만 잰다 · 장면의 지속 긴장은 측정 밖";
+  // 모니터 폭(292px · 11px) 한 줄에 들어가는 길이 — "(개루프)" 까지 넣으면 단어 중간에서 줄이 바뀐다(턴 32 프레임).
+  // "사건 반응만 잰다" 는 코드와 달랐다 — 사건 사이 창에도 잔움직임 항이 들어간다(B189, 1배속 /interim 차분형 2:05 x̂ 0.27)
+  return control ? "x̂ = 사건 반응 + 잔움직임 · 연속 구동 효과는 측정 밖" : "x̂ = 사건 반응 + 잔움직임 · 장면의 지속 긴장은 측정 밖";
 }
 
 /**
