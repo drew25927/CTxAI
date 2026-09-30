@@ -4,7 +4,8 @@
 //  - /film    : events 에 kind:"event" 가 붙고 시각은 실제 경과 초(배속 회차는 × speed 해야 영화 시간). 판정은 verdict(0:58),
 //               제어는 control.slots(개구리·고양이 변형)·control:micro(미세 자극)·control:actuate(연속 구동) 이벤트.
 //  - /interim : events 에 kind 가 없고 cue 시각이 이미 영화 시간. 판정은 팀 5신호 점수 judge(1:55),
-//               다섯 사건은 누구에게나 같은 중립 탐침이라 "바꾼 연출" 이 없다 — 같은 자극에 다른 반응이 비교의 요점.
+//               다섯 사건은 누구에게나 같은 중립 탐침 — 같은 자극에 다른 반응이 비교의 요점. 판정 뒤 인사 구간의 관객별 연출은
+//               control.adapt(lib/interimAdapt · B170b)로 남고 "바꾼 연출" 줄이 그것을 적는다(없으면 옛 세션 → 바꾼 연출 없음).
 // 긴장 추정 x̂ 는 두 라우트 모두 engagement 리포트(windows·stimuli)에서 같은 함수(estimateTensionSeries)로 다시 계산한다.
 // 합성 관객·트랙 고정(?bias)·배속 회차는 배지로 드러낸다 — bias 세션은 0:01 부터 한 장르로 기울어 "0:01 부터 갈라졌습니다"
 // 가 나오고(B96), 배속 회차는 팀 판정이 1배속과 달라질 수 있다(B57·B125).
@@ -14,6 +15,7 @@
 import { estimateTensionSeries, isObserved } from "./tensionEstimate.js";
 import { probeMarks } from "./interimProbes.js";
 import { T as INTERIM_T } from "./interimTimeline.js";
+import { adaptText } from "./interimAdapt.js";
 import { GENRE_LABEL, mmss, stimulusLabel, filmTimeEvents, focusText, focusSpan, MOMENT_TEXT } from "./viewerText.js";
 
 // 슬롯 변형 id(lib/tensionCurve.js SLOTS) → 비교 화면 이름. 모르는 것은 id 그대로.
@@ -69,7 +71,11 @@ export function sessionBadges(sess) {
   if (b) out.push({ key: "bias", text: `트랙 고정 ?bias=${b.g}${b.w != null ? `:${b.w}` : ""} (${GENRE_LABEL[b.g]} 증거 선입력)`, tone: "warn" });
   const sp = sess.speed || 1;
   if (sp !== 1) out.push({ key: "speed", text: `배속 ×${sp} — 판정이 1배속과 다를 수 있음`, tone: "warn" });
-  if (route === "interim") out.push({ key: "control", text: "연출 고정(중립 탐침 다섯)", tone: "info" });
+  if (route === "interim") {
+    // 판정 뒤 관객별 연출(B170b) — control.adapt 가 있으면 켜졌는지(성향)·고정이면 그 이유. 없으면 옛 세션(배선 전)
+    const ad = sess.control?.adapt;
+    out.push({ key: "control", text: !ad ? "연출 고정(중립 탐침 다섯)" : ad.adapted ? `판정 뒤 연출 적응 ON(θ̂·x̂ · ${ad.profile})` : `판정 뒤 연출 고정 — ${String(ad.reason || "").replace(/ → 고정 연출$/, "")}`, tone: "info" });
+  }
   else if (sess.control?.actuation) out.push({ key: "control", text: sess.control.actuation.on ? "제어 ON" : "제어 OFF", tone: "info" });
   else out.push({ key: "control", text: "제어 기록 없음", tone: "info" });
   return out;
@@ -77,7 +83,7 @@ export function sessionBadges(sess) {
 
 /**
  * "이 관객에게 바꾼 연출" 한 줄(B96).
- *  /interim  → 바꾼 것이 없다는 사실(다섯 사건은 같은 자극, 판정 뒤 옆자리 인물과 인사만 장르별).
+ *  /interim  → control.adapt(판정 뒤 인사 구간의 관객별 연출 · B170b)가 있으면 그 네 값과 성향, 고정이면 그 이유. 옛 세션은 바꾼 것이 없다는 사실.
  *  /film OFF → 고정 연출.
  *  /film ON  → 슬롯 변형(개구리·고양이) · 미세 자극 횟수 · 연속 구동(켜진 틱의 평균 u 와 평균 오프셋).
  * 연속 구동의 오프셋은 deriveParams 기본값에 더한 값이라, 같은 관객의 OFF 회차 대비 차이와 같은 뜻이다.
@@ -85,7 +91,11 @@ export function sessionBadges(sess) {
 export function directionChangeText(sess) {
   if (!sess) return "";
   if (sessionRoute(sess) === "interim") {
-    return `바꾼 연출 없음 — 다섯 사건(S1~S5)은 누구에게나 같은 자극이고, 판정(${mmss(INTERIM_T.judge)}) 뒤 옆자리 인물과 인사만 장르별로 갈립니다`;
+    const same = `다섯 사건(S1~S5)은 누구에게나 같은 자극`, judge = mmss(INTERIM_T.judge);
+    const ad = sess.control?.adapt; // 판정 뒤 관객별 연출(lib/interimAdapt · B170b)
+    if (!ad) return `바꾼 연출 없음 — ${same}이고, 판정(${judge}) 뒤 옆자리 인물과 인사만 장르별로 갈립니다`;
+    if (!ad.adapted) return `바꾼 연출 없음 — ${same}이고, 판정(${judge}) 뒤 인사 구간도 ${adaptText(ad)}`;
+    return `이 관객에게 바꾼 연출(판정 ${judge} 뒤 인사 구간): ${adaptText(ad)}`;
   }
   const c = sess.control;
   if (!c) return "제어 기록이 없는 세션입니다";

@@ -76,7 +76,9 @@ const PILLAR_X = -0.95, PILLAR_Z = 0.35; // components/BlockoutStage.jsx Shelter
 
 const NPC_ENTER_X = PILLAR_X, NPC_ENTER_Z = PILLAR_Z + 0.15; // figureGone과 거의 같은 자리에서 나온다
 
-export function evalActors(t, { dominant = null } = {}) {
+// seatDistance·approachSec(B170b) — 판정 뒤 관객별 연출. 기본값은 오늘 값(0.9 m · 6초)이라 인자를 안 넘기면 결과가 전과 같다.
+// 값은 lib/interimAdapt.js 가 θ̂·x̂ 로 정하고 app/interim/page.js 가 판정 순간 한 번 넘긴다. 판정(누가 앉는가)은 여기서 바꾸지 않는다.
+export function evalActors(t, { dominant = null, seatDistance = 0.9, approachSec = T.npcSeated - T.figureGone } = {}) {
   const a = {};
 
   // 판초 인물 — 정체 불명. T.figureGone에 기둥 옆으로 사라진다(판정된 인물로 "바뀌는" 게
@@ -105,14 +107,15 @@ export function evalActors(t, { dominant = null } = {}) {
   // 판정된 옆사람 — 기둥 옆(판초 인물이 사라진 자리)에서 나와 벤치로 걸어와 앉는다.
   // filmTimeline.evalActors의 npc 로직과 같은 모양(seatX·turnAt 보간)이지만 시작점만 다르다.
   if (dominant && t >= T.figureGone) {
-    const seatX = 0.35 + 0.9; // 착석 거리 — 연출 상태 세분화는 후속 튜닝 과제
-    const turnAt = T.npcSeated - 1.1;
+    const seatX = 0.35 + seatDistance; // 착석 거리 — 기본 0.9(오늘 값), 관객별 값은 interimAdapt(B170b)
+    const npcSeated = T.figureGone + approachSec; // 앉는 시각 — 기본 T.npcSeated(124)
+    const turnAt = npcSeated - 1.1;
     if (t < turnAt) {
       const p = seg(t, T.figureGone, turnAt);
       const x = lerp(NPC_ENTER_X, seatX + 0.15, p), z = lerp(NPC_ENTER_Z, -1.25, p);
       a.npc = { visible: true, x, z, seated: false, walking: true, yaw: heading(seatX + 6.15, 0.45), bob: t };
-    } else if (t < T.npcSeated) {
-      const p = seg(t, turnAt, T.npcSeated);
+    } else if (t < npcSeated) {
+      const p = seg(t, turnAt, npcSeated);
       const x = lerp(seatX + 0.15, seatX, p), z = lerp(-1.25, 0.3, p);
       a.npc = { visible: true, x, z, seated: false, walking: true, yaw: lerp(heading(seatX + 6.15, 0.45), Math.PI + 0.15, p), bob: t };
     } else {

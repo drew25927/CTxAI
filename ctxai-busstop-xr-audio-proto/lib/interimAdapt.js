@@ -4,11 +4,15 @@
 //   seatDistance  옆사람 착석 거리(m)          — interimTimeline.evalActors 의 seatX = 0.35 + 거리
 //   approachSec   기둥 옆에서 벤치까지 걸어오는 시간(초) — 지금은 T.npcSeated − T.figureGone = 6초 고정
 //   greetDelaySec 앉은 뒤 인사(greeting 큐)까지 기다리는 시간(초) — 지금은 T.greeting − T.npcSeated = 6초 고정
-//   gazeAtViewer  앉은 뒤 관객을 보는 비율(0~1)  — ReactiveStage 의 npcGaze, /interim 은 기본 0.4
+//   gazeAtViewer  앉은 뒤 관객을 보는 비율(0~1)  — ReactiveStage 의 npcGaze. /interim 무대는 deriveParams 가 주는 장르 앵커(공포 0.12·로맨스 0.75·
+//                 코미디 0.5)를 이미 쓰고 있으므로, 배선은 앵커와의 차이를 applyActuation 오프셋(adjustRef)으로 얹는다
 //
 // 왜 여기인가 — 미션 문장 "5신호 판정 위에 θ 와 x̂ 를 얹어 관객마다 다른 연출이 화면에서 보이게" 가 /interim 에서는 비어 있었다
 // (θ̂·x̂ 는 HUD·디렉터 모니터·종료 카드에만 쓰였고 연출을 바꾸지 않았다). 도입부 다섯 사건 S1~S5 는 θ 를 공정히 읽는 중립 탐침이라
-// 그대로 두고, 판정이 끝난 뒤에만 바꾼다. 이 파일은 순수 함수만 둔다(node 로 테스트: scripts/test-interim-adapt.mjs). 배선은 별도(B170b).
+// 그대로 두고, 판정이 끝난 뒤에만 바꾼다. 이 파일은 순수 함수만 둔다(node 로 테스트: scripts/test-interim-adapt.mjs).
+// 배선(B170b): app/interim/page.js 가 판정 순간 한 번 interimAdapt() 를 불러 adaptRef 에 두고 — evalActors 에 seatDistance·approachSec 를,
+// 인사 큐 발동 시각에 times.greeting 을, 무대(ReactiveStage adjustRef)에 시선 오프셋을 넘기며, 세션 control.adapt 와 control:adapt 이벤트로 남긴다.
+// ?adapt=0 이면 고정 연출(오늘 값) — 같은 관객으로 켬/끔 비교가 된다.
 //
 // 규칙
 //   1. 민감도 지수 s ∈ [−1, +1] — 이득 g(무게 ½) · 회복 τ(¼) · 사건 반응 봉우리 x̂(¼)의 가중합. 각 항은 사전분포(VIEWER_PRIOR)를
@@ -18,7 +22,7 @@
 //      "세기" 다이얼이다 — 장르(누가 앉는가)는 팀 판정이 이미 정했고, 여기서는 그 사람이 얼마나 부담스럽게 다가오는가만 조절한다.
 //   3. 바탕값은 장르 앵커(lib/directionMap.js ANCHORS — /film 과 같은 창작값)에서 거리·시선을, 타임라인(lib/interimTimeline.js T)에서
 //      시간을 가져온다. 공포는 멀고(1.2) 눈을 피하고(0.12), 로맨스는 가깝고(0.78) 오래 본다(0.75).
-//   4. θ̂ 가 서지 않았으면(θ̂ 없음 · 응답 2건 미만 · 신뢰도 0.2 미만) 오늘의 고정 연출(거리 0.9 · 6초 · 6초 · 시선 0.4)을 그대로 돌려준다 —
+//   4. θ̂ 가 서지 않았으면(θ̂ 없음 · 응답 2건 미만 · 신뢰도 0.2 미만) 오늘의 고정 연출(거리 0.9 · 6초 · 6초 · 시선은 장르 앵커 그대로)을 돌려준다 —
 //      추정 없이 연출을 바꾸지 않는다(slotActuate.decideSlot "θ̂ 이 없으면 중립" 과 같은 원칙). 1배속 합성 차분형은 응답 1/5 · 신뢰도 0.1 이라
 //      이 갈래로 간다(work/evidence/review51/compare/sessions/…_interim_R.json).
 //   5. 출력은 범위 안 — 거리 0.5~1.4(controlActuate RANGES.npcDistance = 요청서 v5.0 §2.7), 시간은 인사가 암전 4초 전에는 나오게.
@@ -46,12 +50,12 @@ export const ADAPT_PARAMS = Object.freeze({
   END_MARGIN_SEC: 4,    // 인사는 암전(T.end) 이 값 전에는 나와야 한다
 });
 
-// 오늘의 고정 연출(θ̂ 가 서지 않았을 때 그대로 돌려주는 값) — interimTimeline 의 상수와 같다.
+// 오늘의 고정 연출(θ̂ 가 서지 않았을 때 그대로 돌려주는 값) — interimTimeline 의 상수와 같다. 시선은 여기 없다: 오늘 /interim 무대의
+// 시선은 deriveParams 가 주는 장르 앵커(ANCHORS[genre].npcGaze)라 장르마다 다르고, 고정 갈래는 그 앵커를 그대로 돌려준다.
 export const FIXED = Object.freeze({
   seatDistance: ANCHORS.neutral.npcDistance,   // 0.9 (= evalActors 의 seatX = 0.35 + 0.9)
   approachSec: T.npcSeated - T.figureGone,      // 6
   greetDelaySec: T.greeting - T.npcSeated,      // 6
-  gazeAtViewer: ANCHORS.neutral.npcGaze,        // 0.4 (= ReactiveStage 의 기본 npcGaze)
 });
 
 // 적용 뒤 허용 범위. 거리는 controlActuate.RANGES.npcDistance 와 같은 값(요청서 v5.0 §2.7), 시간은 타임라인이 깨지지 않는 선.
@@ -124,7 +128,7 @@ export function profileLabel(index) {
  * @returns {{adapted:boolean, seatDistance:number, approachSec:number, greetDelaySec:number, gazeAtViewer:number,
  *   index:number, profile:string, parts:{g,tau,peak}|null, base:{seatDistance,gazeAtViewer}, genre:string|null,
  *   times:{figureGone:number, npcSeated:number, greeting:number}, reason:string}}
- *   adapted=false 면 네 값은 FIXED 와 정확히 같다.
+ *   adapted=false 면 거리·걸어옴·기다림은 FIXED 와 정확히 같고 시선은 장르 앵커(base.gazeAtViewer) 그대로다.
  */
 export function interimAdapt({ theta, xhatPeak = null, genre = null } = {}, params = ADAPT_PARAMS) {
   const P = { ...ADAPT_PARAMS, ...params };
@@ -139,7 +143,7 @@ export function interimAdapt({ theta, xhatPeak = null, genre = null } = {}, para
   const blocked = adaptBlockReason(theta, P);
   if (blocked) {
     return {
-      adapted: false, ...FIXED, index: 0, profile: "보통", parts: null, base, genre: gen,
+      adapted: false, ...FIXED, gazeAtViewer: base.gazeAtViewer, index: 0, profile: "보통", parts: null, base, genre: gen,
       times: times(FIXED.approachSec, FIXED.greetDelaySec), reason: `${blocked} → 고정 연출`,
     };
   }
@@ -164,7 +168,7 @@ export function interimAdapt({ theta, xhatPeak = null, genre = null } = {}, para
 /**
  * 비교 화면·카드용 한 줄 — "바꾼 연출" 줄의 본문.
  *   adapted: "공포형 옆사람 · 거리 1.35 m(앵커 1.2) · 8.2초 걸어와 7.5초 뒤 인사 · 시선 2% · 과민(민감도 +0.49 · 응답 5/5 · 신뢰도 100%)"
- *   fixed:   "고정 연출 · 거리 0.9 m · 6초 걸어와 6초 뒤 인사 · 시선 40% — 응답 1/5 · 모델이 서지 않음"
+ *   fixed:   "고정 연출 · 거리 0.9 m · 6초 걸어와 6초 뒤 인사 · 시선 75% — 응답 1/5 · 모델이 서지 않음"(시선은 장르 앵커 · 로맨스 0.75)
  */
 const secText = (x) => x.toFixed(1).replace(/\.0$/, "");
 export function adaptText(a, labels = { R: "로맨스", H: "공포", C: "블랙코미디" }) {

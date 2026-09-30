@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { interimAdapt, adaptText, sensitivityIndex, adaptBlockReason, profileLabel, FIXED, ADAPT_RANGES, ADAPT_PARAMS, GENRES } from "../lib/interimAdapt.js";
 import { ANCHORS } from "../lib/directionMap.js";
-import { T } from "../lib/interimTimeline.js";
+import { T, evalActors } from "../lib/interimTimeline.js";
 import { RANGES as ACT_RANGES } from "../lib/controlActuate.js";
 import { VIEWER_PRIOR } from "../lib/viewerModel.js";
 
@@ -23,13 +23,13 @@ const REAL_CALM = { theta: { g: 0.386, L: 0.335, tau: 1, rho: 0.15, n: 5, nResp:
 const KEYS = ["seatDistance", "approachSec", "greetDelaySec", "gazeAtViewer"];
 const inRange = (a) => KEYS.every((k) => a[k] >= ADAPT_RANGES[k][0] - 1e-9 && a[k] <= ADAPT_RANGES[k][1] + 1e-9);
 
-test("고정 연출 FIXED 는 오늘의 /interim 과 같다 — 거리 0.9(= evalActors seatX 0.35 + 0.9) · 6초 걸어옴 · 6초 뒤 인사 · 시선 0.4", () => {
+test("고정 연출 FIXED 는 오늘의 /interim 과 같다 — 거리 0.9(= evalActors seatX 0.35 + 0.9) · 6초 걸어옴 · 6초 뒤 인사 · 시선은 장르 앵커라 FIXED 에 없다", () => {
   assert.equal(FIXED.seatDistance, 0.9);
   assert.equal(FIXED.approachSec, T.npcSeated - T.figureGone);
   assert.equal(FIXED.approachSec, 6);
   assert.equal(FIXED.greetDelaySec, T.greeting - T.npcSeated);
   assert.equal(FIXED.greetDelaySec, 6);
-  assert.equal(FIXED.gazeAtViewer, 0.4);
+  assert.equal(FIXED.gazeAtViewer, undefined, "오늘 /interim 무대의 시선은 deriveParams 장르 앵커 — 장르마다 달라 상수가 아니다");
   assert.equal(ADAPT_RANGES.seatDistance[0], ACT_RANGES.npcDistance[0]);
   assert.equal(ADAPT_RANGES.seatDistance[1], ACT_RANGES.npcDistance[1]);
 });
@@ -46,7 +46,8 @@ test("θ̂ 가 서지 않으면 고정 연출 — θ̂ 없음 · 사건 0 · 응
     for (const genre of [...GENRES, null]) {
       const a = interimAdapt({ theta, xhatPeak: 0.9, genre });
       assert.equal(a.adapted, false, JSON.stringify(theta));
-      for (const k of KEYS) assert.equal(a[k], FIXED[k], `${k} ${JSON.stringify(theta)}`);
+      for (const k of ["seatDistance", "approachSec", "greetDelaySec"]) assert.equal(a[k], FIXED[k], `${k} ${JSON.stringify(theta)}`);
+      assert.equal(a.gazeAtViewer, (genre ? ANCHORS[genre] : ANCHORS.neutral).npcGaze, `고정 갈래의 시선은 오늘 무대(장르 앵커) 그대로 ${genre}`);
       assert.match(a.reason, re);
       assert.match(a.reason, /고정 연출$/);
       assert.equal(a.index, 0); assert.equal(a.profile, "보통"); assert.equal(a.parts, null);
@@ -155,12 +156,32 @@ test("순수성 — 같은 입력은 같은 출력(deepEqual) · 입력 객체�
 
 test("adaptText — 고정 연출은 '고정 연출 · 거리 0.9 m …' 와 이유, 바꾼 연출은 장르 이름·거리(앵커)·초·시선·성향을 담는다", () => {
   const fixed = adaptText(interimAdapt(REAL_CALM));
-  assert.match(fixed, /^고정 연출 · 거리 0\.9 m · 6초 걸어와 6초 뒤 인사 · 시선 40% — 응답 1\/5/);
+  assert.match(fixed, /^고정 연출 · 거리 0\.9 m · 6초 걸어와 6초 뒤 인사 · 시선 75% — 응답 1\/5/, "시선 75% = 로맨스 앵커(오늘 무대 값)");
   assert.doesNotMatch(fixed, /고정 연출$/);
   const s = adaptText(interimAdapt(REAL_FEARFUL));
   assert.match(s, /^공포 옆사람 · 거리 1\.\d\d? m\(앵커 1\.2\) · \d+(\.\d+)?초 걸어와 \d+(\.\d+)?초 뒤 인사 · 시선 \d+% · (과민|보통)\(민감도 \+0\.\d\d · 응답 5\/5 · 신뢰도 100%\)$/);
   assert.equal(adaptText(null), "");
   assert.match(adaptText(interimAdapt({ theta: MIDDLE, xhatPeak: 0.5, genre: null })), /^옆사람 · 거리 0\.9 m\(앵커 0\.9\)/);
+});
+
+test("evalActors(B170b) — 인자를 안 넘기면 오늘과 같고(seatX 1.25 · 124초 착석), seatDistance·approachSec 를 넘기면 착석 x 와 시각이 그 값대로 · adapt.times 와 일치 · 판정 전에는 무관", () => {
+  const r2 = (x) => Math.round(x * 100) / 100;
+  const base = evalActors(T.npcSeated + 1, { dominant: "H" });
+  assert.equal(base.npc.seated, true); assert.equal(r2(base.npc.x), 1.25);
+  assert.deepEqual(evalActors(T.npcSeated + 1, { dominant: "H", seatDistance: 0.9, approachSec: 6 }), base, "기본값 = 오늘 값");
+  assert.deepEqual(evalActors(T.npcSeated - 0.5, { dominant: "H", seatDistance: undefined, approachSec: undefined }), evalActors(T.npcSeated - 0.5, { dominant: "H" }), "undefined 도 기본값");
+  const F = interimAdapt(REAL_FEARFUL);
+  const far = evalActors(F.times.npcSeated + 0.01, { dominant: "H", seatDistance: F.seatDistance, approachSec: F.approachSec });
+  assert.equal(far.npc.seated, true); assert.equal(r2(far.npc.x), r2(0.35 + F.seatDistance), `과민 착석 x ${far.npc.x}`);
+  assert.ok(far.npc.x - base.npc.x >= 0.4, "공포형은 오늘 값보다 0.4 m 이상 멀리 앉는다");
+  const still = evalActors(T.npcSeated + 0.5, { dominant: "H", seatDistance: F.seatDistance, approachSec: F.approachSec });
+  assert.equal(still.npc.seated, false); assert.equal(still.npc.walking, true, "오늘 값으로는 앉아 있을 시각에 과민 관객의 옆사람은 아직 걷는 중");
+  assert.equal(evalActors(F.times.npcSeated - 0.01, { dominant: "H", seatDistance: F.seatDistance, approachSec: F.approachSec }).npc.seated, false);
+  assert.equal(evalActors(T.figureGone - 0.1, { dominant: "H", seatDistance: 1.4, approachSec: 9 }).npc.visible, false, "기둥 옆 등장 전에는 보이지 않음 그대로");
+  assert.equal(evalActors(130, { seatDistance: 1.4, approachSec: 3 }).npc.visible, false, "판정 전(dominant 없음)은 인자와 무관");
+  // 걷는 구간의 시작점(기둥 옆)은 인자와 무관 — 반전 트릭 유지
+  const a0 = evalActors(T.figureGone + 0.01, { dominant: "R", seatDistance: 0.5, approachSec: 3 }), b0 = evalActors(T.figureGone + 0.01, { dominant: "R", seatDistance: 1.4, approachSec: 9 });
+  assert.ok(Math.abs(a0.npc.x - b0.npc.x) < 0.02 && Math.abs(a0.npc.z - b0.npc.z) < 0.02, `등장 지점 ${a0.npc.x},${a0.npc.z} vs ${b0.npc.x},${b0.npc.z}`);
 });
 
 // 표 — 완료 판정용(세 합성 프로필 + 1배속 실측 두 관객)

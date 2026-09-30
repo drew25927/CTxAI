@@ -172,13 +172,21 @@ test("B67 말하는 동안: 세 프로필 모두 방위의 max(restFactor, TALK.
   }
 });
 
-test("B67 talk 을 주지 않으면 종전 궤적과 같다 (setRest(az) == setRest(az, {talk:false}))", () => {
+test("B67 talk 을 주지 않으면 종전 궤적과 같다 (setRest(az) == setRest(az, {talk:false}) == setRest(az, {factor:null})) · factor 1 이면 그 방위를 똑바로 본다(B170b ?look=1)", () => {
   for (const p of GAZE_PROFILE_NAMES) {
     const a = createGazeSim(p, { seed: 9 }), b = createGazeSim(p, { seed: 9 });
     let maxDiff = 0;
     for (let t = 0; t < 15; t += DT) { a.setRest(REST_CAP); b.setRest(REST_CAP, { talk: false }); maxDiff = Math.max(maxDiff, Math.abs(a.step(t, DT).yaw - b.step(t, DT).yaw)); }
     assert.equal(maxDiff, 0, p);
     assert.equal(b.talking, false);
+    // factor(B170b ?look=1) — null 은 종전과 같고, 1 은 방위를 똑바로(호기심형은 두리번이 남아 평균을 재지 않는다)
+    const d = createGazeSim(p, { seed: 9 }), e = createGazeSim(p, { seed: 9 }); let diff2 = 0;
+    for (let t = 0; t < 15; t += DT) { d.setRest(REST_CAP); e.setRest(REST_CAP, { factor: null }); diff2 = Math.max(diff2, Math.abs(d.step(t, DT).yaw - e.step(t, DT).yaw)); }
+    assert.equal(diff2, 0, `${p} factor null`);
+    const c = createGazeSim(p, { seed: 9 }); let sum = 0, cnt = 0;
+    for (let t = 0; t < 15; t += DT) { c.setRest(88, { factor: 1 }); const yaw = c.step(t, DT).yaw; if (t > 8) { sum += yaw; cnt++; } }
+    if (p !== "curious") assert.ok(Math.abs(sum / cnt - 88) < 3, `${p} factor 1 → 평균 ${(sum / cnt).toFixed(1)} (목표 88)`);
+    assert.equal(c.talking, false);
   }
 });
 

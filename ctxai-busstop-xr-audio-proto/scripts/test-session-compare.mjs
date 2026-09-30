@@ -6,6 +6,7 @@ import {
   xhatSeries, eventMarks, markBefore, MARK_NEAR_SEC, judgeTime, judgeLine, lookResponses, lookText, xhatPeak, xhatGap, pairWarning,
   momentsOf, peakText, NO_PEAK_TEXT, leaderBands,
 } from "../lib/sessionCompare.js";
+import { interimAdapt } from "../lib/interimAdapt.js";
 
 let n = 0;
 function test(name, fn) { try { fn(); n++; console.log("ok ", name); } catch (e) { console.log("FAIL", name, "—", e.message); process.exitCode = 1; } }
@@ -133,6 +134,21 @@ test("actuationStats: 켜진 틱만 평균, OFF 세션은 0", () => {
   assert.equal(b.active, 0);
   assert.equal(b.meanU, 0);
   assert.equal(b.modes.off, 2);
+});
+
+test("directionChangeText·sessionBadges(B170b): /interim 세션에 control.adapt 가 있으면 판정 뒤 인사 구간의 바꾼 연출(네 값·성향), 고정이면 그 이유, 없으면(옛 세션) 예전 문장", () => {
+  const ad = interimAdapt({ theta: { g: 1.142, L: 0.167, tau: 0.648, rho: 0.001, n: 5, nResp: 5, levels: 3, confidence: 1 }, xhatPeak: 1, genre: "H" });
+  const s = { ...FEARFUL, control: { ...FEARFUL.control, adapt: ad } };
+  assert.match(directionChangeText(s), /^이 관객에게 바꾼 연출\(판정 1:55 뒤 인사 구간\): 공포 옆사람 · 거리 1\.\d\d? m\(앵커 1\.2\) · \d+(\.\d)?초 걸어와 \d+(\.\d)?초 뒤 인사 · 시선 \d+% · 과민\(민감도 \+0\.\d\d · 응답 5\/5 · 신뢰도 100%\)$/);
+  assert.equal(sessionBadges(s).find((b) => b.key === "control").text, "판정 뒤 연출 적응 ON(θ̂·x̂ · 과민)");
+  const fx = interimAdapt({ theta: { g: 0.386, L: 0.335, tau: 1, rho: 0.15, n: 5, nResp: 1, levels: 1, confidence: 0.1 }, xhatPeak: 0.311, genre: "R" });
+  const c = { ...CALM, control: { ...CALM.control, adapt: fx } };
+  assert.match(directionChangeText(c), /^바꾼 연출 없음 — 다섯 사건\(S1~S5\)은 누구에게나 같은 자극이고, 판정\(1:55\) 뒤 인사 구간도 고정 연출 · 거리 0\.9 m · 6초 걸어와 6초 뒤 인사 · 시선 75% — 응답 1\/5 · 모델이 서지 않음$/);
+  assert.equal(sessionBadges(c).find((b) => b.key === "control").text, "판정 뒤 연출 고정 — 응답 1/5 · 모델이 서지 않음");
+  const off = { ...CALM, control: { ...CALM.control, adapt: { ...interimAdapt({ theta: null, genre: "R" }), reason: "?adapt=0 → 고정 연출" } } };
+  assert.equal(sessionBadges(off).find((b) => b.key === "control").text, "판정 뒤 연출 고정 — ?adapt=0");
+  assert.match(directionChangeText(FEARFUL), /^바꾼 연출 없음 — 다섯 사건\(S1~S5\)은 누구에게나 같은 자극이고, 판정\(1:55\) 뒤 옆자리 인물과 인사만 장르별로 갈립니다$/, "옛 세션(adapt 없음)");
+  assert.equal(sessionBadges(FEARFUL).find((b) => b.key === "control").text, "연출 고정(중립 탐침 다섯)");
 });
 
 test("xhatSeries: 두 라우트 모두 engagement 에서 다시 계산, 배속이면 영화 시간(× speed), 리포트 없으면 control.tension", () => {

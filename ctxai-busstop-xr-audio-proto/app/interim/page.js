@@ -41,12 +41,20 @@
 //   ?mic=0          마이크 채널 끄기 (둘 다 끄면 S2·S4가 항상 "관측 실패"로 남는다)
 //   ?auto=1         게이트 없이 자동 시작 (헤드리스 관찰·리허설용)
 //   ?monitor=1      디렉터 모니터 — 관객 응답 모델 θ̂·긴장 추정 x̂·도달가능 트랙 (components/DirectorMonitor)
+//   ?adapt=0        판정 뒤 관객별 연출 끄기(오늘의 고정 연출) — 같은 관객으로 켬/끔 비교용(B170b)
+//   ?look=1         합성 관객(?viewer=)이 판정 뒤 앉은 옆사람을 똑바로 본다(휴식 시선 비율·63° 상한 없이) — 옆사람 거리·착석 시각이
+//                   프레임에 보이게 하는 시연·증거용. 기본은 프로필 비율(공포형 0.35 등)이라 옆사람이 화면 밖에 있다
 //
 // 관측 축(궤적 추종 엔진, 팀 판정과 나란히) — 위 5신호 판정(judge·drift)은 그대로 두고, 같은
 // 카메라 자세 스트림을 lib/engagementSense.js 에도 먹여 다섯 사건을 "탐침"으로 기록한다. 그 레코드로
 // lib/viewerModel.js 가 관객별 반응 동역학 θ̂(이득·지연·회복·습관화)를, lib/tensionEstimate.js 가
 // 긴장 추정 x̂(t) 를 낸다. 큐 → 탐침 메타는 lib/interimProbes.js. 도입부 사건은 중립 탐침이므로
 // 판정 전에는 자극을 바꾸지 않는다. 종료 시 세션 전체를 POST /api/session 에 남긴다(route:"interim").
+//
+// 판정 뒤 관객별 연출(B170b) — 판정 순간 한 번, θ̂(그때까지 닫힌 탐침 레코드)과 사건 반응 봉우리 x̂ 로 인사 구간(1:58~2:20)의 네 값
+// (옆사람 착석 거리·걸어오는 시간·인사 시각·시선 접촉률)을 lib/interimAdapt.js 가 정한다. 팀 판정(누가 앉는가)과 다섯 사건은 그대로고,
+// evalActors 인자·인사 큐 발동 시각·무대 시선 오프셋(adjustRef → ReactiveStage applyActuation)만 바뀐다. θ̂ 가 서지 않으면(응답 2건 미만)
+// 오늘의 고정 연출. 세션 control.adapt 와 control:adapt 이벤트로 남아 /film/compare 의 "바꾼 연출" 줄이 된다.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
@@ -75,6 +83,7 @@ import { probeFor, probeMarks, interimTrack } from "@/lib/interimProbes";
 import DirectorMonitor, { MonitorChart, MOMENT_COLOR } from "@/components/DirectorMonitor";
 import { fingerprintText, MOMENT_TEXT } from "@/lib/viewerText";
 import { momentsOf, peakText, NO_PEAK_TEXT } from "@/lib/sessionCompare";
+import { interimAdapt, adaptText } from "@/lib/interimAdapt";
 import { T } from "@/lib/interimTimeline";
 import s from "../story/story.module.css";
 import f from "../film/film.module.css";
@@ -110,7 +119,7 @@ function useQuery() {
 // 드리프트를 tick하고, 판정 시점에 judge()를 부른다. 렌더는 순수하게 actorsRef/driftRef를
 // 프레임마다 갱신하는 것뿐이라 React 상태로 만들지 않는다 — 화면 전환이 필요한 지점만
 // onCue로 페이지에 알린다.
-function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, engagementRef, trajRef, observationsRef, onCue, speed = 1, viewerSimRef, controlsRef }) {
+function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, engagementRef, trajRef, observationsRef, onCue, speed = 1, viewerSimRef, controlsRef, adaptRef = null, lookAt = false }) {
   const session = useXR((xr) => xr.session);
   const euler = useMemo(() => new Euler(), []);
   const dir = useMemo(() => new Vector3(), []);
@@ -155,7 +164,10 @@ function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, engagemen
     tRef.current += clamped * speed;
     const t = tRef.current;
 
-    while (cueIdxRef.current < CUES.length && t >= CUES[cueIdxRef.current].t) {
+    // 인사 큐(팀 CUES 표 t=130)는 판정 뒤 관객별 연출(interimAdapt)이 정한 시각에 발동한다 — 표는 그대로, 발동 시각만(B170b).
+    // CUES 순서(transition → greeting)는 유지되므로 인사는 아무리 빨라도 하늘 스냅 완료(2:06) 뒤다.
+    const cueAt = (cue) => (cue.name === "greeting" && adaptRef?.current ? adaptRef.current.times.greeting : cue.t);
+    while (cueIdxRef.current < CUES.length && t >= cueAt(CUES[cueIdxRef.current])) {
       const cue = CUES[cueIdxRef.current++];
       onCue?.(cue, t);
       if (cue.sense) sensorRef.current?.beginEvent(cue.name, cue.sense.azimuth, cue.sense.dur / speed, { kind: cue.sense.kind, tail: 4 / speed });
@@ -178,11 +190,18 @@ function InterimDirector({ actorsRef, driftRef, sensorRef, standUpRef, engagemen
     }
 
     driftRef.current.tick(dt);
-    actorsRef.current = evalActors(t, { dominant: driftRef.current.st.finalGenre });
+    // 판정 뒤 관객별 연출(B170b) — 판정 전(adaptRef 비어 있음)에는 evalActors 기본값(오늘 값)
+    const ad = adaptRef?.current;
+    actorsRef.current = evalActors(t, { dominant: driftRef.current.st.finalGenre, seatDistance: ad?.seatDistance, approachSec: ad?.approachSec });
+    // 헤드리스 관찰용(scripts/cdp.mjs eval · /film 의 window.__sfxLog 와 같은 용도) — 영화 시간과 옆사람 좌표. 화면·판정에는 쓰이지 않는다
+    if (typeof window !== "undefined") window.__interim = { t: Math.round(t * 100) / 100, npc: actorsRef.current.npc };
     // 합성 관객이 쉴 때 보는 곳 — 옆사람이 앉으면 그쪽(얼굴이 화면을 채우지 않게 63° 상한), 아니면 정면
     if (simOn) {
       const npc = actorsRef.current.npc;
-      sim.setRest(npc?.visible && npc.seated ? Math.min(63, MathUtils.radToDeg(Math.atan2(npc.x - cp.x, -(npc.z - cp.z)))) : 0);
+      const npcAz = npc?.visible && npc.seated ? MathUtils.radToDeg(Math.atan2(npc.x - cp.x, -(npc.z - cp.z))) : null;
+      // ?look=1(B170b 증거·시연) — 앉은 옆사람을 상한·비율 없이 똑바로 본다. 판정(1:55)은 이미 끝난 뒤라 판정·θ̂ 에는 영향이 없다
+      if (lookAt && npcAz != null) sim.setRest(npcAz, { factor: 1 });
+      else sim.setRest(npcAz != null ? Math.min(63, npcAz) : 0);
     }
 
     // 세션 저장용 궤적 — 드리프트 배합을 0.5초(영화 시간)마다 표본화 (/film 의 trajectory 와 같은 모양)
@@ -234,6 +253,8 @@ export default function InterimPage() {
   const [endEngine, setEndEngine] = useState(null); // 종료 카드 재료 — 반응 지문·x̂ 곡선·두 순간(B14a·B144)
   const viewerSimRef = useRef(null);  // 합성 관객(?viewer=, lib/gazeSim.js) — start() 에서 만든다
   const controlsRef = useRef(null);   // OrbitControls — 합성 관객이 카메라를 돌릴 때 target 이 필요하다
+  const adaptRef = useRef(null);      // 판정 뒤 관객별 연출(lib/interimAdapt · B170b) — 판정 순간 한 번 정한다
+  const adjustRef = useRef(null);     // 무대(ReactiveStage)에 얹는 시선 오프셋 — /film 연속 액추에이터와 같은 통로(applyActuation)
 
   if (!driftRef.current) driftRef.current = createInterimDrift();
   if (!standUpRef.current) standUpRef.current = createStandUpSensor();
@@ -274,6 +295,7 @@ export default function InterimPage() {
   const useCam = q.cam !== "0";
   const useMic = q.mic !== "0";
   const monitorOn = q.monitor === "1";
+  const adaptOn = q.adapt !== "0"; // 판정 뒤 관객별 연출(B170b) — ?adapt=0 이면 오늘의 고정 연출
   // ?viewer=fearful|curious|calm — 합성 관객. 시연·증거용이라 켜져 있으면 배지를 항상 띄우고 세션에 synthetic 표기를 남긴다.
   const viewerSim = isGazeProfile(q.viewer) ? q.viewer : null;
   const viewerSeed = Math.max(1, Math.floor(Number(q.seed) || 1));
@@ -314,6 +336,7 @@ export default function InterimPage() {
           stoodUp: !!standUpRef.current?.stoodUp,
           debugSignals: new Set(Object.keys(debugObsRef.current)),
           engine,
+          adapt: adaptRef.current, // 판정 뒤 관객별 연출(B170b)
         });
         if (monitorOn && engine) {
           setMonitor({
@@ -329,7 +352,7 @@ export default function InterimPage() {
 
   function onCue(cue, t) {
     eventsRef.current.push({ t: Math.round((t ?? 0) * 10) / 10, name: "cue", detail: cue.name === "judged" ? { name: "judged", result: cue.result } : cue.name });
-    if (cue.name === "judged") { judgeRef.current = cue.result; setGenre(cue.result.genre); return; }
+    if (cue.name === "judged") { judgeRef.current = cue.result; setGenre(cue.result.genre); decideAdapt(cue.result.genre, t); return; }
     if (cue.name === "transition") setPhase("running");
     if (cue.name === "greeting") setPhase("greeting");
     if (cue.name === "end") setPhase("end");
@@ -340,6 +363,22 @@ export default function InterimPage() {
       if (debugObsRef.current[cue.signal]) return;
       runWebcamGrade(cue.signal);
     }
+  }
+
+  // 판정 순간 한 번(B170b) — 그때까지 닫힌 탐침 레코드로 θ̂ 를, 비교 화면·종료 카드와 같은 함수(momentsOf)로 사건 반응 봉우리 x̂ 를 구해
+  // 판정 뒤 인사 구간의 네 값을 정한다. 다섯 사건은 바꾸지 않는다(중립 탐침). ?adapt=0 이면 오늘의 고정 연출 — 같은 관객으로 켬/끔 비교.
+  function decideAdapt(genre, t) {
+    let a;
+    try {
+      const eng = engagementRef.current?.data?.();
+      const theta = eng && eng.stimuli.length ? fitViewerModel(eng.stimuli) : null;
+      const peak = eng ? momentsOf({ route: "interim", speed, events: eventsRef.current, engagement: { windows: eng.windows, stimuli: eng.stimuli } }).peak : null;
+      a = adaptOn ? interimAdapt({ theta, xhatPeak: peak, genre }) : { ...interimAdapt({ theta: null, genre }), reason: "?adapt=0 → 고정 연출" };
+    } catch { a = interimAdapt({ theta: null, genre }); }
+    adaptRef.current = a;
+    // 시선 — 무대는 deriveParams 의 장르 앵커를 쓰므로 앵커와의 차이를 오프셋으로 얹는다(범위는 applyActuation 이 자른다). 고정이면 항등(null)
+    adjustRef.current = a.adapted ? { offsets: { npcGaze: r3(a.gazeAtViewer - a.base.gazeAtViewer) } } : null;
+    eventsRef.current.push({ t: Math.round((t ?? 0) * 10) / 10, name: "control:adapt", detail: a });
   }
 
   async function runWebcamGrade(signal) {
@@ -412,6 +451,8 @@ export default function InterimPage() {
         control = { track: interimTrack(d.st), theta, sel, tension: estimateTensionSeries(eng) };
       }
     } catch { /* 로그 실패는 무시 */ }
+    // 판정 뒤 관객별 연출(B170b) — 비교 화면 "바꾼 연출" 줄의 재료. 탐침 레코드가 없어도(고정 갈래) 남긴다
+    if (adaptRef.current) control = { ...(control || { track: interimTrack(d.st) }), adapt: adaptRef.current };
     return {
       route: "interim",
       exportedAt: new Date().toISOString(),
@@ -443,7 +484,7 @@ export default function InterimPage() {
       const series = eng ? estimateTensionSeries(eng).map((p) => (speed === 1 ? p : { ...p, t: r3(p.t * speed) })) : [];
       // 두 순간(B144) — 가장 크게 반응(x̂ 최고)·가장 차분히 집중(집중도 최고 2초)을 비교 화면과 같은 함수로(lib/sessionCompare momentsOf)
       const moments = eng ? momentsOf({ route: "interim", speed, events: eventsRef.current, engagement: { windows: eng.windows, stimuli: eng.stimuli } }, summary) : null;
-      setEndEngine({ theta, summary, series, fingerprint: fingerprintText(theta), moments });
+      setEndEngine({ theta, summary, series, fingerprint: fingerprintText(theta), moments, adapt: adaptRef.current });
     } catch { setEndEngine(null); }
     const data = sessionData();
     if (!data) return;
@@ -469,10 +510,10 @@ export default function InterimPage() {
         <Canvas shadows="soft" gl={{ antialias: true }}>
           <PerspectiveCamera makeDefault position={CANVAS_CAMERA.position} fov={CANVAS_CAMERA.fov} />
           <XR store={xrStore}>
-            <ReactiveStage actorsRef={actorsRef} directionRef={driftRef} dominant={genre} reflect={!xrActive} />
+            <ReactiveStage actorsRef={actorsRef} directionRef={driftRef} dominant={genre} reflect={!xrActive} adjustRef={adjustRef} />
             <XRProbe onChange={setXrActive} />
             {phase !== "gate" && (
-              <InterimDirector actorsRef={actorsRef} driftRef={driftRef} sensorRef={sensorRef} standUpRef={standUpRef} engagementRef={engagementRef} trajRef={trajRef} observationsRef={observationsRef} onCue={onCue} speed={speed} viewerSimRef={viewerSimRef} controlsRef={controlsRef} />
+              <InterimDirector actorsRef={actorsRef} driftRef={driftRef} sensorRef={sensorRef} standUpRef={standUpRef} engagementRef={engagementRef} trajRef={trajRef} observationsRef={observationsRef} onCue={onCue} speed={speed} viewerSimRef={viewerSimRef} controlsRef={controlsRef} adaptRef={adaptRef} lookAt={q.look === "1"} />
             )}
           </XR>
           <OrbitControls ref={controlsRef} target={[0, 1.15, 0.34]} enableZoom={false} enablePan={false} enableDamping dampingFactor={0.08} rotateSpeed={-0.35} />
@@ -558,6 +599,12 @@ export default function InterimPage() {
               </div>
             </>
           )}
+          {hud.adapt && (
+            /* 판정 뒤 관객별 연출(B170b) — 이 관객이 실제로 받는 인사 구간의 네 값. 고정이면 그 이유 */
+            <div className={f.hudMeta} style={{ marginTop: 2 }}>
+              <span>판정 뒤 연출</span><b style={{ fontWeight: hud.adapt.adapted ? 600 : 400 }}>{adaptText(hud.adapt)}</b>
+            </div>
+          )}
         </div>
       )}
 
@@ -594,6 +641,8 @@ export default function InterimPage() {
                   </>
                 )}
                 {endEngine.fingerprint && <p className={s.introSub} style={{ margin: "0 0 6px", fontStyle: "italic", color: "rgba(255,255,255,0.82)" }}>당신의 반응: {endEngine.fingerprint}</p>}
+                {/* 판정 뒤 관객별 연출(B170b) — 이 관객이 실제로 받은 인사 구간의 연출. 고정이면 그 이유 */}
+                {endEngine.adapt && <p className={s.introSub} style={{ margin: "0 0 6px" }}>{endEngine.adapt.adapted ? "이 관객에게 맞춘 연출" : "판정 뒤 연출"}: <b style={{ color: accent }}>{adaptText(endEngine.adapt)}</b></p>}
                 {(endEngine.moments?.peak || endEngine.moments?.noPeak) && (
                   <p className={s.introSub} style={{ margin: "0 0 2px" }}>{MOMENT_TEXT.peak}: <b style={{ color: accent }}>{endEngine.moments.peak ? peakText(endEngine.moments.peak) : NO_PEAK_TEXT}</b></p>
                 )}

@@ -172,10 +172,12 @@ export function createGazeSim(profile, { seed = 1, probes = [], speed = 1 } = {}
   }
 
   /** 쉴 때 보는 방위(도). 옆사람이 앉으면 페이지가 그 방위를 넣는다. null 이면 정면.
-   *  talk: 그 사람이 지금 말하는 중이면 true — 방위의 max(restFactor, TALK.factor) 만큼 본다(B67). */
-  function setRest(az, { talk = false } = {}) {
+   *  talk: 그 사람이 지금 말하는 중이면 true — 방위의 max(restFactor, TALK.factor) 만큼 본다(B67).
+   *  factor: 비율을 직접 준다(1 = 그 방위를 똑바로 본다) — /interim ?look=1 증거·시연용(B170b). 주지 않으면 종전과 같다. */
+  function setRest(az, { talk = false, factor = null } = {}) {
     talking = !!talk && Number.isFinite(az);
-    restAz = Number.isFinite(az) ? az * (talking ? Math.max(P.restFactor, TALK.factor) : P.restFactor) : 0;
+    const f = Number.isFinite(factor) ? factor : talking ? Math.max(P.restFactor, TALK.factor) : P.restFactor;
+    restAz = Number.isFinite(az) ? az * f : 0;
   }
 
   /**
