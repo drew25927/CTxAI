@@ -12,6 +12,6 @@ KAIST CTxAI 캡스톤 7조의 저장소입니다. 관객이 아무것도 선택�
 ```bash
 cd ctxai-busstop-xr-audio-proto
 npm install
-npm test                   # 회귀 22개 체인
+npm test                   # 회귀 23개 체인
 npm run film -- -p 3021    # http://localhost:3021/film  (제어 ON 시연은 ?auto=1&cam=0&viewer=fearful&seed=1&bias=H:6&monitor=1&control=1&kiosk=1)
 ```

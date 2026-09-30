@@ -48,7 +48,7 @@ KAIST CTxAI 캡스톤 7조 <버스 정류장>의 팀 도구이자 체험 프로�
 
 **모듈** (전부 순수 함수, `node` 만으로 테스트. 파일별 역할·테스트·사용처 표는 [`Bus/규격/개발_이어가기.md`](../Bus/규격/개발_이어가기.md) §10.2)
 
-- 센서·모델: `lib/engagementSense.js`(집중도·탐침 반응·잔움직임) · `lib/viewerModel.js`(θ 온라인 식별) · `lib/tensionEstimate.js`(x̂) · `lib/gazeSim.js`(합성 관객 3유형) · `lib/interimProbes.js`(팀 큐 S1~S5 → 탐침 메타)
+- 센서·모델: `lib/engagementSense.js`(집중도·탐침 반응·잔움직임) · `lib/viewerModel.js`(θ 온라인 식별) · `lib/tensionEstimate.js`(x̂) · `lib/gazeSim.js`(합성 관객 3유형) · `lib/interimProbes.js`(팀 큐 S1~S5 → 탐침 메타) · `lib/interimAdapt.js`(/interim 판정 뒤 관객별 연출 값 — 착석 거리·걸어오는 시간·인사까지 기다리는 시간·시선. 순수 함수만 들어갔고 화면 배선은 아직)
 - 곡선·제어: `lib/tensionCurve.js`(목표 곡선·슬롯 카탈로그, 작가가 고치는 파일) · `lib/slotController.js`(슬롯 MPC + 미세 자극 결정) · `lib/slotActuate.js` · `lib/controlActuate.js` · `lib/trackSelect.js`(도달 점수. 참고값이며 판정 트랙을 바꾸지 않는다)
 - 화면·비교: `components/DirectorMonitor.jsx` · `lib/monitorText.js` · `lib/viewerText.js`(종료 카드·비교 화면 문장) · `lib/sessionCompare.js` · `app/film/compare/`
 - 시뮬·데이터: `lib/tensionSim.js` + `scripts/sim-plot.mjs`(제어 OFF/ON 시뮬 그래프) · `scripts/export-engagement.mjs` · `scripts/extract-features.mjs`
@@ -56,7 +56,7 @@ KAIST CTxAI 캡스톤 7조 <버스 정류장>의 팀 도구이자 체험 프로�
 **명령**
 
 ```bash
-npm test                    # 회귀 22개 체인(팀 4 + 엔진 18). 하나라도 실패하면 그 자리에서 멈추고 EXIT 1
+npm test                    # 회귀 23개 체인(팀 4 + 엔진 19). 하나라도 실패하면 그 자리에서 멈추고 EXIT 1
 npm run sim:plot            # 모델 관객 200명 × 트랙 3 × 제어 OFF/ON → data/sim/sim-onoff.png · sim-summary.txt. 발표 숫자는 "full·현실" 줄
 npm run sim                 # 초기 설계 규약(탐침까지 제어)의 표본 시뮬 — 방향 확인용. 여기 숫자는 발표에 인용하지 않는다
 npm run export:engagement   # data/sessions/*.json → data/engagement_export/ CSV(세션별 _raw·_windows·_stimuli·_control + sessions_summary.csv)
@@ -114,7 +114,7 @@ lib/dialoguePool.js       대사 풀 근접 매칭
 lib/interimTimeline.js · interimJudge.js · interimGrader.js · interimDrift.js · interimMic.js · behaviorSense.js · standUpSense.js
                           /interim 의 타임라인·판정·채점·드리프트·마이크·표정·기립 (팀)
 lib/engagementSense.js · viewerModel.js · tensionEstimate.js · tensionCurve.js · slotController.js · slotActuate.js · controlActuate.js ·
-    trackSelect.js · tensionSim.js · gazeSim.js · interimProbes.js · viewerText.js · monitorText.js · sessionCompare.js
+    trackSelect.js · tensionSim.js · gazeSim.js · interimProbes.js · interimAdapt.js · viewerText.js · monitorText.js · sessionCompare.js
                           궤적 추종 연출 엔진 (위 절)
 components/ReactiveStage.jsx    반응형 무대 (BlockoutStage 지형 재사용, 리깅 임시 배우)
 components/DirectorMonitor.jsx  디렉터 모니터 패널 + x̂ 그래프 (/film·/interim 공유)
@@ -122,7 +122,7 @@ public/reactive/audio/    대사 46줄·SFX 18·BGM 3·안내방송 (+ pool/ 변
 public/reactive/models/   Meshy 리깅 캐릭터 (meshopt, 5~7MB) · props/ PolyHaven CC0 소품·침엽수 (26MB)
 public/reactive/hdri/     PolyHaven CC0 순수 하늘 HDRI 3장 (2k, 13MB)
 scripts/blender/          Mixamo FBX → GLB 병합 스크립트 (Blender 헤드리스)
-scripts/                  test-*.mjs 회귀 20개 + sim-headpose·sim-interim (npm test 체인 22개) · sim-plot · sim-trajectory · export-engagement ·
+scripts/                  test-*.mjs 회귀 21개 + sim-headpose·sim-interim (npm test 체인 23개) · sim-plot · sim-trajectory · export-engagement ·
                           extract-features · cdp.mjs · observe.sh · assemble-recording.sh · pull-assets · gen-dialogue-pool · synthesize-dialogue(레거시)
 ```
 
