@@ -11,6 +11,8 @@
 //   { track, theta:{g,L,tau,rho,confidence,nResp}, xhat, target?, tol?, ceiling?, series:[{t,tension,fromStim?}], scene?:bool(판정 뒤 장면 구간, B149),
 //     (track = "H"|"R"|"C" 또는 판정 전 배합 {R,H,C} — 점선은 배합 가중 기대 곡선, 머리글은 "잠정 R44 H34 C21", B92)
 //     nStim, sel?:{track,reach}, decided?:bool(track 이 판정된 트랙인가 — /interim 은 판정 전 선두 장르를 track 에 주므로 false, B154), control?:bool, micro?:number, note?,
+//     active?:string[]  ← 진행 중(레코드가 아직 닫히지 않은) 사건 이름(B153·B159). 계열은 그 잠정 레코드를 더해 그린 값이라 마지막 점이 잠정이면
+//                         "추정 x̂" 에 "잠정", 반응 몫 없이 사건만 진행 중이면 "사건 사이" 대신 "<사건> 진행 중". 잠정 구간은 그래프에 점선.
 //     next?:{kind:"probe"|"slot"|"micro"|"done", slotId, variantId?, dose?, reason, count?, max?}   ← lib/slotController nextAdvice
 //     actuate?:{u,mode,offsets,base?}, ← /film 연속 액추에이터(lib/controlActuate.js)의 현재 구동량·오프셋. base = 오프셋을 얹기 전 값(B116)
 //     slots?:{frog?:{variantId,dose,actuation:{volume,plays}}, cat?:{…}} }   ← /film 슬롯 변형 확정값(lib/slotActuate.js, B78). variantId null = 고정 연출
@@ -19,8 +21,9 @@
 // 줄바꿈 없는 공백을 넣어 "회복 / 0.848s"·"응 / 답 7/7" 처럼 갈리지 않는다. 줄은 " · " 구분자에서만 접힌다.
 
 import { curveAt, trackLabel } from "@/lib/tensionCurve";
-import { observedSegments, xhatReading, xhatScopeNote } from "@/lib/tensionEstimate";
+import { observedSegments, xhatReading, xhatScopeNote, isProvisional } from "@/lib/tensionEstimate";
 import { actuateLine, glueNumbers, reachText } from "@/lib/monitorText";
+import { stimulusLabel } from "@/lib/viewerText";
 
 export const MOMENT_COLOR = { peak: "#ffffff", calm: "rgba(143,214,143,0.85)" }; // 종료 카드 범례와 같은 색(B144)
 
@@ -39,6 +42,9 @@ export function MonitorChart({ series = [], track = "H", tNow = 0, ceiling = 1, 
     for (let t = 0; t <= tMax; t += 6) target.push(`${t === 0 ? "M" : "L"}${x(t).toFixed(1)},${y(curveAt(track, t).target).toFixed(1)}`);
   }
   const segs = observedSegments(series).map((g) => ({ observed: g.observed, d: g.points.map((p, i) => `${i ? "L" : "M"}${x(p.t).toFixed(1)},${y(p.tension).toFixed(1)}`).join(" ") }));
+  // 잠정 구간(B153) — 진행 중 자극의 잠정 레코드에 기댄 점은 흰 점선을 덧그린다(레코드가 닫히면 실선으로 굳는다). 앞 점 하나를 붙여 선이 이어진다
+  const prov = [];
+  series.forEach((p, i) => { if (isProvisional(p)) { const a = i > 0 ? series[i - 1] : p; prov.push(`M${x(a.t).toFixed(1)},${y(a.tension).toFixed(1)} L${x(p.t).toFixed(1)},${y(p.tension).toFixed(1)}`); } });
   return (
     <svg width={W} height={H} style={{ display: "block", background: "rgba(255,255,255,0.04)", borderRadius: 6 }}>
       {showTarget && <line x1={PAD} x2={W - PAD} y1={y(ceiling)} y2={y(ceiling)} stroke="rgba(224,168,106,0.4)" strokeDasharray="2 3" />}
@@ -53,6 +59,7 @@ export function MonitorChart({ series = [], track = "H", tNow = 0, ceiling = 1, 
         <rect x={x(moments.calm.t0)} y={H - PAD - 5} width={Math.max(3, x(moments.calm.t1) - x(moments.calm.t0))} height={5} rx={1.5} fill={MOMENT_COLOR.calm} />
       )}
       {segs.map((g, i) => <path key={i} d={g.d} fill="none" stroke={g.observed ? "#7fd1ff" : "rgba(127,209,255,0.38)"} strokeWidth={g.observed ? 2 : 1.2} />)}
+      {prov.length > 0 && <path d={prov.join(" ")} fill="none" stroke="rgba(255,255,255,0.85)" strokeWidth="1.5" strokeDasharray="3 2" />}
       {moments?.peak && <circle cx={x(moments.peak.t)} cy={y(moments.peak.tension)} r={3.5} fill={MOMENT_COLOR.peak} stroke="#0b0f14" strokeWidth={1} />}
       <line x1={x(tNow)} x2={x(tNow)} y1={PAD} y2={H - PAD} stroke="rgba(255,255,255,0.3)" />
     </svg>
@@ -97,9 +104,11 @@ export default function DirectorMonitor({ monitor, tNow = 0, tMax = 180, showTar
   if (!monitor) return null;
   const { theta } = monitor;
   const hasTarget = showTarget && Number.isFinite(monitor.target);
-  // 사건 사이의 x̂ 는 목표와 견주지 않는다(B149) — 회색 + "사건 사이". 사건 반응이 있을 때만 위(주황)·아래(초록)·안(흰)으로 칠한다
+  // 사건 사이의 x̂ 는 목표와 견주지 않는다(B149) — 회색 + "사건 사이". 사건 반응이 있을 때만 위(주황)·아래(초록)·안(흰)으로 칠한다.
+  // 진행 중 사건(B153·B159)은 이름표로 "<사건> 진행 중", 잠정 반응이면 "잠정" — 이름표는 페이지의 eventLabel(없으면 원래 이름)
   const last = monitor.series?.length ? monitor.series[monitor.series.length - 1] : null;
-  const reading = xhatReading(last ?? (Number.isFinite(monitor.xhat) ? { tension: monitor.xhat } : null), hasTarget ? { target: monitor.target, tol: monitor.tol } : {});
+  const activeLabels = (monitor.active || []).map((n) => eventLabel[n] || stimulusLabel(n)); // micro-1 → "먼 문 소리"(viewerText 와 같은 표), 그 밖은 원래 이름
+  const reading = xhatReading(last ?? (Number.isFinite(monitor.xhat) ? { tension: monitor.xhat } : null), { ...(hasTarget ? { target: monitor.target, tol: monitor.tol } : {}), active: activeLabels });
   const XHAT_COLOR = { above: "#e0a86a", below: "#8fae95", in: "#cfe", between: "rgba(230,233,240,0.55)" };
   const xhatColor = XHAT_COLOR[reading.state] || "#7fd1ff";
   const scopeNote = showTarget ? xhatScopeNote({ scene: !!monitor.scene, control: !!monitor.control }) : null;

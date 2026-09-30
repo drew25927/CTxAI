@@ -26,6 +26,13 @@
 // 개구리에 놀란 각속도가 인물 추적의 반응 크기로 둔갑해 θ̂·x̂ 를 오염시킨다. 응시(lookSec)와 시선 지연은
 // 방위로 가르므로 계속 세고, 가린 시간은 maskedSec 로 남긴다.
 //
+// 진행 중 자극의 잠정 레코드(B153·B159): 레코드는 자극이 끝나고 꼬리(tail)까지 지나야 닫힌다(observeUntil ≈ onset + dur + 4초 ·
+// track 종류는 수십 초). 그 전에는 data().stimuli 에 없어서 실시간 x̂(모니터·판정 뒤 제어기)이 반응을 약 4.5초 늦게, /interim S1(94초
+// 추적)은 1:53 에야 보였다. 그래서 data() 는 진행 중 자극도 같은 모양의 잠정 레코드(provisional 1 · 지금까지의 peakAmp·maxVel·응답)로
+// `active` 에 따로 돌려준다 — x̂ 계열은 그것을 더해 그리고 "잠정" 으로 표시하되, θ̂ 적합(fitViewerModel)·슬롯 결정(decideSlotNow ·
+// B194)·세션 저장은 닫힌 레코드(stimuli)만 쓴다. 잠정 값은 지금까지의 최댓값이라 닫힌 값보다 클 수 없고, recoverySec 이 아직 없으면 x̂ 는
+// 기본 회복 시정수로 그린다(닫히면 실제 회복으로 다시 계산된다).
+//
 // 좌표 규약은 headPoseSense 와 같다 — yaw 정면 0·오른쪽 +, pitch 는 카메라 euler.x(위가 +), roll 은
 // euler.z, 위치는 미터. 시각은 체험 시작 기준 실제 경과 초(배속과 무관).
 
@@ -259,8 +266,9 @@ export function createEngagementSensor({ mark, params } = {}) {
     mark?.("stim:start", { name, azimuth, channel, dose, nth });
   }
 
-  function closeStimulus(st) {
-    active.delete(st.name);
+  // 탐침 상태 → 레코드. 닫을 때(final)와 진행 중 잠정 레코드(B153)가 같은 규칙으로 응답을 판정한다 — 잠정 레코드는 지금까지의 값이라
+  // 닫힌 값을 넘지 않고, 닫히면 같은 이름의 레코드가 stimuli 로 옮겨 간다.
+  function recordOf(st, final) {
     // 응답 = 사건 쪽으로 고개를 돌림(turned) · 빠른 고개 움직임 · 후퇴. 이미 그쪽을 보고 있던 사건(atOnset)은 looked 가 저절로 켜지므로
     // 돌아본 것으로 세지 않는다 — 1배속 /interim 차분형은 정면 8° 물보라를 보고만 있었는데(최대 편차 0.6°·각속도 2.4°/s) 응답으로 세여
     // θ̂ 응답 수와 "돌아본 사건" 에 들어갔다(B158). 보고 있던 사건에 움찔했으면 움직임 응답으로 그대로 센다.
@@ -272,6 +280,14 @@ export function createEngagementSensor({ mark, params } = {}) {
       lookSec: r2(st.lookSec), peakAmp: r1(st.peakAmp), maxVel: r1(st.maxVel), retreat: r3(st.retreat), recoverySec: st.recoverySec, recheck: st.recheck,
       maskedSec: r2(st.maskedSec),
     };
+    // 진행 중이면 잠정 표시와 경과(초) — 모니터가 "잠정"·"진행 중" 을 적고, 닫힌 레코드와 구별해 θ̂·결정에서 걸러 낸다
+    return final ? rec : { ...rec, provisional: 1, elapsed: r2(t - st.onset) };
+  }
+
+  function closeStimulus(st) {
+    active.delete(st.name);
+    const rec = recordOf(st, true);
+    const responded = rec.responded;
     done.push(rec);
     // 집중도의 탐침 항은 "빠져나가지 않았는가" 를 잰다 — 이미 보던 사건을 계속 지켜본 관객(atOnset · 응시가 사건 길이의 절반 이상)은
     // 반응(responded)은 아니어도 빠져나간 것도 아니므로 응답률을 깎지 않는다. θ̂·카드의 반응 비율은 responded 그대로다.
@@ -358,7 +374,8 @@ export function createEngagementSensor({ mark, params } = {}) {
   }
 
   // 가벼운 접근자 — 원시 CSV 를 만들지 않는다. 250ms HUD·모니터가 매 틱 부르므로 report() 대신 이걸 쓴다.
-  function data() { return { elapsed: r1(t), windows, stimuli: done, engagement: series }; }
+  // stimuli 는 닫힌 레코드만(θ̂·슬롯 결정·세션 저장용), active 는 진행 중 자극의 잠정 레코드(실시간 x̂ 표시용 · B153·B159 · 머리말 참조).
+  function data() { return { elapsed: r1(t), windows, stimuli: done, engagement: series, active: [...active.values()].map((st) => recordOf(st, false)) }; }
 
   function report() {
     return {

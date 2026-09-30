@@ -245,6 +245,45 @@ test("요약: 가장 집중한 구간에 가까운 탐침 이름이 붙는다", 
   assert.ok(sum.topSegments[0].t0 >= 20 && sum.topSegments[0].t1 <= 26, JSON.stringify(sum.topSegments[0]));
 });
 
+test("진행 중 자극의 잠정 레코드(B153): 닫히기 전 data().active 에 같은 모양으로 있고, 닫히면 stimuli 로 옮겨 가며 잠정 값은 닫힌 값을 넘지 않는다", () => {
+  const s = createEngagementSensor();
+  feed(s, 5, still);
+  s.beginStimulus({ name: "micro-1", azimuth: -60, dur: 1.5, kind: "probe", channel: "audio", dose: 0.5, tail: 3 });
+  // 0.3초 뒤 0.3초에 걸쳐 -60° 로 돌리고 1초 응시, 0.4초에 걸쳐 복귀 → 자극 뒤 2초까지만 먹인다(레코드는 4.5초에 닫힌다)
+  feed(s, 2, (t) => (t < 0.3 ? {} : t < 0.6 ? { yaw: -60 * (t - 0.3) / 0.3 } : t < 1.6 ? { yaw: -60 } : { yaw: -60 * Math.max(0, 1 - (t - 1.6) / 0.4) }));
+  const d = s.data();
+  assert.equal(d.stimuli.length, 0, "아직 닫히지 않았다");
+  assert.equal(d.active.length, 1);
+  const a = d.active[0];
+  assert.equal(a.name, "micro-1"); assert.equal(a.provisional, 1); assert.ok(Math.abs(a.elapsed - 2) < 0.05, `elapsed ${a.elapsed}`);
+  assert.equal(a.responded, 1); assert.equal(a.turned, 1); assert.ok(a.lookLatency != null && a.lookLatency < 0.6, `lookLatency ${a.lookLatency}`);
+  assert.ok(a.peakAmp >= 55, `peakAmp ${a.peakAmp}`);
+  assert.ok(a.recoverySec == null || a.recoverySec >= 0, `회복은 아직 없거나(null) 복귀했으면 값 ${a.recoverySec}`);
+  // 닫힌 레코드와 키가 같다(잠정 표시 두 개만 더) — 모니터·x̂ 계열이 같은 코드로 읽는다
+  feed(s, 3, still); // 자극 뒤 5초 → observeUntil(4.5초) 지나 닫힘
+  const d2 = s.data();
+  assert.equal(d2.active.length, 0); assert.equal(d2.stimuli.length, 1);
+  const f = d2.stimuli[0];
+  assert.deepEqual(Object.keys(a).filter((k) => k !== "provisional" && k !== "elapsed").sort(), Object.keys(f).sort());
+  assert.equal(f.provisional, undefined, "닫힌 레코드에는 잠정 표시가 없다");
+  assert.equal(f.responded, a.responded); assert.equal(f.turned, a.turned); assert.equal(f.lookLatency, a.lookLatency);
+  assert.ok(f.peakAmp >= a.peakAmp && f.maxVel >= a.maxVel && f.lookSec >= a.lookSec, "잠정 값은 지금까지의 최댓값이라 닫힌 값을 넘지 않는다");
+  assert.ok(f.recoverySec != null, `닫히면 회복 시간이 있다 ${f.recoverySec}`);
+  assert.equal(s.report().stimuli.length, 1, "report() 도 닫힌 레코드만");
+  assert.equal(s.current().active, 0);
+});
+
+test("잠정 레코드: track 종류(S1 94초)는 응시 중이면 닫히기 훨씬 전에 responded 1 — 사건이 진행 중이라는 사실도 active 로 안다(B159)", () => {
+  const s = createEngagementSensor();
+  feed(s, 5, still);
+  s.beginStimulus({ name: "figureApproach", azimuth: -35, dur: 94, kind: "track", channel: "visual", dose: 0.6, tail: 4 });
+  feed(s, 6, (t) => (t < 1 ? {} : { yaw: -35 * Math.min(1, (t - 1) / 0.4) })); // 1초 뒤 돌려 계속 본다
+  const d = s.data();
+  assert.equal(d.stimuli.length, 0); assert.equal(d.active.length, 1);
+  assert.equal(d.active[0].kind, "track"); assert.equal(d.active[0].responded, 1); assert.ok(d.active[0].lookSec > 4, `lookSec ${d.active[0].lookSec}`);
+  assert.ok(d.active[0].elapsed >= 5.9, `elapsed ${d.active[0].elapsed}`);
+});
+
 test("windowFeatures 는 표본 4개 미만이면 null", () => {
   assert.equal(windowFeatures([{ t: 0, yaw: 0, pitch: 0, roll: 0, x: 0, y: 0, z: 0 }], { yaw: 0, pitch: 0, z: 0 }, ENGAGE_PARAMS), null);
 });

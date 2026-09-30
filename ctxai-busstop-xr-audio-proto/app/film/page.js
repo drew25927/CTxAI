@@ -40,7 +40,7 @@ import { createHeadPoseSensor } from "@/lib/headPoseSense";
 import { createEngagementSensor } from "@/lib/engagementSense";
 import { createGazeSim, isGazeProfile, GAZE_PROFILES } from "@/lib/gazeSim";
 import { fitViewerModel } from "@/lib/viewerModel";
-import { estimateTensionSeries, trackingStats, isObserved, OBS_EPS } from "@/lib/tensionEstimate";
+import { estimateTensionSeries, trackingStats, isObserved, isProvisional, OBS_EPS } from "@/lib/tensionEstimate";
 import DirectorMonitor from "@/components/DirectorMonitor";
 import { curveAt, controlTrack, isMixTrack } from "@/lib/tensionCurve";
 import { runController, microDecision, nextAdvice } from "@/lib/slotController";
@@ -400,7 +400,8 @@ export default function FilmPage() {
         const track = controlTrack({ forced: q.track, verdict: film.dominant, mix: snap.current });
         if (eng) {
           const theta = fitViewerModel(eng.stimuli);
-          // 센서 시각은 실제 경과 초, 모니터의 목표 곡선·현재 시각은 영화 시간 — 배속이면 환산해 겹친다
+          // 센서 시각은 실제 경과 초, 모니터의 목표 곡선·현재 시각은 영화 시간 — 배속이면 환산해 겹친다.
+          // eng.active(진행 중 자극의 잠정 레코드)도 들어가므로 반응이 레코드가 닫히기 전에 보인다(B153) — 그 점은 모니터가 "잠정" 으로 적는다
           const series = estimateTensionSeries(eng).map((p) => (speed === 1 ? p : { ...p, t: Math.round(p.t * speed * 10) / 10 }));
           const last = series[series.length - 1];
           const tgt = curveAt(track, film.t);
@@ -417,7 +418,8 @@ export default function FilmPage() {
             lastMicroAt: film.lastMicroAt ?? -Infinity, microCount: film.microCount || 0, controlOn: q.control === "1", sceneStart: T.npcSeated, sceneEnd: 150,
             quiet: quietState(film, film.t), observed: last ? isObserved(last) : true });
           const sel = theta.nResp >= 1 ? selectTrack(theta, { genrePrior: snap.current, priorWeight: 0.3 }) : null;
-          setMonitor({ track, theta, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, series, next, nStim: eng.stimuli.length, sel, scene: inScene, control: q.control === "1", micro: film.microCount || 0, actuate: adjustRef.current ? { ...adjustRef.current, base: actBase(snap) } : null, slots: film.slotChoice || null });
+          setMonitor({ track, theta, xhat: last?.tension ?? null, target: tgt.target, tol: tgt.tol, ceiling: tgt.ceiling, series, next, nStim: eng.stimuli.length, sel, scene: inScene, control: q.control === "1", micro: film.microCount || 0, actuate: adjustRef.current ? { ...adjustRef.current, base: actBase(snap) } : null, slots: film.slotChoice || null,
+            active: (eng.active || []).map((a) => a.name) }); // 진행 중 사건 이름 — "<사건> 진행 중"·"잠정" 표기(B153·B159)
         }
       }
       // 실제 제어(?control=1) — 판정 뒤 장면에서만. 도입부 다섯 사건은 관객을 공정히 읽기 위한
@@ -432,8 +434,11 @@ export default function FilmPage() {
       if (inScene) {
         const eng = engagementRef.current?.data?.();
         const theta = eng && eng.stimuli.length ? fitViewerModel(eng.stimuli) : null;
+        // x̂ 는 모니터와 같은 계열(진행 중 자극의 잠정 레코드 포함, B153) — 미세 자극 뒤 반응을 레코드가 닫히기(약 4.5초) 전에 본다.
+        // 장면 구간의 진행 중 자극은 미세 자극뿐이고 그 뒤 HOLD_AFTER_MICRO(5초) 멈춤 창이 있어 구동은 예전과 같다(?hold=0 이면 더 일찍 반응).
         const series = eng && eng.stimuli.length ? estimateTensionSeries(eng) : [];
         const xhat = series.length ? series[series.length - 1].tension : null;
+        const xhatProvisional = series.length ? isProvisional(series[series.length - 1]) : false;
         const tgt = curveAt(film.dominant, film.t);
         const prev = adjustRef.current;
         const dtFilm = prev ? Math.max(0, Math.min(2, film.t - prev.t)) : 0.25 * speed;
@@ -448,7 +453,7 @@ export default function FilmPage() {
           d.markEvent("control:actuate", {
             t: Math.round(film.t * 10) / 10, active: controlOn, mode: act.mode, u: act.u, uTarget: act.uTarget, err: act.err, gScale: act.gScale,
             ...(act.mode === "settle" ? { settleLeft: act.settleLeft } : {}),
-            xhat: r3(xhat), target: r3(tgt.target), offsets: act.offsets, bgm: r3(bgmScale(act.offsets)),
+            xhat: r3(xhat), xhatProvisional: xhatProvisional ? 1 : 0, target: r3(tgt.target), offsets: act.offsets, bgm: r3(bgmScale(act.offsets)),
             applied: { npcSilence: r3(p.npcSilence), lampOn: r3(p.lampOn), fogDensity: r3(p.fogDensity), npcDistance: r3(p.npcDistance), npcGaze: r3(p.npcGaze) },
             // 실제로 움직인 양(B116) — 오프셋 중 범위·트리거에 잘리지 않고 무대에 닿은 몫. 포화 축(공포 트랙 가로등)은 0
             delta: Object.fromEntries(actuationEffect(actBase(snap), act.offsets).map((e) => [e.key, e.delta])),
@@ -545,7 +550,9 @@ export default function FilmPage() {
     const controlOn = q.control === "1";
     const eng = engagementRef.current?.data?.();
     const theta = eng && eng.stimuli.length ? fitViewerModel(eng.stimuli) : null;
-    const series = eng && eng.stimuli.length ? estimateTensionSeries(eng) : [];
+    // 결정 x̂ 는 그 시각까지 닫힌 레코드만(B194 — 시뮬 현실 조건이 이 규칙을 따라 맞춰져 있다). 진행 중 자극의 잠정 레코드(eng.active)는
+    // 모니터 표시용이라 여기서는 넣지 않는다 — 개구리 결정(36.5s)에 아직 열린 포스터(닫힘 37s)·우비 인물(닫힘 44s) 잠정 몫이 들어가지 않게
+    const series = eng && eng.stimuli.length ? estimateTensionSeries({ windows: eng.windows, stimuli: eng.stimuli }) : [];
     const xhat = series.length ? series[series.length - 1].tension : null;
     const snap = d.snapshot();
     // 개구리(0:36.5)·고양이(0:42)는 판정(0:58) 전이라 배합 가중 기대 곡선으로 정한다(B92, 모니터와 같은 controlTrack).
@@ -870,7 +877,7 @@ export default function FilmPage() {
         // 장면 구간 추종 요약(B149) — 목표 허용폭 안 창을 전체·관측(사건 반응이 있는 창)으로 나눠 센다. 센서 시각은 실제 초라 배속이면 영화 초로 환산
         const dom = filmRef.current.dominant;
         const tracking = dom ? { track: dom, t0: T.npcSeated, t1: 150, eps: OBS_EPS,
-          ...trackingStats(estimateTensionSeries(eng).map((p) => ({ ...p, t: p.t * speed })), (t) => curveAt(dom, t), { t0: T.npcSeated, t1: 150 }) } : null;
+          ...trackingStats(estimateTensionSeries({ windows: eng.windows, stimuli: eng.stimuli }).map((p) => ({ ...p, t: p.t * speed })), (t) => curveAt(dom, t), { t0: T.npcSeated, t1: 150 }) } : null; // 닫힌 레코드만 — 비교 화면(sessionCompare.xhatSeries)이 리포트에서 다시 계산하는 값과 같게
         control = { track, theta, mode: q.control === "1" ? "full" : "off", plan: runController(track, theta, { fixed: PROBE_DOSE }).entries, slots, tracking,
           actuation: { on: q.control === "1", holdAfterMicro: q.hold ? Math.max(0, Number(q.hold) || 0) : ACTUATE_PARAMS.HOLD_AFTER_MICRO, ticks: filmRef.current.actuateLogCount || 0, micro: filmRef.current.microCount || 0, last: a ? { t: a.t, u: a.u, mode: a.mode, offsets: a.offsets } : null } };
       }

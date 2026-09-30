@@ -13,6 +13,9 @@
 // 봉우리가 오래 남는다"가 자연히 나온다. 가중치는 잠정치 — 파일럿 자기보고로 보정한다.
 // 계열(estimateTensionSeries)은 2초 창마다 그 창 안의 최댓값을 창 끝 시각에 찍는다(B150) — 창 끝 한 점만 재면
 // 회복이 빠른 관객의 봉우리가 창과 봉우리의 위상에 따라 보였다 안 보였다 했다.
+// 진행 중 자극(B153·B159): engagementSense.data().active 의 잠정 레코드를 `active` 로 주면 계열에 더해 그린다 — 레코드가 닫히기
+// 전(자극 뒤 약 4.5초 · /interim S1 은 1:53)에도 실시간 x̂ 가 반응을 보인다. 그 점은 fromActive(잠정 레코드 몫)를 남겨 모니터가
+// "잠정" 으로 적고, 진행 중 사건이 있는데 반응 몫이 없으면 "사건 사이" 가 아니라 "<사건> 진행 중" 으로 적는다(xhatReading).
 
 import { responseMagnitude } from "./viewerModel.js";
 
@@ -98,19 +101,28 @@ function stimMaxInWindow(stimuli, t0, t1, P) {
 /**
  * 창마다 긴장 궤적을 만든다. 점은 창 끝 시각 t1 에 찍고, 값은 그 창 안 사건 기여의 최댓값(B150)이다.
  * 창 사이 틈(한 표본)도 놓치지 않게 앞 창의 t1 부터 잰다. t0 가 없는 창은 t1 한 점만 잰다(예전 동작).
- * @param {{windows:Array, stimuli:Array}} report  engagementSense report()
- * @returns {Array<{t, tension, fromStim, fidget, tPeak}>}  tPeak — 창 안에서 사건 기여가 가장 컸던 시각
+ * @param {{windows:Array, stimuli:Array, active?:Array}} report  engagementSense report() 또는 data() — active 는 진행 중 자극의
+ *   잠정 레코드(B153). 주면 계열에 더해지고 각 점에 fromActive(그 몫)가 남는다. 주지 않으면(닫힌 레코드만) 예전과 같은 결과다.
+ * @returns {Array<{t, tension, fromStim, fidget, tPeak, fromActive?}>}  tPeak — 창 안에서 사건 기여가 가장 컸던 시각
  */
-export function estimateTensionSeries({ windows = [], stimuli = [] } = {}, params = TENSION_PARAMS) {
+export function estimateTensionSeries({ windows = [], stimuli = [], active = [] } = {}, params = TENSION_PARAMS) {
   const P = params;
+  const all = active && active.length ? [...stimuli, ...active] : stimuli;
   return windows.map((w, i) => {
     const t = w.t1;
     const prevT1 = i > 0 ? windows[i - 1].t1 : null;
     const t0 = Number.isFinite(w.t0) ? (Number.isFinite(prevT1) ? Math.min(w.t0, prevT1) : w.t0) : null;
-    const { s, at } = stimMaxInWindow(stimuli, t0, t, P);
+    const { s, at } = stimMaxInWindow(all, t0, t, P);
     const fid = P.FID * clamp01((w.angVelRms || 0) / P.FID_REF);
-    return { t, tension: r3(clamp01(P.BASE + s + fid)), fromStim: r3(s), fidget: r3(fid), tPeak: Math.round(at * 100) / 100 };
+    const p = { t, tension: r3(clamp01(P.BASE + s + fid)), fromStim: r3(s), fidget: r3(fid), tPeak: Math.round(at * 100) / 100 };
+    if (all !== stimuli) { let a = 0; for (const st of active) a += stimContribution(st, at, P); p.fromActive = r3(a); }
+    return p;
   });
+}
+
+/** 이 점의 x̂ 가 진행 중(닫히지 않은) 자극의 잠정 반응에 기대는가(B153) — 모니터가 "잠정" 을 붙인다. */
+export function isProvisional(p, eps = OBS_EPS) {
+  return !!(p && Number.isFinite(p.fromActive) && p.fromActive >= eps);
 }
 
 // 관측 범위(B149) — x̂ 는 사건(탐침·미세 자극)에 대한 순간 반응에 잔움직임(FID, 최대 +0.15)을 더한 값이다. 사건 기여(fromStim)가
@@ -144,15 +156,21 @@ export function observedSegments(series = [], eps = OBS_EPS) {
 /**
  * 모니터의 x̂ 읽기 — 목표와 견줄 수 있는 관측인가, 견주면 위·안·아래 중 어디인가.
  * 사건 사이(관측 아님)는 목표가 있어도 "between" — 허용폭 밖으로 칠하지 않는다.
- * @returns {{state:"between"|"above"|"in"|"below"|"none", label:string}}
+ * active 는 진행 중 사건의 이름표 목록(B159) — 반응 몫이 없어도 사건이 진행 중이면 "사건 사이" 가 아니라 "<사건> 진행 중" 으로 적는다
+ * (1배속 /interim 차분형은 S1 추적 94초 내내 "사건 사이" 를 적었다). 잠정 반응(fromActive ≥ eps)이면 상태는 그대로 두고 "잠정" 을 붙인다.
+ * @returns {{state:"between"|"above"|"in"|"below"|"none", label:string, provisional:boolean}}
  */
-export function xhatReading(p, { target, tol = 0, eps = OBS_EPS } = {}) {
-  if (!p || !Number.isFinite(p.tension)) return { state: "none", label: "" };
-  if (!isObserved(p, eps)) return { state: "between", label: "사건 사이" };
-  if (!Number.isFinite(target)) return { state: "none", label: "" };
-  if (p.tension > target + tol) return { state: "above", label: "" };
-  if (p.tension < target - tol) return { state: "below", label: "" };
-  return { state: "in", label: "" };
+export function xhatReading(p, { target, tol = 0, eps = OBS_EPS, active = [] } = {}) {
+  const names = (active || []).filter(Boolean);
+  const prov = isProvisional(p, eps);
+  if (!p || !Number.isFinite(p.tension)) return { state: "none", label: "", provisional: false };
+  // "진행 중" 안의 공백은 줄바꿈 없는 공백(NBSP) — 모니터 패널(keep-all)에서 "S1 진행 / 중" 으로 갈리던 프레임(B65 와 같은 규칙)
+  if (!isObserved(p, eps)) return { state: "between", label: names.length ? `${names.join("·")}\u00a0진행\u00a0중` : "사건 사이", provisional: false };
+  const tag = prov ? "잠정" : "";
+  if (!Number.isFinite(target)) return { state: "none", label: tag, provisional: prov };
+  if (p.tension > target + tol) return { state: "above", label: tag, provisional: prov };
+  if (p.tension < target - tol) return { state: "below", label: tag, provisional: prov };
+  return { state: "in", label: tag, provisional: prov };
 }
 
 /** 장면 구간에서 모니터가 붙이는 한 줄 — 무엇을 재지 않는지 밝힌다(B149). 장면 밖이면 null. */

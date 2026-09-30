@@ -76,7 +76,7 @@ import {
 import { createEngagementSensor } from "@/lib/engagementSense";
 import { createGazeSim, isGazeProfile, GAZE_PROFILES } from "@/lib/gazeSim";
 import { fitViewerModel } from "@/lib/viewerModel";
-import { estimateTensionSeries } from "@/lib/tensionEstimate";
+import { estimateTensionSeries, isProvisional } from "@/lib/tensionEstimate";
 import { selectTrack } from "@/lib/trackSelect";
 import { glueNumbers, reachParts } from "@/lib/monitorText";
 import { probeFor, probeMarks, interimTrack } from "@/lib/interimProbes";
@@ -107,6 +107,7 @@ const SIGNALS = ["S1", "S2", "S3", "S4", "S5"];
 // 실시간으로 돈다). behaviorSense.observe()는 첫 1.2초를 기준선 잡기에 쓰므로 그보다는 길게.
 const WEBCAM_GRADE_MS = { S2: 2500, S4: 4500 };
 const PROBE_MARKS = probeMarks();           // 디렉터 모니터 사건 눈금 S1~S5
+const PROBE_LABEL = Object.fromEntries(PROBE_MARKS.map((m) => [m.name, m.label])); // 큐 이름 → S1~S5 — 모니터 "S1 진행 중" 표기(B159)
 const TRAJ_SAMPLE_SEC = 0.5;                // 세션 저장용 드리프트 궤적 표본 간격(영화 시간)
 
 function useQuery() {
@@ -322,12 +323,14 @@ export default function InterimPage() {
         const eng = engagementRef.current?.data?.();
         if (eng) {
           const theta = fitViewerModel(eng.stimuli);
-          // 센서 시각은 실제 경과 초 — 모니터 눈금(영화 시간)과 맞추려고 배속을 곱한다
+          // 센서 시각은 실제 경과 초 — 모니터 눈금(영화 시간)과 맞추려고 배속을 곱한다.
+          // eng.active(진행 중 자극의 잠정 레코드)도 들어간다(B153·B159) — S1 추적(94초)이 닫히는 1:53 전에도 반응이 보이고, 그 점은 "잠정"
           const series = estimateTensionSeries(eng).map((p) => (speed === 1 ? p : { ...p, t: r3(p.t * speed) }));
           const last = series[series.length - 1];
           const track = interimTrack(d.st);
           const sel = theta.nResp >= 1 ? selectTrack(theta, { genrePrior: d.st.current, priorWeight: 0.3 }) : null;
-          engine = { theta, xhat: last?.tension ?? null, series, nStim: eng.stimuli.length, active: engagementRef.current.current().active, sel, track };
+          engine = { theta, xhat: last?.tension ?? null, provisional: isProvisional(last), series, nStim: eng.stimuli.length, active: engagementRef.current.current().active,
+            activeNames: (eng.active || []).map((a) => a.name), sel, track };
         }
         setHud({
           current: { ...d.st.current }, settled: d.st.settled, elapsed: d.st.elapsed,
@@ -340,7 +343,7 @@ export default function InterimPage() {
         });
         if (monitorOn && engine) {
           setMonitor({
-            track: engine.track, theta: engine.theta, xhat: engine.xhat, series: engine.series, nStim: engine.nStim, sel: engine.sel,
+            track: engine.track, theta: engine.theta, xhat: engine.xhat, series: engine.series, nStim: engine.nStim, sel: engine.sel, active: engine.activeNames,
             decided: !!d.st.finalGenre, // 판정 전의 track 은 선두 장르일 뿐 — 도달 점수 줄에 "현재 R 유지" 를 붙이지 않는다(B154)
             note: d.st.finalGenre ? `팀 판정 ${GENRE_META[d.st.finalGenre].label} · 드리프트 ${Math.round(d.st.settled * 100)}%` : `판정 전 · 선두 ${d.st.leadingGenre ? GENRE_META[d.st.leadingGenre].label : "-"} · 드리프트 ${Math.round(d.st.settled * 100)}%`,
           });
@@ -448,7 +451,7 @@ export default function InterimPage() {
       if (eng && eng.stimuli.length) {
         const theta = fitViewerModel(eng.stimuli);
         const sel = theta.nResp >= 1 ? selectTrack(theta, { genrePrior: d.st.current, priorWeight: 0.3 }) : null;
-        control = { track: interimTrack(d.st), theta, sel, tension: estimateTensionSeries(eng) };
+        control = { track: interimTrack(d.st), theta, sel, tension: estimateTensionSeries({ windows: eng.windows, stimuli: eng.stimuli }) }; // 닫힌 레코드만(비교 화면 재계산과 같은 입력)
       }
     } catch { /* 로그 실패는 무시 */ }
     // 판정 뒤 관객별 연출(B170b) — 비교 화면 "바꾼 연출" 줄의 재료. 탐침 레코드가 없어도(고정 갈래) 남긴다
@@ -481,7 +484,7 @@ export default function InterimPage() {
       const summary = engagementRef.current?.report?.()?.summary || null;
       const theta = eng ? fitViewerModel(eng.stimuli || []) : null;
       // 센서 시각은 실제 경과 초 — 카드의 S1~S5 눈금(영화 시간)과 맞추려고 배속을 곱한다(HUD 와 같은 규칙)
-      const series = eng ? estimateTensionSeries(eng).map((p) => (speed === 1 ? p : { ...p, t: r3(p.t * speed) })) : [];
+      const series = eng ? estimateTensionSeries({ windows: eng.windows, stimuli: eng.stimuli }).map((p) => (speed === 1 ? p : { ...p, t: r3(p.t * speed) })) : []; // 닫힌 레코드만(종료 시점엔 다 닫혀 있다)
       // 두 순간(B144) — 가장 크게 반응(x̂ 최고)·가장 차분히 집중(집중도 최고 2초)을 비교 화면과 같은 함수로(lib/sessionCompare momentsOf)
       const moments = eng ? momentsOf({ route: "interim", speed, events: eventsRef.current, engagement: { windows: eng.windows, stimuli: eng.stimuli } }, summary) : null;
       setEndEngine({ theta, summary, series, fingerprint: fingerprintText(theta), moments, adapt: adaptRef.current });
@@ -593,7 +596,7 @@ export default function InterimPage() {
                 <span style={{ opacity: 0.7 }}>모델 신뢰도 {Math.round(hud.engine.theta.confidence * 100)}% · 응답 {hud.engine.theta.nResp}/{hud.engine.theta.n}</span><b>{glueNumbers(`회복 ${hud.engine.theta.tau}s · 습관화 ${hud.engine.theta.rho}`) /* 음수 부호 −·라벨과 붙임(B65) */}</b>
               </div>
               <div className={f.hudMeta} style={{ marginTop: 2 }}>
-                <span>자극 · 긴장 x̂</span><b>자극 {hud.engine.nStim}{hud.engine.active ? `+${hud.engine.active}` : ""} · x̂ {hud.engine.xhat == null ? "-" : hud.engine.xhat.toFixed(2)}</b>
+                <span>자극 · 긴장 x̂</span><b>자극 {hud.engine.nStim}{hud.engine.active ? `+${hud.engine.active}` : ""} · x̂ {hud.engine.xhat == null ? "-" : hud.engine.xhat.toFixed(2)}{hud.engine.provisional ? <span style={{ opacity: 0.6, fontWeight: 400 }}> 잠정</span> : null}</b>
                 {/* 도달 점수(B154) — 최고와 성향 반영 선택이 다르면 둘 다. 화살표·"트랙" 이라는 말은 쓰지 않는다(판정 트랙을 바꾸지 않는 참고값) */}
                 {hud.engine.sel && (() => { const rp = reachParts(hud.engine.sel); return <><span>도달 점수(참고)</span><b>최고 {rp.best}{rp.pick !== rp.best ? ` · 성향 반영 ${rp.pick}` : ""} <span style={{ opacity: 0.6, fontWeight: 400 }}>(R {hud.engine.sel.reach.R} · H {hud.engine.sel.reach.H} · C {hud.engine.sel.reach.C})</span></b></>; })()}
               </div>
@@ -609,7 +612,7 @@ export default function InterimPage() {
       )}
 
       {monitorOn && monitor && phase !== "gate" && phase !== "end" && (
-        <DirectorMonitor monitor={monitor} tNow={(hud?.elapsed ?? 0) * speed} tMax={T.end} showTarget={false} marks={PROBE_MARKS} title="디렉터 모니터 · 중간시연" />
+        <DirectorMonitor monitor={monitor} tNow={(hud?.elapsed ?? 0) * speed} tMax={T.end} showTarget={false} marks={PROBE_MARKS} eventLabel={PROBE_LABEL} title="디렉터 모니터 · 중간시연" />
       )}
 
       {phase === "greeting" && genre && (

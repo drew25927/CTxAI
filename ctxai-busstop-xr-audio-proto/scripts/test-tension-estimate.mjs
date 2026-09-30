@@ -1,6 +1,6 @@
 // 긴장 추정 회귀 테스트
 import assert from "node:assert/strict";
-import { estimateTensionSeries, tensionAt, peaks, TENSION_PARAMS, OBS_EPS, isObserved, observedSegments, xhatReading, trackingStats, xhatScopeNote } from "../lib/tensionEstimate.js";
+import { estimateTensionSeries, tensionAt, peaks, TENSION_PARAMS, OBS_EPS, isObserved, isProvisional, observedSegments, xhatReading, trackingStats, xhatScopeNote } from "../lib/tensionEstimate.js";
 
 let n = 0;
 function test(name, fn) { try { fn(); n++; console.log("ok ", name); } catch (e) { console.log("FAIL", name, "—", e.message); process.exitCode = 1; } }
@@ -186,6 +186,41 @@ test("창 안 최댓값: 앞 창 끝~이 창 시작 틈의 봉우리도 이 창�
   assert.ok(isObserved(s[1]) && s[1].tPeak === 3.95, JSON.stringify(s[1]));
   const bare = estimateTensionSeries({ windows: [{ t1: 6 }], stimuli: st })[0];
   assert.equal(bare.tension, tensionAt(st, 6), "t0 없으면 t1 한 점");
+});
+
+test("진행 중 자극(B153): active 잠정 레코드가 계열에 더해져 닫히기 전에 봉우리가 보이고, 그 점은 fromActive·isProvisional 로 구별된다", () => {
+  const w = wins(20); // 창 끝 2..40
+  const prov = { name: "micro-1", onset: 30.2, dur: 1.5, peakAmp: 60, maxVel: 200, lookSec: 0.8, responded: 1, recoverySec: null, provisional: 1, elapsed: 1.8 };
+  const closedOnly = estimateTensionSeries({ windows: w, stimuli: [] });
+  const withActive = estimateTensionSeries({ windows: w, stimuli: [], active: [prov] });
+  const at = (s, t) => s.find((p) => p.t === t);
+  assert.ok(Math.abs(at(closedOnly, 32).tension - TENSION_PARAMS.BASE) < 1e-6, "닫힌 레코드만 보면 바닥");
+  assert.ok(at(withActive, 32).tension > 0.5, `잠정 포함 봉우리 ${at(withActive, 32).tension}`);
+  assert.ok(isProvisional(at(withActive, 32)) && at(withActive, 32).fromActive >= OBS_EPS, JSON.stringify(at(withActive, 32)));
+  assert.ok(isObserved(at(withActive, 32)), "잠정 반응도 관측(사건 반응 몫)이다");
+  assert.equal(at(withActive, 20).fromActive, 0, "자극 전 창은 잠정 몫 0");
+  assert.ok(!isProvisional(at(withActive, 20)));
+  for (const p of closedOnly) assert.equal(p.fromActive, undefined, "active 를 주지 않으면 필드도 없다(예전과 같은 결과)");
+  // 같은 레코드가 닫혀 stimuli 로 옮겨 가면 값은 같고 잠정 표시만 사라진다(recoverySec 이 그대로 null 일 때)
+  const closed = estimateTensionSeries({ windows: w, stimuli: [{ ...prov, provisional: undefined, elapsed: undefined }] });
+  assert.equal(at(closed, 32).tension, at(withActive, 32).tension);
+  assert.equal(at(closed, 32).fromActive, undefined);
+  assert.ok(!isProvisional(at(closed, 32)));
+});
+
+test("xhatReading(B159): 진행 중 사건이 있으면 바닥 x̂ 를 '사건 사이' 가 아니라 '<사건> 진행 중' 으로, 잠정 반응이면 상태는 그대로 두고 '잠정' 을 붙인다", () => {
+  const floor = { t: 40, tension: 0.12, fromStim: 0, fidget: 0 };
+  assert.deepEqual(xhatReading(floor, { target: 0.5, tol: 0.1 }), { state: "between", label: "사건 사이", provisional: false });
+  assert.deepEqual(xhatReading(floor, { target: 0.5, tol: 0.1, active: ["S1"] }), { state: "between", label: "S1\u00a0진행\u00a0중", provisional: false });
+  assert.equal(xhatReading(floor, { active: ["S1", "S2"] }).label, "S1·S2\u00a0진행\u00a0중"); // NBSP — 패널에서 "진행 / 중" 으로 안 갈리게
+  assert.equal(xhatReading(floor, { active: [] }).label, "사건 사이");
+  const prov = { t: 40, tension: 0.8, fromStim: 0.68, fromActive: 0.68, fidget: 0 };
+  assert.deepEqual(xhatReading(prov, { target: 0.5, tol: 0.1, active: ["먼 문 소리"] }), { state: "above", label: "잠정", provisional: true });
+  assert.deepEqual(xhatReading(prov, { active: ["먼 문 소리"] }), { state: "none", label: "잠정", provisional: true }); // /interim 은 목표 없음
+  const fixed = { t: 40, tension: 0.8, fromStim: 0.68, fromActive: 0, fidget: 0 };
+  assert.deepEqual(xhatReading(fixed, { target: 0.5, tol: 0.1, active: ["S1"] }), { state: "above", label: "", provisional: false }); // 닫힌 반응 + 다른 사건 진행 중
+  assert.deepEqual(xhatReading({ t: 40, tension: 0.8, fromStim: 0.68 }, { target: 0.9, tol: 0.05 }), { state: "below", label: "", provisional: false }); // 옛 계열(fromActive 없음)
+  assert.equal(xhatReading(null, { active: ["S1"] }).state, "none");
 });
 
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);
