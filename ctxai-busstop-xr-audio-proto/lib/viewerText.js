@@ -280,7 +280,7 @@ export const RECOVERY_INSTANT_SEC = 0.05;
 
 /** HUD 사건 표 툴팁(B102) — 네 갈래의 기준과 모니터 "응답" 의 관계. 수치는 lib/engagementSense.js ENGAGE_PARAMS 그대로.
  *  "복귀" 는 헤드 포즈 복귀 시간(lib/headPoseSense.js · 기준선 ±LOOK_TOLERANCE_DEG×0.6)이고 디렉터 모니터 θ̂ 의 "회복 τ" 와 다른 값이라 낱말을 갈랐다(B254). */
-export const HUD_LOOK_BASIS = `돌아봄 = 사건 방향 ±${ENGAGE_PARAMS.LOOK_TOL_DEG}° 안으로 고개를 돌림 · 움찔만 = 돌아보지는 않았지만 빠른 고개 움직임(${ENGAGE_PARAMS.MOVE_RESP_DEG_S}°/s)·후퇴(${ENGAGE_PARAMS.RETREAT_M}m) · 보고만 있음 = 시작할 때 이미 그쪽을 보고 있었고 움찔하지 않음 · 반응 없음 = 셋 다 아님 · 디렉터 모니터 θ̂ 의 "응답" = 돌아봄 + 움찔만(봤는지와 별개) · 속도·후퇴·복귀 수치는 헤드 포즈 채점(lib/headPoseSense.js) · 복귀 = 사건 방향에서 눈을 뗀 뒤 고개가 기준선 ±${(ENGAGE_PARAMS.LOOK_TOL_DEG * 0.6).toFixed(1)}° 안으로 돌아오기까지(${RECOVERY_INSTANT_SEC}초 미만이면 "즉시") · 모니터 θ̂ 의 "회복 τ" 는 반응이 가라앉는 시상수라 다른 값`;
+export const HUD_LOOK_BASIS = `돌아봄 = 사건 방향 ±${ENGAGE_PARAMS.LOOK_TOL_DEG}° 안으로 고개를 돌림 · 움찔만 = 돌아보지는 않았지만 빠른 고개 움직임(${ENGAGE_PARAMS.MOVE_RESP_DEG_S}°/s)·후퇴(${ENGAGE_PARAMS.RETREAT_M}m) · 보고만 있음 = 시작할 때 이미 그쪽을 보고 있었고 움찔하지 않음 · 반응 없음 = 셋 다 아님 · 응답 창 = 사건 시작 뒤 ${ENGAGE_PARAMS.RESPONSE_SEC}초(추적 사건은 길이 전체) — 창 뒤의 빠른 움직임은 응답으로 세지 않고 "(응답 창 밖)" 으로 밝힘 · 디렉터 모니터 θ̂ 의 "응답" = 돌아봄 + 움찔만(봤는지와 별개) · 속도·후퇴·복귀 수치는 헤드 포즈 채점(lib/headPoseSense.js) · 복귀 = 사건 방향에서 눈을 뗀 뒤 고개가 기준선 ±${(ENGAGE_PARAMS.LOOK_TOL_DEG * 0.6).toFixed(1)}° 안으로 돌아오기까지(${RECOVERY_INSTANT_SEC}초 미만이면 "즉시") · 모니터 θ̂ 의 "회복 τ" 는 반응이 가라앉는 시상수라 다른 값`;
 
 /** 디렉터 모니터 "응답 N/N" 툴팁(B102) — 응답의 정의 한 줄. HUD 사건 표·종료 카드·비교 화면과 같은 이름을 쓴다. */
 export const RESPONSE_BASIS = `응답 = 돌아봄 + 움찔만(빠른 고개 움직임 ${ENGAGE_PARAMS.MOVE_RESP_DEG_S}°/s · 후퇴 ${ENGAGE_PARAMS.RETREAT_M}m) · 봤는지(응시)와 별개 — 보고만 있음·반응 없음은 응답이 아님 · HUD 사건 표·종료 카드·비교 화면의 같은 이름`;
@@ -290,6 +290,9 @@ export const RESPONSE_BASIS = `응답 = 돌아봄 + 움찔만(빠른 고개 움�
  * 갈래는 집중도 센서 레코드(rec · 카드와 같은 기준 · lookKind)로, 초·속도·후퇴·복귀 수치는 헤드 포즈 채점 feats 로 적는다(종전 그대로).
  * 복귀(feats.recoverySec · 눈을 뗀 뒤 기준선 안으로 돌아오기까지)는 θ̂ 의 "회복 τ" 와 다른 값이라 "복귀" 로 적고(B254), RECOVERY_INSTANT_SEC 미만이면 "복귀 즉시"(B253 · "회복 0.0s" 가 찍히던 문제).
  * 응시 초(feats.lookSec)는 돌아봄·보고만 있음이면 갈래 뒤에("돌아봄 2.4s"), 움찔만·반응 없음인데 0 이 아니면(응답 창 뒤에 늦게 봄) "· 응시 1.2s".
+ * 보고만 있음·반응 없음인데 속도가 움찔만 기준(ENGAGE_PARAMS.MOVE_RESP_DEG_S) 이상이면 "속도 80°/s (응답 창 밖)"(B257) — 갈래는 응답 창
+ * (탐침 RESPONSE_SEC · 추적 사건은 길이 전체) 안의 움직임만 세고 속도는 관측 창(사건 + tail) 전체의 최댓값이라, 차분형 포스터 행이
+ * "반응 없음 · 속도 80°/s" 로 찍혀 툴팁의 60°/s 와 모순으로 읽혔다(work/evidence/b252/crop-hud-missed-s8.png). rec 가 없으면 창을 모르므로 안 붙인다.
  * 진행 중 잠정 레코드면 "· 잠정". rec 가 없으면(집중도 센서 없음·옛 세션) feats 의 looked 로 돌아봄/반응 없음만 가른다.
  */
 export function hudEventText(feats = {}, rec = null) {
@@ -299,7 +302,10 @@ export function hudEventText(feats = {}, rec = null) {
   if ((kind === "flinched" || kind === "missed") && lookSec > 0) parts.push(`응시 ${lookSec.toFixed(1)}s`);
   if (rec?.provisional) parts.push("잠정");
   if (feats.recheck) parts.push("재확인");
-  parts.push(`속도 ${(Number(feats.maxVel) || 0).toFixed(0)}°/s`);
+  const vel = Number(feats.maxVel) || 0;
+  // 응답 창 밖의 빠른 움직임(B257) — 괄호 안은 NBSP 로 묶어 좁은 HUD 칸에서 "(응답 / 창 밖)" 으로 안 갈리게(B253 과 같은 이유)
+  const outside = !!rec && (kind === "watched" || kind === "missed") && vel >= ENGAGE_PARAMS.MOVE_RESP_DEG_S;
+  parts.push(`속도 ${vel.toFixed(0)}°/s${outside ? " (응답\u00a0창\u00a0밖)" : ""}`);
   parts.push(`후퇴 ${(Number(feats.retreat) || 0).toFixed(2)}m`);
   if (feats.recoverySec != null) {
     const r = Number(feats.recoverySec);

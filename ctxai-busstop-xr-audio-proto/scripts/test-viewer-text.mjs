@@ -282,7 +282,7 @@ test("hudEventText(B102): /film HUD 사건 표가 '봤음/안 봄' 대신 카드
   const poster = { looked: true, lookSec: 2.4, maxVel: 492, retreat: 0.03, recoverySec: 1.1, recheck: 0 };
   assert.equal(hudEventText(poster, { turned: 1, responded: 1, atOnset: 0, looked: 1 }), "돌아봄 2.4s · 속도 492°/s · 후퇴 0.03m · 복귀 1.1s");
   const spray = { looked: true, lookSec: 3.9, maxVel: 307, retreat: 0.09, recoverySec: null, recheck: 1 };
-  assert.equal(hudEventText(spray, { turned: 0, responded: 0, atOnset: 1, looked: 1 }), "보고만 있음 3.9s · 재확인 · 속도 307°/s · 후퇴 0.09m");
+  assert.equal(hudEventText(spray, { turned: 0, responded: 0, atOnset: 1, looked: 1 }), "보고만 있음 3.9s · 재확인 · 속도 307°/s (응답\u00a0창\u00a0밖) · 후퇴 0.09m", "보고만 있음인데 60°/s 이상이면 창 밖 표기(B257)");
   assert.equal(hudEventText(frog, { ...frogRec, provisional: 1, elapsed: 1.2 }), "움찔만 · 잠정 · 속도 509°/s · 후퇴 0.04m", "진행 중 잠정 레코드");
   assert.equal(hudEventText({ looked: false, lookSec: 1.2, maxVel: 20, retreat: 0, recoverySec: null, recheck: 0 }, { turned: 0, responded: 0, atOnset: 0, looked: 1 }), "반응 없음 · 응시 1.2s · 속도 20°/s · 후퇴 0.00m", "응답 창 뒤에 늦게 본 사건은 응시 초를 따로");
   // 레코드가 없으면(집중도 센서 없음·옛 세션) 헤드 포즈 looked 로 둘만 — lookResponses 의 옛 세션 규칙과 같다
@@ -305,6 +305,25 @@ test("hudEventText(B253·B254): 헤드 포즈 복귀 시간은 '복귀' 로 적�
   for (const r of [0, 0.049, 0.06, 1.2, null]) { const t = hudEventText({ ...base, recoverySec: r }, rec); assert.ok(!/회복/.test(t) && !/0\.0s/.test(t), t); }
   assert.ok(HUD_LOOK_BASIS.includes("복귀 = 사건 방향에서 눈을 뗀 뒤") && HUD_LOOK_BASIS.includes("±16.8°") && HUD_LOOK_BASIS.includes('"회복 τ"'), HUD_LOOK_BASIS);
   assert.ok(!/속도·후퇴·회복/.test(HUD_LOOK_BASIS), "툴팁의 수치 항 이름도 복귀");
+});
+
+// B257 — 차분형 포스터 행 "반응 없음 · 속도 80°/s · 후퇴 0.00m" 이 툴팁의 움찔만 기준 60°/s 와 모순으로 읽히던 문제(work/evidence/b252/crop-hud-missed-s8.png).
+// 세션 레코드는 responded 0 · moveLatency null · maxVel 80 — 80°/s 는 응답 창(2.5초) 뒤 우비 인물로 고개를 돌린 속도가 포스터 관측 창(onset+dur+tail) 에 든 것.
+test("hudEventText(B257): 보고만 있음·반응 없음인데 속도가 움찔만 기준 이상이면 '(응답 창 밖)' — 움찔만·돌아봄·옛 세션(rec 없음)은 그대로", () => {
+  const poster = { looked: false, lookSec: 0, maxVel: 80, retreat: 0, recoverySec: null, recheck: 0 };
+  const rec = { turned: 0, responded: 0, atOnset: 0, looked: 0, moveLatency: null, maxVel: 80 };
+  const OUT = " (응답\u00a0창\u00a0밖)";
+  assert.equal(hudEventText(poster, rec), `반응 없음 · 속도 80°/s${OUT} · 후퇴 0.00m`, "차분형 포스터 행(b252)");
+  assert.equal(hudEventText({ ...poster, maxVel: 60 }, rec), `반응 없음 · 속도 60°/s${OUT} · 후퇴 0.00m`, "문턱(MOVE_RESP_DEG_S 60) 은 포함");
+  assert.equal(hudEventText({ ...poster, maxVel: 31 }, rec), "반응 없음 · 속도 31°/s · 후퇴 0.00m", "개구리 행(31°/s) 은 종전 문구");
+  assert.equal(hudEventText({ ...poster, maxVel: 59.4 }, rec), "반응 없음 · 속도 59°/s · 후퇴 0.00m");
+  assert.equal(hudEventText({ ...poster, lookSec: 3.9, maxVel: 80, recheck: 1 }, { turned: 0, responded: 0, atOnset: 1, looked: 1 }), `보고만 있음 3.9s · 재확인 · 속도 80°/s${OUT} · 후퇴 0.00m`, "보고만 있음도 같은 규칙");
+  assert.equal(hudEventText({ ...poster, maxVel: 80 }, { ...rec, provisional: 1 }), `반응 없음 · 잠정 · 속도 80°/s${OUT} · 후퇴 0.00m`, "잠정 레코드도 지금까지 응답 0 이면 창 밖");
+  assert.equal(hudEventText({ ...poster, maxVel: 509, retreat: 0.04 }, { turned: 0, responded: 1, atOnset: 0, looked: 0 }), "움찔만 · 속도 509°/s · 후퇴 0.04m", "움찔만은 창 안의 움직임이라 표기 없음");
+  assert.equal(hudEventText({ ...poster, looked: true, lookSec: 2.4, maxVel: 492, retreat: 0.03, recoverySec: 1.1 }, { turned: 1, responded: 1, atOnset: 0, looked: 1 }), "돌아봄 2.4s · 속도 492°/s · 후퇴 0.03m · 복귀 1.1s", "돌아봄도 표기 없음");
+  assert.equal(hudEventText({ ...poster, maxVel: 509 }, null), "반응 없음 · 속도 509°/s · 후퇴 0.00m", "rec 가 없으면(옛 세션) 응답 창을 모르므로 안 붙인다");
+  assert.ok(!/\(응답 창 밖\)/.test(hudEventText(poster, rec)) && /\(응답\u00a0창\u00a0밖\)/.test(hudEventText(poster, rec)), "괄호 안은 NBSP 로 묶여 좁은 칸에서 안 갈린다");
+  assert.ok(HUD_LOOK_BASIS.includes("응답 창 = 사건 시작 뒤 2.5초(추적 사건은 길이 전체)") && HUD_LOOK_BASIS.includes('"(응답 창 밖)"'), HUD_LOOK_BASIS);
 });
 
 test("HUD·모니터 기준 문장(B102): 툴팁이 네 갈래 기준과 '응답 = 돌아봄 + 움찔만(봤는지와 별개)' 을 같은 수치로 적는다", () => {
