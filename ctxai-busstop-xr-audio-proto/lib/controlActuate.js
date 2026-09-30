@@ -150,17 +150,24 @@ export function bgmScale(offsets) {
 // deriveParams 의 lampEarlyOn 트리거가 판정 전에 base 를 1.0 으로 켜 두므로 각성 쪽 +0.6 은 전부 잘린다
 // (B11c 비교에서 ON−OFF 가로등 0.00). 모니터가 오프셋을 그대로 적으면 "가로등 +0.60" 이 움직이지 않은
 // 축에도 찍힌다.
+// 그래서 가로등은 공포 트랙에서 이완(u < 0 · 과민 관객) 방향으로만 실제로 움직이고(1.0 → 0.4), 로맨스·블랙코미디는
+// 오프셋 0 이다(B245 · 연속 파라미터 6개 중 각성 쪽으로 미는 축은 5개). 설계 결정이라 lampEarlyOn 의 헤드룸은
+// 여기서 바꾸지 않고 문서(설계 §9 · 개발_이어가기 §10.2 · 기술 요약 한계)에 적었다.
 // 포화·한계 판정은 오프셋 크기에 대한 상대 기준이다(검토 턴 31). 절대 기준 1e-3 은 안개처럼 오프셋 자체가
 // 작은 축(로맨스 트랙 u 0.08 → −0.0005)을 실제로 다 움직였는데도 "포화" 로 찍었다. 잠정치.
 const EFFECT_REL = 0.05;   // 오프셋의 5% 도 못 움직이면 포화, 95% 에 못 미치면 한계
 const EFFECT_FLOOR = 1e-6; // 부동소수 오차 바닥
+// 못 움직인 축은 base 가 이미 미는 쪽 범위 끝(또는 그 너머 · 작가 앵커)에 있다는 뜻이므로, 모니터에는 "포화" 대신
+// 상태로 적는다 — "가로등 1.00(상한)". 1배속 ON 완주의 연속 구동 줄 55개 중 40개가 "가로등 포화(1.00)" 을 반복해
+// 제어기 결함처럼 읽혔다(B245 · work/evidence/review68/film-samples.jsonl).
 
 /**
  * 오프셋이 0 이 아닌 축마다 실제로 움직인 양.
  * @param {object} base     deriveParams 결과(오프셋을 얹기 전). BGM 은 배율 1 이 기준이라 base 가 필요 없다
  * @param {object} offsets  actuationFor().offsets
- * @returns {Array<{key:string, offset:number, delta:number, value:number, saturated:boolean, clipped:boolean}>}
- *   delta = 얹은 뒤 − 얹기 전(BGM 은 배율 − 1), value = 얹은 뒤 값. saturated = 오프셋이 있는데 하나도 못 움직임,
+ * @returns {Array<{key:string, offset:number, delta:number, value:number, saturated:boolean, clipped:boolean, bound:("upper"|"lower"|null)}>}
+ *   delta = 얹은 뒤 − 얹기 전(BGM 은 배율 − 1), value = 얹은 뒤 값. saturated = 오프셋이 있는데 하나도 못 움직임
+ *   (bound = 미는 쪽의 범위 끝 · 오프셋 양수면 "upper", 음수면 "lower" · 못 움직인 축에만 · B245),
  *   clipped = 일부만 움직임(범위 끝에 닿음). base 에 없는 축(BGM 제외)은 건너뛴다.
  */
 export function actuationEffect(base, offsets) {
@@ -179,7 +186,8 @@ export function actuationEffect(base, offsets) {
     const tol = Math.max(EFFECT_FLOOR, Math.abs(off) * EFFECT_REL);
     const saturated = Math.abs(delta) < tol;
     const clipped = !saturated && Math.abs(delta) < Math.abs(off) - tol;
-    out.push({ key: k, offset: r4(off), delta: r4(delta) || 0, value: r4(value), saturated, clipped });
+    const bound = saturated ? (off > 0 ? "upper" : "lower") : null;
+    out.push({ key: k, offset: r4(off), delta: r4(delta) || 0, value: r4(value), saturated, clipped, bound });
   }
   return out;
 }
@@ -198,8 +206,9 @@ const shows = (t, v) => Number(Math.abs((v || 0) * (t.scale || 1)).toFixed(t.dig
 
 /**
  * 디렉터 모니터 "연속 구동" 한 줄(B116). base 를 주면 실제로 움직인 양을 적는다:
- *   움직인 축 "침묵 +0.58s", 범위 끝에 닿아 일부만 움직인 축 "침묵 +0.40s(한계)", 못 움직인 축 "가로등 포화(1.00)".
- * 오프셋이나 움직인 양이 표시 자릿수에서 0 이 되는 축은 적지 않는다("안개 +0.000"·"안개 포화" 대신 생략).
+ *   움직인 축 "침묵 +0.58s", 범위 끝에 닿아 일부만 움직인 축 "침묵 +0.40s(한계)",
+ *   이미 범위 끝이라 못 움직인 축은 지금 값과 상태로 "가로등 1.00(상한)"·"침묵 0.40s(하한)"(B245 · 종전 "가로등 포화(1.00)").
+ * 오프셋이나 움직인 양이 표시 자릿수에서 0 이 되는 축은 적지 않는다("안개 +0.000"·"안개 0.100(상한)" 대신 생략).
  * base 가 없으면(구버전 호출) 종전처럼 오프셋을 적는다.
  */
 export function actuationText(offsets, base) {
@@ -210,7 +219,7 @@ export function actuationText(offsets, base) {
     if (!effects) { if (shows(t, o[k])) parts.push(`${t.label} ${t.fmt(o[k])}`); continue; }
     const e = effects[k];
     if (!e || !shows(t, e.offset)) continue;
-    if (e.saturated) parts.push(`${t.label} 포화(${t.val(e.value)})`);
+    if (e.saturated) parts.push(`${t.label} ${t.val(e.value)}(${e.bound === "lower" ? "하한" : "상한"})`);
     else if (shows(t, e.delta)) parts.push(`${t.label} ${t.fmt(e.delta)}${e.clipped ? "(한계)" : ""}`);
   }
   return parts.length ? parts.join(" · ") : "오프셋 0";

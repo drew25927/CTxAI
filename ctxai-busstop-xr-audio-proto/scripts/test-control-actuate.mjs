@@ -220,7 +220,7 @@ test("B75 멈춤 창: 비활성(OFF·트랙 없음)은 창 안에서도 즉시 0
 
 // B116 — 모니터 "연속 구동" 줄은 오프셋이 아니라 무대가 받은 양을 적는다. 공포 트랙은 판정 뒤 lampEarlyOn 이
 // base 가로등을 1.0 으로 켜 두므로 각성 오프셋 +0.6 이 전부 잘린다(bias=H 녹화 2:22 에 "가로등 +0.58" 이 찍혔던 자리).
-test("B116 포화 축: 공포 트랙(lampEarlyOn 켜짐)에서 각성하면 가로등은 '포화(1.00)', 나머지 축은 실제 Δ", () => {
+test("B116 못 움직인 축: 공포 트랙(lampEarlyOn 켜짐)에서 각성하면 가로등은 '1.00(상한)'(B245 · 종전 '포화(1.00)'), 나머지 축은 실제 Δ", () => {
   const base = deriveParams(STATES.H, 1);
   assert.equal(base.triggers.lampEarlyOn, true, "대표 H 상태에서 트리거가 켜져 있어야 이 테스트가 뜻이 있다");
   assert.equal(base.lampOn, 1);
@@ -234,8 +234,10 @@ test("B116 포화 축: 공포 트랙(lampEarlyOn 켜짐)에서 각성하면 가�
     assert.ok(Math.abs(eff[k].delta - applyActuation(base, off)[k] + base[k]) < 1e-9, `${k} Δ = 적용 − 기준`);
   }
   const text = actuationText(off, base);
-  assert.match(text, /가로등 포화\(1\.00\)/);
-  assert.doesNotMatch(text, /가로등 \+/, "포화 축에 + 값을 적지 않는다");
+  assert.match(text, /가로등 1\.00\(상한\)/, "못 움직인 축은 지금 값과 상태로(B245)");
+  assert.doesNotMatch(text, /포화/, "B245: '포화' 표기는 쓰지 않는다");
+  assert.doesNotMatch(text, /가로등 \+/, "상한 축에 + 값을 적지 않는다");
+  assert.equal(eff.lampOn.bound, "upper");
   assert.match(text, /BGM ×1\.35/);
   console.log(`    공포 u=+1 → ${text}`);
   console.log(`    (종전 오프셋 표기 → ${actuationText(off)})`);
@@ -263,8 +265,9 @@ test("B116 일부만 움직인 축은 '(한계)' — 범위 끝에 닿으면 Δ 
   assert.equal(e[0].clipped, true);
   assert.ok(Math.abs(e[0].delta - (RANGES.npcSilence[1] - 2.3)) < 1e-9);
   assert.equal(actuationText(off, base), "침묵 +0.20s(한계)");
-  // 이미 범위 밖인 기준값(작가 앵커)은 더 밀지 않는다 → 포화
-  assert.equal(actuationText({ ...off, npcSilence: 0.3 }, { ...base, npcSilence: 2.8 }), "침묵 포화(2.80s)");
+  // 이미 범위 밖인 기준값(작가 앵커)은 더 밀지 않는다 → 지금 값과 "(상한)"(B245 · 종전 "침묵 포화(2.80s)")
+  assert.equal(actuationText({ ...off, npcSilence: 0.3 }, { ...base, npcSilence: 2.8 }), "침묵 2.80s(상한)");
+  assert.equal(e[0].bound, null, "일부만 움직인 축은 bound 없음");
 });
 
 test("B116 표기 규칙: 오프셋 0 이면 '오프셋 0', base 없이 부르면 종전 오프셋 표기, 음수 이완도 실제 Δ", () => {
@@ -275,7 +278,7 @@ test("B116 표기 규칙: 오프셋 0 이면 '오프셋 0', base 없이 부르�
   // 이완(u −1): 가로등 1.0 → 0.4 로 실제로 내려간다 — 포화는 각성 쪽에서만
   const relax = actuationText(offsetsFor("H", -1), base);
   assert.match(relax, /가로등 -0\.60/);
-  assert.doesNotMatch(relax, /포화/);
+  assert.doesNotMatch(relax, /포화|상한|하한/);
   // 로맨스·코미디 트랙은 가로등 축이 없다 — 줄에 가로등이 나오지 않는다
   for (const tr of ["R", "C"]) assert.doesNotMatch(actuationText(offsetsFor(tr, 1), deriveParams(STATES[tr], 1)), /가로등/, tr);
   console.log(`    공포 u=−1 → ${relax}`);
@@ -293,15 +296,16 @@ test("B116 상대 기준: 작은 u 에서도 실제로 움직인 축은 '포화'
         if (full) assert.equal(e.saturated, false, `${tr} u ${u} ${e.key} 오프셋 ${e.offset} 을 다 받았는데 포화`);
       }
       const text = actuationText(off, base);
-      // 공포 트랙 각성의 가로등만 진짜 포화(lampEarlyOn) — 나머지 포화 표기는 없어야 한다
-      const sat = text.match(/(\S+) 포화/g) || [];
-      const expect = tr === "H" && u > 0 ? ["가로등 포화"] : [];
+      // 공포 트랙 각성의 가로등만 진짜 못 움직인다(lampEarlyOn) — 나머지 축에 "(상한)"·"(하한)" 표기는 없어야 한다
+      const sat = text.match(/\S+ [^ ·]+\((상|하)한\)/g) || [];
+      const expect = tr === "H" && u > 0 ? ["가로등 1.00(상한)"] : [];
       assert.deepEqual(sat, expect, `${tr} u ${u} → ${text}`);
+      assert.doesNotMatch(text, /포화/, `${tr} u ${u} → ${text}`);
     }
   }
   const r = deriveParams(STATES.R, 1);
   const t08 = actuationText(offsetsFor("R", 0.08), r);
-  assert.doesNotMatch(t08, /안개 포화/);
+  assert.doesNotMatch(t08, /안개 0\.\d+\((상|하)한\)/);
   console.log(`    로맨스 u=+0.08 → ${t08}`);
   console.log(`    공포 u=+0.02 → ${actuationText(offsetsFor("H", 0.02), deriveParams(STATES.H, 1))}`);
 });
@@ -312,12 +316,51 @@ test("B116 표시 자릿수: 오프셋·움직인 양이 표시 자릿수에서 
   const off = { npcSilence: 0.3, bgmGain: 0, lampOn: 0, fogDensity: 0.0004, npcDistance: 0, npcGaze: 0.004 };
   assert.equal(actuationText(off, base), "침묵 +0.30s");
   assert.equal(actuationText(off), "침묵 +0.30s", "base 없는 종전 표기도 같은 규칙");
-  // 표시 자릿수 이상인 오프셋이 거의 다 잘려 움직인 양만 0 이 되면 포화로 적는다(상대 5% 미만)
+  // 표시 자릿수 이상인 오프셋이 거의 다 잘려 움직인 양만 0 이 되면 지금 값과 "(상한)" 으로 적는다(상대 5% 미만)
   const nearTop = { ...base, fogDensity: RANGES.fogDensity[1] - 0.00005 };
-  assert.match(actuationText({ ...off, fogDensity: 0.004 }, nearTop), /안개 포화/);
+  assert.match(actuationText({ ...off, fogDensity: 0.004 }, nearTop), /안개 0\.100\(상한\)/);
   // 오프셋 0.002 가 0.0015 만 움직이면(한계) 여전히 적는다
   const partial = { ...base, fogDensity: RANGES.fogDensity[1] - 0.0015 };
   assert.match(actuationText({ ...off, fogDensity: 0.002 }, partial), /안개 \+0\.002\(한계\)|안개 \+0\.001\(한계\)/);
+});
+
+// B245 — 1배속 ON 완주의 연속 구동 줄 55개 중 40개가 "가로등 포화(1.00)" 을 반복해 제어기 결함처럼 읽혔다
+// (work/evidence/review68/film-samples.jsonl). 못 움직인 축은 base 가 이미 미는 쪽 범위 끝에 있다는 상태이므로
+// "가로등 1.00(상한)" 처럼 지금 값과 상태로 적고, 가로등은 공포 트랙에서 이완 방향으로만 실제로 움직인다.
+test("B245 못 움직인 축은 '포화' 가 아니라 지금 값과 상태 — 상한·하한 방향, 가로등은 공포 트랙 이완 방향으로만", () => {
+  const base = deriveParams(STATES.H, 1);
+  assert.equal(base.lampOn, 1, "공포 대표 상태는 lampEarlyOn 으로 가로등 1.0");
+  // 각성(u > 0): 가로등은 이미 상한 → 상태 표기, 나머지 다섯 축은 실제 Δ
+  for (const u of [0.02, 0.5, 1]) {
+    const text = actuationText(offsetsFor("H", u), base);
+    assert.match(text, /가로등 1\.00\(상한\)/, `u ${u} → ${text}`);
+    assert.doesNotMatch(text, /포화/, `u ${u} → ${text}`);
+    const moved = actuationEffect(base, offsetsFor("H", u)).filter((e) => !e.saturated).map((e) => e.key).sort();
+    assert.deepEqual(moved, ["bgmGain", "fogDensity", "npcDistance", "npcGaze", "npcSilence"], `u ${u} 각성 쪽으로 미는 축은 5개`);
+  }
+  // 이완(u < 0): 가로등이 1.0 에서 실제로 내려간다 — 상태 표기 없음
+  for (const u of [-0.1, -1]) {
+    const lamp = actuationEffect(base, offsetsFor("H", u)).find((e) => e.key === "lampOn");
+    assert.equal(lamp.saturated, false, `u ${u}`);
+    assert.equal(lamp.bound, null);
+    assert.ok(lamp.delta < 0 && Math.abs(lamp.delta - AXES.H.lampOn * u) < 1e-9, `u ${u} 가로등 Δ ${lamp.delta}`);
+  }
+  // 하한: 가로등이 이미 0 인 상태(트리거 전 · 로맨스 쪽 앵커)에서 이완 오프셋은 "0.00(하한)"
+  const dark = { ...base, lampOn: 0 };
+  const lo = actuationEffect(dark, offsetsFor("H", -1)).find((e) => e.key === "lampOn");
+  assert.equal(lo.saturated, true); assert.equal(lo.bound, "lower");
+  assert.match(actuationText(offsetsFor("H", -1), dark), /가로등 0\.00\(하한\)/);
+  // 로맨스·블랙코미디: 가로등 오프셋 0 → 줄에 없고 bound 도 없다
+  for (const tr of ["R", "C"]) {
+    assert.equal(AXES[tr].lampOn, 0, tr);
+    assert.equal(actuationEffect(deriveParams(STATES[tr], 1), offsetsFor(tr, 1)).find((e) => e.key === "lampOn"), undefined, tr);
+  }
+  // 같은 줄이 2초마다 반복돼도 상태 표기라 "포화" 는 0번 — 1배속 표본 모양의 줄 40개
+  const lines = Array.from({ length: 40 }, (_, i) => actuationText(offsetsFor("H", 0.8 + i * 0.005), base));
+  assert.equal(lines.filter((l) => /포화/.test(l)).length, 0);
+  assert.equal(lines.filter((l) => /가로등 1\.00\(상한\)/.test(l)).length, 40);
+  console.log(`    공포 u=+0.8 → ${lines[0]}`);
+  console.log(`    공포 u=−1 · 가로등 0 → ${actuationText(offsetsFor("H", -1), dark)}`);
 });
 
 console.log(`\n${n} 통과${process.exitCode ? " (실패 있음)" : ""}`);
