@@ -57,6 +57,8 @@ KAIST CTxAI 캡스톤 7조 <버스 정류장>의 팀 도구이자 체험 프로�
 
 ```bash
 npm test                    # 회귀 23개 체인(팀 4 + 엔진 19). 하나라도 실패하면 그 자리에서 멈추고 EXIT 1
+                            #   체인 앞의 export NODE_OPTIONS=--disable-warning=MODULE_TYPELESS_PACKAGE_JSON 이 Node 의 "type": "module" 없음 경고를 끈다(B69).
+                            #   스크립트 하나만 돌릴 때: node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON scripts/test-x.mjs (플래그 없이도 경고만 나고 결과는 같다)
 npm run sim:plot            # 모델 관객 200명 × 트랙 3 × 제어 OFF/ON → data/sim/sim-onoff.png · sim-summary.txt. 발표 숫자는 "full·현실" 줄
 npm run sim                 # 초기 설계 규약(탐침까지 제어)의 표본 시뮬 — 방향 확인용. 여기 숫자는 발표에 인용하지 않는다
 npm run export:engagement   # data/sessions/*.json → data/engagement_export/ CSV(세션별 _raw·_windows·_stimuli·_control + sessions_summary.csv)
