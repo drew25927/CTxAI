@@ -32,7 +32,7 @@ KAIST CTxAI 캡스톤 7조 <버스 정류장>의 팀 도구이자 체험 프로�
 
 - `scripts/observe.sh shots/run1` 한 줄이 헤드리스 크롬을 띄우고 `/film?auto=1&cam=0` 을 열어 5초마다 PNG·HUD 텍스트(`hud.txt`)를 남긴다(dev 서버 포트는 `FILM_PORT`, 기본 3017 — `FILM_PORT=3021 scripts/observe.sh …`).
 - 낱개로는 `node scripts/cdp.mjs open|eval|shot|drag|loop|close` — `drag` 로 고개를 돌리고 `shot` 으로 한 장 찍는다. 탭은 한 번에 하나만(둘이면 fps 가 떨어져 영화 시간이 느려진다).
-- 소리 있는 완주 영상: `node scripts/cdp.mjs record 9224 "http://localhost:3021/film?cam=0&kiosk=1" /tmp/film_rec 225 12` → `scripts/assemble-recording.sh /tmp/film_rec out.mp4`. `record` 는 게이트를 스스로 누르므로 `auto=1` 을 뺀다.
+- 소리 있는 완주 영상: `node scripts/cdp.mjs record 9224 "http://localhost:3021/film?cam=0&kiosk=1" /tmp/film_rec 225 12` → `scripts/assemble-recording.sh /tmp/film_rec out.mp4`. `record` 는 게이트를 스스로 누르므로 `auto=1` 을 뺀다. 1600×900 녹화는 앞에 `CDP_NTH=2` 를 붙인다(스크린캐스트를 두 컴포지터 프레임에 한 번만 JPEG 인코딩 · 1 이면 페이지가 8fps 안팎으로 떨어져 영화 시계가 0.8배속이 된다 · B179).
 - 디자인만 볼 때는 `/film?auto=1&cam=0&bus=1`(정차한 버스)·`?truck=1`·`?rigtest=1`(리그·머리 크기)·`?answer=1`(답함 갈래 강제).
 
 ## 궤적 추종 연출 엔진 + 집중도 트래킹 (2026-09-13 · 2026-09-30 병합 뒤 상태)

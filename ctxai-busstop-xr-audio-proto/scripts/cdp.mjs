@@ -12,6 +12,9 @@ import path from "node:path";
 
 const [cmd, port, ...rest] = process.argv.slice(2);
 const base = `http://127.0.0.1:${port}`;
+// 스크린캐스트가 압축해 보내는 프레임 간격. 1600×900 에서 매 컴포지터 프레임을 JPEG 로 인코딩하면(1) 페이지가 8fps 안팎으로 떨어져
+// 영화 시계(프레임당 0.1초 상한)가 0.8배속이 된다(턴 78 B179 · work/evidence/b22a/diag-fps.log). 녹화는 CDP_NTH=2 로 띄운다.
+const NTH = Math.max(1, Math.floor(Number(process.env.CDP_NTH) || 1));
 
 async function targets() { return (await fetch(`${base}/json`)).json(); }
 
@@ -110,7 +113,7 @@ if (cmd === "open") {
     if (now - last >= 1000 / fps - 5) { n++; fs.writeFileSync(path.join(dir, String(n).padStart(6, "0") + ".jpg"), Buffer.from(p.data, "base64")); times.write(`${n}\t${((now - t0) / 1000).toFixed(3)}\n`); last = now; }
     c.send("Page.screencastFrameAck", { sessionId: p.sessionId }).catch(() => {});
   });
-  await c.send("Page.startScreencast", { format: "jpeg", quality: 85, everyNthFrame: 1 });
+  await c.send("Page.startScreencast", { format: "jpeg", quality: 85, everyNthFrame: NTH });
   await evalIn(c, `[...document.querySelectorAll('button')].find(b => /시작하기/.test(b.innerText)).click(); 'clicked'`);
   console.log(`recording (audio ctx ${state}) …`);
   await sleep(Number(seconds) * 1000);
@@ -139,7 +142,7 @@ if (cmd === "open") {
     }
     c.send("Page.screencastFrameAck", { sessionId: p.sessionId }).catch(() => {});
   });
-  await c.send("Page.startScreencast", { format: "jpeg", quality: 85, everyNthFrame: 1 });
+  await c.send("Page.startScreencast", { format: "jpeg", quality: 85, everyNthFrame: NTH });
   await sleep(Number(seconds) * 1000);
   await c.send("Page.stopScreencast").catch(() => {});
   times.end();
