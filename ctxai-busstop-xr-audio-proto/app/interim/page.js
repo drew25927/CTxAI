@@ -110,6 +110,8 @@ const PROBE_MARKS = probeMarks();           // 디렉터 모니터 사건 눈금
 const PROBE_LABEL = Object.fromEntries(PROBE_MARKS.map((m) => [m.name, m.label])); // 큐 이름 → S1~S5 — 모니터 "S1 진행 중" 표기(B159)
 const TRAJ_SAMPLE_SEC = 0.5;                // 세션 저장용 드리프트 궤적 표본 간격(영화 시간)
 
+const AUDIO_BASE = "/reactive/audio"; // /film 과 같은 효과음 폴더(B13)
+
 function useQuery() {
   const [q, setQ] = useState({});
   useEffect(() => { setQ(Object.fromEntries(new URLSearchParams(window.location.search).entries())); }, []);
@@ -234,6 +236,7 @@ function XRProbe({ onChange }) {
 export default function InterimPage() {
   const q = useQuery();
   const kiosk = q.kiosk === "1"; // ?kiosk=1 — 전시·녹화용: "← 대시보드"·"5분 버전" 링크를 숨긴다 (B122)
+  const sfxOn = q.sfx !== "0"; // ?sfx=0 — 효과음 끔(B13). 판정·화면에는 영향 없다
   const [phase, setPhase] = useState("gate"); // gate | running | greeting | end
   const [genre, setGenre] = useState(null);
   const [xrActive, setXrActive] = useState(false);
@@ -258,6 +261,7 @@ export default function InterimPage() {
   const eventsRef = useRef([]);       // 큐·탐침·판정 이벤트 로그(세션 저장용)
   const judgeRef = useRef(null);      // 최종 판정 결과(judge())
   const startedAtRef = useRef(null);
+  const audioRef = useRef(new Map()); // 효과음 요소 캐시(B13)
   const [monitor, setMonitor] = useState(null); // 디렉터 모니터(?monitor=1)
   const [savedId, setSavedId] = useState(null);
   const [endEngine, setEndEngine] = useState(null); // 종료 카드 재료 — 반응 지문·x̂ 곡선·두 순간(B14a·B144)
@@ -366,12 +370,23 @@ export default function InterimPage() {
     return () => clearInterval(id);
   }, [monitorOn, speed]);
 
+  // 효과음(B13) — /film 의 playSfx 와 같은 방식. 헤드리스에서는 소리를 들을 수 없으므로 window.__sfxLog 로 확인한다.
+  function playSfx(key, { volume = 0.8, loop = false } = {}, t = 0) {
+    let a = audioRef.current.get(key);
+    if (!a) { a = new Audio(`${AUDIO_BASE}/sfx_${key}.mp3`); a.preload = "auto"; audioRef.current.set(key, a); }
+    a.loop = loop; a.volume = volume; a.currentTime = 0;
+    a.play().catch(() => {});
+    if (typeof window !== "undefined") (window.__sfxLog = window.__sfxLog || []).push({ t: Math.round((t ?? 0) * 100) / 100, key, volume: Math.round(volume * 1000) / 1000, loop });
+  }
+  function stopSfx() { for (const a of audioRef.current.values()) { try { a.pause(); } catch {} } }
+
   function onCue(cue, t) {
     eventsRef.current.push({ t: Math.round((t ?? 0) * 10) / 10, name: "cue", detail: cue.name === "judged" ? { name: "judged", result: cue.result } : cue.name });
     if (cue.name === "judged") { judgeRef.current = cue.result; setGenre(cue.result.genre); decideAdapt(cue.result.genre, t); return; }
     if (cue.name === "transition") setPhase("running");
     if (cue.name === "greeting") setPhase("greeting");
-    if (cue.name === "end") setPhase("end");
+    if (cue.name === "end") { setPhase("end"); stopSfx(); }
+    if (sfxOn && cue.sfx) playSfx(cue.sfx, { volume: cue.volume ?? 0.8, loop: !!cue.loop }, t);
 
     // 웹캠 담당 신호(S2·S4) — 그 사건 순간에만 짧게 관찰한다. 이미 디버그로 강제돼
     // 있으면(?s2=A) 카메라를 돌릴 필요가 없다.

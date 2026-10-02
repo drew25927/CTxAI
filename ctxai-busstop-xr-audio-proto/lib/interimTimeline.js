@@ -30,7 +30,7 @@ export const T = {
   end: 140,                                         // 2:20 암전
 };
 
-// 한 번만 발동하는 큐 — 오디오·센서 사건. signal은 lib/interimJudge.js의 S1~S5와 대응한다.
+// 한 번만 발동하는 큐 — 오디오·센서 사건. sfx 는 /film 과 같은 public/reactive/audio/sfx_<키>.mp3(B13 · ?sfx=0 이면 재생 안 함). signal은 lib/interimJudge.js의 S1~S5와 대응한다.
 // sense가 있는 큐(S1·S3·S5)는 헤드셋 IMU 담당 — lib/headPoseSense.js의 beginEvent(name,
 // azimuthDeg, durationSec, {kind})에 그대로 넘긴다. sense가 없는 큐(S2·S4)는 웹캠 담당 —
 // lib/behaviorSense.js의 observe()를 그 시점에 짧게 돌린다. (프로젝트개요서 §3 센서 분담표)
@@ -49,14 +49,15 @@ const S1_MARGIN_SEC = 2; // 채점 → 등급 병합(200ms) → 판정 사이 �
 export const S1_DUR = T.judge - T.figureStart - S1_TAIL_SEC - S1_MARGIN_SEC; // 94초 → 관찰 종료 0:15+94+4 = 1:53
 export const S1_OBSERVE_END = T.figureStart + S1_DUR + S1_TAIL_SEC;           // 113 — 회귀 테스트가 이 값으로 확인한다
 export const CUES = [
-  { t: 0.5, name: "ambience", loop: true },
-  { t: T.figureStart, name: "figureApproach", signal: "S1", sense: { azimuth: -35, dur: S1_DUR, kind: "track" } },
-  { t: T.truckSplash, name: "truckSplash", signal: "S2" },
-  { t: T.poster, name: "poster", signal: "S3", sense: { azimuth: 72, dur: 3, kind: "probe" } },
-  { t: T.catIn + 3, name: "cat", signal: "S4" },
-  { t: T.frog, name: "frog", signal: "S5", sense: { azimuth: 135, dur: 3, kind: "probe" } },
+  { t: 0.5, name: "ambience", loop: true, sfx: "01", volume: 0.45 },
+  { t: T.figureStart, name: "figureApproach", signal: "S1", sfx: "09", volume: 0.55, sense: { azimuth: -35, dur: S1_DUR, kind: "track" } },
+  { t: T.truckSplash, name: "truckSplash", signal: "S2", sfx: "02", volume: 0.9 },
+  { t: T.poster, name: "poster", signal: "S3", sfx: "14", volume: 0.7, sense: { azimuth: 72, dur: 3, kind: "probe" } },
+  { t: T.catIn + 3, name: "cat", signal: "S4", sfx: "11", volume: 0.8 },
+  { t: T.frog, name: "frog", signal: "S5", sfx: "10", volume: 0.8, sense: { azimuth: 135, dur: 3, kind: "probe" } },
   { t: T.judge, name: "judge" },
   { t: T.figureGone, name: "figureGone" },
+  { t: T.npcSeated, name: "npcSeated", sfx: "16", volume: 0.6 }, // 옆사람 앉는 소리(B13) — signal·sense 없음, 판정에 쓰이지 않는다
   { t: T.transition, name: "transition" },
   { t: T.greeting, name: "greeting" },
   { t: T.end, name: "end" },

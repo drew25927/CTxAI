@@ -980,7 +980,8 @@ export default function FilmPage() {
       <div className={s.topBar}>
         {/* kiosk 에서도 왼쪽 칸은 비워 둔다 — 링크를 빼기만 하면 제목이 왼쪽으로 밀려 디렉터 모니터 패널 밑에 겹친다 */}
         {kiosk ? <span /> : <a className={s.homeLink} href="/">← 대시보드</a>}
-        <span className={s.dim}>반응형 실시간 영화 · 폐루프 연출 상태{!kiosk && <> · <a href="/story-vr" style={{ color: "inherit" }}>이전 버전(1회 판정)</a></>}</span>
+        {/* 전시 화면(?kiosk=1&hud=0)에서는 내부 용어("폐루프 연출 상태")가 든 부제를 숨긴다 — Enter VR 만 남는다(B32) */}
+        {kiosk && !showHud ? <span /> : <span className={s.dim}>반응형 실시간 영화 · 폐루프 연출 상태{!kiosk && <> · <a href="/story-vr" style={{ color: "inherit" }}>이전 버전(1회 판정)</a></>}</span>}
         <div className={s.genreChip}>
           <button className={s.resetBtn} onClick={enterVr}>🥽 Enter VR</button>
           {phase !== "gate" && (
