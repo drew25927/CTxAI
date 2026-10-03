@@ -23,6 +23,13 @@ SRC = {
 }
 OUT = os.path.join(ROOT, "ctxai-busstop-xr-audio-proto/public/reactive/cutouts")
 VIEWS = ["front", "threeq", "side", "back"]
+# 장면에서 쓰는 값 — heightM: 실제 키(미터, 굽은 할머니는 굽은 높이), seatCrop: 앉힐 때 머리부터 몇 %까지만 보여 줄지
+# (골반 근처), faces: 그림 속 인물이 향한 쪽(+1 = 화면 오른쪽, -1 = 왼쪽, 정면/뒤는 0).
+META = {
+    "R": {"heightM": 1.62, "seatCrop": 0.56, "faces": {"front": 0, "threeq": 1, "side": 1, "back": 0}},
+    "H": {"heightM": 1.78, "seatCrop": 0.52, "faces": {"front": 0, "threeq": 1, "side": 1, "back": 0}},
+    "C": {"heightM": 1.50, "seatCrop": 0.60, "faces": {"front": 0, "threeq": -1, "side": -1, "back": 0}},
+}
 BG_TOL = 22      # 종이색과 이 거리 안이면 배경 후보
 MAX_H = 1000     # 출력 높이 상한(px)
 PAD = 6
@@ -78,8 +85,13 @@ def main():
         # 가장자리 안티앨리어싱: 1px 침식 후 살짝 흐리게
         core = ndi.binary_erosion(fg, iterations=1)
         alpha = np.clip(ndi.gaussian_filter(core.astype(np.float32), 0.9), 0, 1)
+        # 투명 픽셀의 RGB가 종이 흰색이면 3D에서 텍스처 보간 때 가장자리에 흰 테두리가 번진다 —
+        # 불투명하지 않은 픽셀의 색을 가장 가까운 인물 픽셀 색으로 채운다.
+        solid = alpha > 0.98
+        _, (iy, ix) = ndi.distance_transform_edt(~solid, return_indices=True)
+        rgb = rgb[iy, ix]
         rgba = np.dstack([rgb, (alpha * 255).astype(np.uint8)])
-        manifest[g] = {}
+        manifest[g] = {"meta": META[g], "views": {}}
         for name, (x0, x1) in zip(VIEWS, runs):
             sub = fg[:, x0:x1]
             ys = np.where(sub.any(axis=1))[0]
@@ -89,7 +101,7 @@ def main():
                 crop = crop.resize((round(crop.width * MAX_H / crop.height), MAX_H), Image.LANCZOS)
             fn = f"{g}-{name}.png"
             crop.save(os.path.join(OUT, fn), optimize=True)
-            manifest[g][name] = {"file": fn, "w": crop.width, "h": crop.height}
+            manifest[g]["views"][name] = {"file": fn, "w": crop.width, "h": crop.height}
             print(f"{fn}: {crop.width}x{crop.height}")
     with open(os.path.join(OUT, "manifest.json"), "w", encoding="utf-8") as f:
         json.dump(manifest, f, ensure_ascii=False, indent=2)

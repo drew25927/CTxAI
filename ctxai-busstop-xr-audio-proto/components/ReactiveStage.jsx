@@ -21,6 +21,7 @@ import { deriveParams } from "@/lib/directionMap";
 import Puddles from "./Puddles";
 import Bus from "./Bus";
 import Truck from "./Truck";
+import CutoutPerson from "./CutoutPerson";
 
 // HDRI 하늘 — PolyHaven(CC0) 순수 하늘 세 장을 연출 상태 가중치로 섞어 그린다.
 //   R: evening_road_01_puresky (낮은 저녁 해, 젖은 도로가 금빛으로)
@@ -593,7 +594,7 @@ function Cat({ x, z, running, facingBench, bob }) {
  * @param {string|null} props.dominant                 앉는 인물 R/H/C
  * @param {React.MutableRefObject} [props.paramsOut]   파생 파라미터를 밖(HUD)에 노출
  */
-export default function ReactiveStage({ directionRef, actorsRef, dominant, paramsOut, cueRef = null, useRig = true, rigTest = false, signText, reflect = true, benchYaw = 0 }) {
+export default function ReactiveStage({ directionRef, actorsRef, dominant, paramsOut, cueRef = null, useRig = true, useCutout = true, rigTest = false, signText, reflect = true, benchYaw = 0 }) {
   const { scene, camera } = useThree();
   const skyMat = useRef();
   const sun = useRef();
@@ -923,6 +924,14 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
           <mesh position={[1.2, 0.25, -3.2]}><boxGeometry args={[1.6, 0.5, 0.5]} /><meshStandardMaterial color="#6b4a2a" /></mesh>
           <group position={[0.8, 0, -3]}><RiggedPerson rig="A" seated facing={0} /></group>
           <group position={[1.6, 0, -3]}><RiggedPerson rig="B" seated facing={0} /></group>
+          {/* 2D 컷아웃(?cutout) — 서 있는 3명 + 걷는 1명 + 벤치에 앉은 1명(오른쪽 옆자리) */}
+          <group position={[-1.2, 0, -1.8]}><CutoutPerson genre="R" facing={0} /></group>
+          <group position={[0, 0, -1.8]}><CutoutPerson genre="H" facing={Math.PI / 2} /></group>
+          <group position={[1.2, 0, -1.8]}><CutoutPerson genre="C" facing={Math.PI} walking /></group>
+          <mesh position={[0.15, 0.47, -1.1]}><boxGeometry args={[1.3, 0.05, 0.45]} /><meshStandardMaterial color="#6b4a2c" /></mesh>
+          <group position={[-0.25, 0, -1.1]}><CutoutPerson genre="R" seated facing={0} /></group>
+          <group position={[0.35, 0, -1.1]}><CutoutPerson genre="H" seated facing={Math.PI / 2} /></group>
+          <group position={[0.75, 0, -1.1]}><CutoutPerson genre="C" seated facing={0.5} /></group>
           {/* 실제 벤치 위 옆사람 자리(로맨스 x=1.05) + 높이 눈금 0.46/0.6/0.75 (빨강/초록/파랑) */}
           <group position={[1.05, 0, 0.3]} rotation={[0, 0.6, 0]}><RiggedPerson rig="B" seated facing={Math.PI} /></group>
           {[[0.5, "#ff3030"], [0.65, "#30ff30"], [0.8, "#3060ff"]].map(([y, c]) => (
@@ -955,7 +964,11 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
             <Suspense fallback={<Person raincoat={dominant !== "C"} tint={npcTint} head={npcHead} walking={actors.npc.walking} seated={actors.npc.seated} bob={actors.npc.bob} gazeRef={npcGaze} />}>
               {/* 시선 접촉률은 몸 전체가 관객 쪽으로 도는 정도로 나타낸다 — 착석 상태에선 관객(-x 쪽)을 향하는 각도가 -π/2 */}
               <group ref={npcGaze} position={[0, 1.55, 0]} />
-              <RiggedPerson rig={dominant === "H" ? "A" : "B"} walking={actors.npc.walking} seated={actors.npc.seated} scale={dominant === "C" ? 0.9 : 1.0} facing={actors.npc.seated ? Math.PI : Math.PI * 0.8} lookRef={paramsOut} cueRef={cueRef} />
+              {useCutout ? (
+                <CutoutPerson key={dominant || "R"} genre={dominant || "R"} walking={actors.npc.walking} seated={actors.npc.seated} facing={actors.npc.seated ? Math.PI : Math.PI * 0.8} lookRef={paramsOut} cueRef={cueRef} />
+              ) : (
+                <RiggedPerson rig={dominant === "H" ? "A" : "B"} walking={actors.npc.walking} seated={actors.npc.seated} scale={dominant === "C" ? 0.9 : 1.0} facing={actors.npc.seated ? Math.PI : Math.PI * 0.8} lookRef={paramsOut} cueRef={cueRef} />
+              )}
             </Suspense>
           ) : (
           <Person
