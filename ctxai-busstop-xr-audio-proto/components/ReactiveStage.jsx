@@ -955,12 +955,14 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
           {/* 지붕 아래 온광·처마 빗방울 — 아트 쉘터(x −2.92…0.88, 앞 처마 z −0.97)에 맞춘 위치 */}
           <pointLight position={[-1.0, 2.2, 0.3]} color="#ffb877" intensity={0.9} distance={6} decay={2} />
           <RoofDrips x0={-2.75} y0={2.45} z0={-0.99} />
-          {/* 정류장 이름 표지판 — 관객 앞 왼쪽 인도(연석 z −2.7 안쪽) */}
-          <mesh position={[-0.95, 1.05, -2.0]} castShadow>
+          {/* 정류장 이름 표지판 — 쉘터 오른쪽 앞 기둥(0.63, −0.56) 바로 앞 인도. 앞 처마 끝(z −0.97)에서 0.5m 도로 쪽, 연석(z −2.7) 안쪽.
+              (예전엔 쉘터 중앙 앞(−0.95, −2.0)이었다 — 사용자 요청으로 오른쪽 기둥 앞으로 옮김.) 관객 기준 오른쪽 약 19°, 1.9m,
+              판 중심이 눈높이보다 0.6m 위라 위로 약 18° — 정면 시야 안이고, 인도 위 고양이(6°, 지면)와 겹치지 않는다. */}
+          <mesh position={[0.63, 1.05, -1.45]} castShadow>
             <cylinderGeometry args={[0.03, 0.035, 2.1, 8]} />
             <meshStandardMaterial color="#33363c" />
           </mesh>
-          <SignBoard text={signText || "호수공원 입구"} position={[-0.95, 1.78, -1.9]} />
+          <SignBoard text={signText || "호수공원 입구"} position={[0.63, 1.78, -1.35]} />
           {/* 포스터 — 아트 원본 포스터 자리(오른쪽 유리 안쪽, 관객 기준 약 +80°). 원본 높이(중심 1.43m)는 앉은 눈높이(1.15m)보다
               0.3m 위라 고개를 돌려도 화면 위쪽 끝에 걸렸다 — 중심을 앉은 눈높이(1.15m)에 정확히 맞췄다 */}
           <mesh ref={posterRef} position={[0.62, 1.15, 0.27]} rotation={[0, -Math.PI / 2, 0.06]}>
