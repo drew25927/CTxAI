@@ -22,6 +22,7 @@ import Puddles from "./Puddles";
 import Bus from "./Bus";
 import Truck from "./Truck";
 import CutoutPerson from "./CutoutPerson";
+import { ArtShelter, ArtCafe, ArtLantern, ArtTruck, ArtCat, LANTERN_HEAD } from "./ArtEnv";
 
 // HDRI 하늘 — PolyHaven(CC0) 순수 하늘 세 장을 연출 상태 가중치로 섞어 그린다.
 //   R: evening_road_01_puresky (낮은 저녁 해, 젖은 도로가 금빛으로)
@@ -594,7 +595,7 @@ function Cat({ x, z, running, facingBench, bob }) {
  * @param {string|null} props.dominant                 앉는 인물 R/H/C
  * @param {React.MutableRefObject} [props.paramsOut]   파생 파라미터를 밖(HUD)에 노출
  */
-export default function ReactiveStage({ directionRef, actorsRef, dominant, paramsOut, cueRef = null, useRig = true, useCutout = true, rigTest = false, signText, reflect = true, benchYaw = 0 }) {
+export default function ReactiveStage({ directionRef, actorsRef, dominant, paramsOut, cueRef = null, useRig = true, useCutout = true, useArt = true, rigTest = false, signText, reflect = true, benchYaw = 0 }) {
   const { scene, camera } = useThree();
   const skyMat = useRef();
   const sun = useRef();
@@ -775,6 +776,15 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
 
       {/* ================= 정류장 — 등 뒤가 유리, 앞은 도로로 열림 =================
           폭 3.2m (x −1.0…2.2): 관객은 벤치 왼쪽(x=0), 옆사람은 오른쪽(x 1.05~1.7)에 앉으므로 오른쪽으로 넓다 */}
+      {useArt && (
+        <>
+          <Suspense fallback={null}><ArtShelter /></Suspense>
+          {/* 지붕 아래 온광·빗방울은 연출이라 그대로 둔다 */}
+          <pointLight position={[0.6, 2.2, 0.0]} color="#ffb877" intensity={0.9} distance={5} decay={2} />
+          <RoofDrips />
+        </>
+      )}
+      {!useArt && (
       <group>
         {/* 지붕 + 네온 띠 */}
         <mesh position={[0.6, 2.38, 0.15]} rotation={[0.03, 0, 0]} castShadow receiveShadow>
@@ -809,6 +819,7 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
           </mesh>
         ))}
       </group>
+      )}
       {/* 정류장 이름 표지판 — 앞 왼쪽 기둥 옆 폴, 관객을 향한다 */}
       <mesh position={[-0.95, 1.05, -2.0]} castShadow>
         <cylinderGeometry args={[0.03, 0.035, 2.1, 8]} />
@@ -836,6 +847,13 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
       </mesh>
 
       {/* ================= 카페 — 도로 건너 왼쪽 약 -38°, 30m (v2.md §1-2) ================= */}
+      {useArt ? (
+        <Suspense fallback={null}>
+          <ArtCafe>
+            <pointLight ref={cafeLight} position={[0.8, 1.8, -3]} color="#ffa06a" intensity={1.2} distance={12} />
+          </ArtCafe>
+        </Suspense>
+      ) : (
       <group position={[-19, 0, -26]} rotation={[0, 0.25, 0]}>
         <mesh position={[0, 0.06, 0]} receiveShadow>
           <boxGeometry args={[4.6, 0.12, 3.6]} />
@@ -876,6 +894,7 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
           <meshStandardMaterial color="#2b2a28" roughness={0.6} />
         </mesh>
       </group>
+      )}
 
       {/* ================= 풀숲(뒤) · 길가 억새 ================= */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0.6, 0.02, 2.4]} receiveShadow>
@@ -897,23 +916,23 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
 
       {/* ================= 가로등 — 정류장 뒤(공포 트리거)와 도로 건너 ================= */}
       <group position={[1.6, 0, 1.7]}>
-        <Suspense fallback={null}><Prop url="/reactive/models/props/street_lamp_01.glb" scale={0.85} rotation={[0, Math.PI, 0]} /></Suspense>
-        <mesh position={[0, 3.05, -0.35]}>
+        <Suspense fallback={null}>{useArt ? <ArtLantern armSign={-1} /> : <Prop url="/reactive/models/props/street_lamp_01.glb" scale={0.85} rotation={[0, Math.PI, 0]} />}</Suspense>
+        <mesh position={useArt ? [0, LANTERN_HEAD.y, -LANTERN_HEAD.z] : [0, 3.05, -0.35]}>
           <sphereGeometry args={[0.1, 8, 8]} />
           <meshStandardMaterial ref={lampBulb} color="#fff2c0" emissive="#fff2c0" emissiveIntensity={0.1} />
         </mesh>
-        <pointLight ref={lampLight} position={[0, 3.0, -0.35]} color="#ffedb0" intensity={0} distance={6} />
+        <pointLight ref={lampLight} position={useArt ? [0, LANTERN_HEAD.y, -LANTERN_HEAD.z] : [0, 3.0, -0.35]} color="#ffedb0" intensity={0} distance={6} />
       </group>
       <group position={[5.5, 0, -18.6]}>
-        <Suspense fallback={null}><Prop url="/reactive/models/props/street_lamp_01.glb" scale={0.85} /></Suspense>
-        <mesh position={[0, 3.05, 0.35]}>
+        <Suspense fallback={null}>{useArt ? <ArtLantern armSign={1} /> : <Prop url="/reactive/models/props/street_lamp_01.glb" scale={0.85} />}</Suspense>
+        <mesh position={useArt ? [0, LANTERN_HEAD.y, LANTERN_HEAD.z] : [0, 3.05, 0.35]}>
           <sphereGeometry args={[0.1, 8, 8]} />
           <meshStandardMaterial ref={lampBulb2} color="#fff2c0" emissive="#fff2c0" emissiveIntensity={0.1} />
         </mesh>
-        <pointLight ref={lampLight2} position={[0, 3.0, 0.35]} color="#ffedb0" intensity={0} distance={7} />
+        <pointLight ref={lampLight2} position={useArt ? [0, LANTERN_HEAD.y, LANTERN_HEAD.z] : [0, 3.0, 0.35]} color="#ffedb0" intensity={0} distance={7} />
       </group>
       <group position={[-9.5, 0, -18.6]}>
-        <Suspense fallback={null}><Prop url="/reactive/models/props/street_lamp_01.glb" scale={0.85} /></Suspense>
+        <Suspense fallback={null}>{useArt ? <ArtLantern armSign={1} /> : <Prop url="/reactive/models/props/street_lamp_01.glb" scale={0.85} />}</Suspense>
       </group>
 
       {/* 리깅 캐릭터 점검용 (?rigtest=1): 두 캐릭터를 관객 정면 3m에 세워 로딩·크기·방향을 확인한다 */}
@@ -924,6 +943,10 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
           <mesh position={[1.2, 0.25, -3.2]}><boxGeometry args={[1.6, 0.5, 0.5]} /><meshStandardMaterial color="#6b4a2a" /></mesh>
           <group position={[0.8, 0, -3]}><RiggedPerson rig="A" seated facing={0} /></group>
           <group position={[1.6, 0, -3]}><RiggedPerson rig="B" seated facing={0} /></group>
+          {/* 아트 모델 점검(?art) — 트럭(−π/2 로 앞이 −x)·고양이(앞이 +z=관객)·가로등(팔 +z) */}
+          <group position={[1.8, 0, -6]} rotation={[0, -Math.PI / 2, 0]}><ArtTruck /></group>
+          <ArtCat x={-0.9} z={-1.6} running={false} facingBench bob={0} />
+          <group position={[-2.3, 0, -2.6]}><ArtLantern armSign={1} /></group>
           {/* 2D 컷아웃(?cutout) — 서 있는 3명 + 걷는 1명 + 벤치에 앉은 1명(오른쪽 옆자리) */}
           <group position={[-1.2, 0, -1.8]}><CutoutPerson genre="R" facing={0} /></group>
           <group position={[0, 0, -1.8]}><CutoutPerson genre="H" facing={Math.PI / 2} /></group>
@@ -957,11 +980,17 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
       )}
       {actors.truck?.visible && (
         <group position={[actors.truck.x, 0, actors.truck.z]} rotation={[0, -Math.PI / 2, 0]}>
-          <Truck x={0} z={0} />
+          {useArt ? (
+            <Suspense fallback={<Truck x={0} z={0} />}><ArtTruck /></Suspense>
+          ) : (
+            <Truck x={0} z={0} />
+          )}
         </group>
       )}
       {actors.splash != null && <Splash p={actors.splash} />}
-      {actors.cat?.visible && <Cat {...actors.cat} />}
+      {actors.cat?.visible && (useArt ? (
+        <Suspense fallback={<Cat {...actors.cat} />}><ArtCat {...actors.cat} /></Suspense>
+      ) : <Cat {...actors.cat} />)}
       {actors.npc?.visible && (
         <group ref={npcGroup} position={[actors.npc.x, 0, actors.npc.z]} rotation={[0, actors.npc.seated ? 0.15 : (actors.npc.yaw ?? 0) - Math.PI * 0.8, 0]}>
           {useRig ? (
