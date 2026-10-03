@@ -26,6 +26,7 @@ import { observe, judgeFromBehavior, fuseChannels, confidenceOf } from "@/lib/be
 import { scoresFromMoodApi } from "@/lib/textKeywords";
 import { analyzeProsody } from "@/lib/voiceProsody";
 import { startBgmBlend, stopBgmBlend } from "@/lib/bgmBlend";
+import { ART, sceneForProgress } from "@/lib/artShots";
 import s from "../story/story.module.css";
 
 const GENRE_META = {
@@ -33,7 +34,6 @@ const GENRE_META = {
   H: { image: "/story/horror.jpg", accent: "#8fae95" },
   C: { image: "/story/comedy.jpg", accent: "#e0a86a" },
 };
-const DEFAULT_IMAGE = "/story/default.jpg";
 const DEFAULT_ACCENT = "#cfd8e3";
 const OBSERVE_MS = 11000;
 const LOW_CONFIDENCE_TH = 0.35; // 이 밑이면 재질문 (§4-4, 엔트로피 기반)
@@ -81,6 +81,9 @@ export default function StoryV2Page() {
   const [index, setIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [finished, setFinished] = useState(false);
+  const [observeShot, setObserveShot] = useState(0);
+  const [prevBg, setPrevBg] = useState(null);
+  const lastBgRef = useRef(null);
 
   const videoRef = useRef(null);
   const bgmRefs = { H: useRef(null), R: useRef(null), C: useRef(null) };
@@ -93,6 +96,22 @@ export default function StoryV2Page() {
   const streamRef = useRef(null);
 
   useEffect(() => () => streamRef.current?.getTracks().forEach((t) => t.stop()), []);
+
+  // 관찰 중에는 디폴트 원화 컷을 천천히 돌린다(트럭·고양이 컷 포함).
+  useEffect(() => {
+    if (phase !== "observe") return;
+    setObserveShot(0);
+    const t = setInterval(() => setObserveShot((i) => (i + 1) % ART.D.observe.length), 3500);
+    return () => clearInterval(t);
+  }, [phase]);
+
+  // 컷이 바뀔 때 흰 화면이 번쩍이지 않도록 지금 쓸 장르의 원화를 미리 받아 둔다.
+  useEffect(() => {
+    const urls = phase === "reveal" && fused?.dominant
+      ? [...ART[fused.dominant].scenes, ...ART[fused.dominant].sheets]
+      : [ART.D.gate, ...ART.D.observe];
+    urls.forEach((u) => { const im = new Image(); im.src = u; });
+  }, [phase, fused]);
 
   async function start() {
     try {
@@ -207,13 +226,22 @@ export default function StoryV2Page() {
   }
 
   const accent = dominant ? GENRE_META[dominant].accent : DEFAULT_ACCENT;
-  const bgImage = dominant ? GENRE_META[dominant].image : DEFAULT_IMAGE;
+  const bgImage = phase === "reveal" && dominant
+    ? sceneForProgress(dominant, index, lines.length) || GENRE_META[dominant].image
+    : phase === "observe" ? ART.D.observe[observeShot] : phase === "judge" ? ART.D.observe[observeShot] : ART.D.gate;
   const secondaryAccent = secondary ? GENRE_META[secondary].accent : null;
   const lineAccent = line?.flavor && secondaryAccent ? secondaryAccent : accent;
+
+  // 컷이 바뀔 때 이전 컷을 아래에 남겨 두고 새 컷만 페이드인 — 검은 화면이 번쩍이지 않게.
+  useEffect(() => {
+    if (lastBgRef.current && lastBgRef.current !== bgImage) setPrevBg(lastBgRef.current);
+    lastBgRef.current = bgImage;
+  }, [bgImage]);
 
   return (
     <div className={s.stage} style={{ "--accent": accent }}>
       <div className={s.bgLayer}>
+        {prevBg && prevBg !== bgImage && <img key={`prev-${prevBg}`} src={prevBg} alt="" className={s.bgImg} style={{ animation: "none" }} />}
         <img key={bgImage} src={bgImage} alt="" className={s.bgImg} />
         {secondaryAccent && (
           <div
@@ -274,6 +302,18 @@ export default function StoryV2Page() {
       {phase === "judge" && (
         <div className={s.observeWrap}>
           <p className={s.judgeText}>272번 버스는 5분 후 도착 예정입니다</p>
+        </div>
+      )}
+
+      {phase === "reveal" && finished && dominant && (
+        <div style={{
+          position: "absolute", left: "50%", top: "50%", transform: "translate(-50%, -62%)", zIndex: 3,
+          display: "flex", gap: 12, padding: 12, borderRadius: 14, background: "rgba(10,12,16,0.72)",
+          backdropFilter: "blur(6px)", maxWidth: "92vw",
+        }}>
+          {ART[dominant].sheets.map((src) => (
+            <img key={src} src={src} alt="" style={{ height: "min(34vh, 260px)", maxWidth: "44vw", objectFit: "contain", borderRadius: 8, background: "#fff" }} />
+          ))}
         </div>
       )}
 
