@@ -62,7 +62,15 @@ export default function FaceCheck() {
         videoRef.current.srcObject = stream;
         await videoRef.current.play().catch(() => {});
       }
-      await observe(videoRef.current, OBSERVE_MS, setLive);
+      setLive({ faceFound: false, loading: true });
+      const obs = await observe(videoRef.current, OBSERVE_MS, setLive);
+      if (obs && obs.ok === false) {
+        setError(obs.reason === "model_load_failed"
+          ? "얼굴 인식 모델을 불러오지 못했습니다(네트워크 또는 브라우저 WebAssembly 문제). 새로고침 후 다시 시도하거나 Chrome에서 열어 보세요."
+          : String(obs.reason));
+        setState("error");
+        return;
+      }
       setState("done");
     } catch (e) {
       setError(e?.message || String(e));
@@ -143,7 +151,16 @@ export default function FaceCheck() {
 
       <div className={s.step}>
         <h2><span>3</span>판정 결과</h2>
-        {!live.faceFound && <p>얼굴 없음 — 정면을 보고 밝은 곳에서 시도하세요</p>}
+        <p className={s.dim} style={{ fontSize: 13 }}>
+          상태: {state === "idle" ? "카메라 꺼짐 — 1번에서 시작"
+            : state === "error" ? "오류 — 위 메시지 확인"
+            : state === "done" ? "관찰 끝 — 다시 시작"
+            : live.loading ? "얼굴 인식 모델 불러오는 중… (처음엔 수 초 걸림)"
+            : !live.faceFound ? "카메라는 켜졌지만 얼굴이 안 잡힘 — 정면·밝은 곳"
+            : live.rejected ? "얼굴 잡힘 (움직임이 커서 이 프레임은 이동 계산에서 제외 — 표정 판정은 계속됨)"
+            : "정상 인식 중"}
+        </p>
+        {!live.faceFound && !live.loading && state === "running" && <p>얼굴 없음 — 정면을 보고 밝은 곳에서 시도하세요</p>}
         {live.faceFound && judged && (
           <>
             <p style={{ fontSize: 28, fontWeight: 800, margin: "4px 0" }}>

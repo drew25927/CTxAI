@@ -138,12 +138,15 @@ export async function observe(videoEl, durationMs, onTick) {
         const result = landmarker.detectForVideo(videoEl, now);
         const lm = result?.faceLandmarks?.[0];
         if (lm) {
+          const cats = result?.faceBlendshapes?.[0]?.categories;
+          const fear = blendshapeScore(cats, FEAR_SHAPES);
+          const amusement = blendshapeScore(cats, AMUSEMENT_SHAPES);
           const vis = minVisibility(lm);
           if (vis < MIN_VISIBILITY_TH) {
             // 손 등으로 얼굴 일부가 가려져 신뢰도가 낮다 — 이번 프레임은
             // MAX_FRAME_JUMP 튐 처리와 동일하게 인식 오류로 버린다.
             if (elapsed > 1200) occludedMs += Math.max(0, frameDelta);
-            onTick?.({ faceFound: true, dx: 0, dy: 0, scaleRatio: 1, rejected: true });
+            onTick?.({ faceFound: true, dx: 0, dy: 0, scaleRatio: 1, rejected: true, fear, amusement });
           } else {
             const sig = frameSignal(lm);
 
@@ -151,11 +154,9 @@ export async function observe(videoEl, durationMs, onTick) {
             // 튀면 인식 오류로 보고 버린다 (이전 유효값을 유지) — §관찰 로그 참고.
             const jump = lastAccepted ? Math.max(Math.abs(sig.dx - lastAccepted.dx), Math.abs(sig.dy - lastAccepted.dy)) : 0;
             if (lastAccepted && jump > MAX_FRAME_JUMP) {
-              onTick?.({ faceFound: true, dx: 0, dy: 0, scaleRatio: 1, rejected: true });
+              onTick?.({ faceFound: true, dx: 0, dy: 0, scaleRatio: 1, rejected: true, fear, amusement });
             } else {
               lastAccepted = sig;
-              const fear = blendshapeScore(result?.faceBlendshapes?.[0]?.categories, FEAR_SHAPES);
-              const amusement = blendshapeScore(result?.faceBlendshapes?.[0]?.categories, AMUSEMENT_SHAPES);
               if (elapsed > 1200) {
                 if (fear > maxFear) maxFear = fear;
                 if (amusement > maxAmusement) maxAmusement = amusement;
