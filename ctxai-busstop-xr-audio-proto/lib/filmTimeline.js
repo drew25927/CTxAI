@@ -37,15 +37,14 @@ export const CUES = [
   { t: T.sceneStart, name: "scene" },
 ];
 
-import { pointOnRoute } from "./artWalkRoute.js";
-import { nearLane } from "./artRoad.js";
+import { nearLane, roadCenter } from "./artRoad.js";
 
-// 아트 월드용 큐 — 카페가 약 60m 왼쪽(−80° 방향)이고, 우비 인물 동선은 정류장 뒤편 보행로라 다가오는 내내 −85~−100°에 있다.
-// 그래서 관찰 방위를 −80°(허용 ±28° → −52~−108°)로 잡는다.
+// 아트 월드용 큐 — 우비 인물은 건너편 인도 앞쪽 왼쪽(−66°)에서 정면 쪽(−25°)으로 걸어오다 길을 건너므로(−63°)
+// 그 가운데 −42°(허용 ±28° → −14~−70°)로 잡는다. 고양이는 오른쪽에서 들어와 정면(오른쪽 8°)에 멈춘다.
 // 고양이는 정면 가까이(오른쪽 8°)에 멈추므로 관찰 방위를 30° → 15°(들어오는 길과 멈춤 자리 사이)로, 머무는 시간만큼 길게.
 export const CUES_ART = CUES.map((c) => {
-  if (c.name === "cafeBell") return { ...c, sense: { ...c.sense, azimuth: -80 } };
-  if (c.name === "cat") return { ...c, sense: { ...c.sense, azimuth: 15, dur: c.sense.dur + 1.2 } };
+  if (c.name === "cafeBell") return { ...c, sense: { ...c.sense, azimuth: -42 } };
+  if (c.name === "cat") return { ...c, sense: { ...c.sense, azimuth: 15, dur: 7.1 } };
   return c;
 });
 
@@ -65,7 +64,7 @@ const BUS_STOP_X = -1.2; // 정차 시 차체 중심. 앞문은 +2.4 → x≈1.2
 
 // layout: "classic"(예전 코드 지형) | "art"(아트팀 Unity 월드, components/ArtWorld.jsx). 아트 월드는 도로·쉘터·카페 위치가
 // 달라서 몇 군데 좌표가 바뀐다 — 가까운 차선 중앙 z −4.4, 트럭이 밟는 큰 물웅덩이 x≈−2, 옆사람 자리는 관객 왼쪽,
-// 우비 인물은 아트팀이 그어 둔 동선(lib/artWalkRoute.js)을 따라 카페(약 60m 왼쪽)에서 걸어온다.
+// 우비 인물은 건너편 인도 앞쪽 왼쪽에서 나타나 관객 앞에서 길을 건너고, 고양이는 쉘터 앞을 오른쪽→왼쪽으로 지나간다.
 export function evalActors(t, { dominant = null, npcDistance = 0.9, busAt = null, leaveAt = null, layout = "classic" } = {}) {
   const a = {};
   const art = layout === "art";
@@ -76,16 +75,25 @@ export function evalActors(t, { dominant = null, npcDistance = 0.9, busAt = null
   // 정류장 왼쪽 관목(-3,1.9) 뒤로 돌아 들어가(58~61s) 사라진다 — 시야 안에서 갑자기 없어지지 않게.
   const figureEnd = T.judge + 3;
   if (art && t >= T.cafeBell && t < figureEnd) {
-    // 아트 동선 — 판정 시각까지 등속으로 따라와 쉘터 왼쪽 입구에 닿고, 보행로를 되짚어 쉘터 뒤 왼쪽 풀숲으로 빠진다
-    if (t < T.judge) {
-      const r = pointOnRoute((t - (T.cafeBell + 1)) / (T.judge - (T.cafeBell + 1)));
-      a.figure = { visible: true, x: r.x, z: r.z, walking: t >= T.cafeBell + 1, yaw: heading(r.dx, r.dz), bob: t };
-    } else {
+    // 아트 월드 — 아트팀 원래 동선은 카페(약 60m, −80°)에서 시작해 정류장 뒤편 보행로를 따라와 관객 시야 밖이었다(사용자 지적).
+    // 그래서 도로 건너 인도 앞쪽 왼쪽(약 24m, −66°)에서 나타나 정면 쪽으로 걸어오다, 트럭이 지나간 뒤 관객 앞에서 길을 건너
+    // 쉘터 왼쪽으로 들어온다 — 내내 관객 기준 −25~−66° 안에 있어 고개를 조금만 돌리면 보인다.
+    const far = (x) => roadCenter(x) - 4.6, near = (x) => roadCenter(x) + 3.9; // 건너편 인도 / 이쪽 인도 중앙
+    let x, z, walking = true, yaw;
+    if (t < 36) { const p = seg(t, T.cafeBell + 1, 36); x = lerp(-24, -5, p); z = far(x); yaw = heading(1, far(x + 1) - far(x)); walking = t >= T.cafeBell + 1; }
+    else if (t < 40) { x = -5; z = far(-5); walking = false; yaw = heading(0, 1); }               // 트럭이 지나가길 기다린다
+    else if (t < 52) { const p = seg(t, 40, 52); x = -5; z = lerp(far(-5), near(-5), p); yaw = heading(0, 1); } // 관객 앞에서 길을 건넌다
+    else if (t < T.judge) {                                                                          // 쉘터 앞 → 왼쪽 안쪽
+      const p = (t - 52) / (T.judge - 52);
+      if (p < 0.5) { x = lerp(-5, -2.4, p * 2); z = lerp(near(-5), -1.5, p * 2); yaw = heading(2.6, -1.5 - near(-5)); }
+      else { x = lerp(-2.4, -2.17, (p - 0.5) * 2); z = lerp(-1.5, 0.74, (p - 0.5) * 2); yaw = heading(0.1, 1); }
+    } else {                                                                                         // 판정 뒤 왼쪽 입구로 나가 뒤편 풀숲으로
       const p = (t - T.judge) / (figureEnd - T.judge);
-      const x = p < 0.5 ? lerp(-2.17, -4.6, p * 2) : lerp(-4.6, -5.6, (p - 0.5) * 2);
-      const z = p < 0.5 ? lerp(0.74, 0.8, p * 2) : lerp(0.8, 2.8, (p - 0.5) * 2);
-      a.figure = { visible: true, x, z, walking: true, yaw: p < 0.5 ? heading(-1, 0) : heading(-0.5, 1), bob: t };
+      x = p < 0.5 ? lerp(-2.17, -4.6, p * 2) : lerp(-4.6, -5.6, (p - 0.5) * 2);
+      z = p < 0.5 ? lerp(0.74, 0.8, p * 2) : lerp(0.8, 2.8, (p - 0.5) * 2);
+      yaw = p < 0.5 ? heading(-1, 0) : heading(-0.5, 1);
     }
+    a.figure = { visible: true, x, z, walking, yaw, bob: t };
   } else if (t >= T.cafeBell && t < figureEnd) {
     let x, z, walking = true;
     if (t < 36) { const p = seg(t, T.cafeBell + 1, 36); x = lerp(-18, -5, p); z = lerp(-24.4, -17.6, p); }
@@ -109,15 +117,15 @@ export function evalActors(t, { dominant = null, npcDistance = 0.9, busAt = null
   } else { a.truck = { visible: false }; a.splash = null; }
 
   // 고양이 — 오른쪽 공원 진입로(9,-2.6)에서 뛰어들어 벤치 앞(0.9,-1.5)에 멈춰 관객을 보고, 왼쪽(-9,-2.2)으로 달아난다.
-  // 아트 월드 — 예전 멈춤 자리(0.9, −1.5)는 관객 눈(높이 1.15, 세로 시야 60°) 기준 오른쪽 26°·아래 22~29°라 화면 오른쪽 아래
-  // 귀퉁이에 걸리고, 좁은 화면(세로 화면·작은 창)에선 아예 화면 밖이었다. 멈춤 자리를 거의 정면 인도(0.35, −2.25 — 오른쪽 8°,
-  // 아래 17°)로 옮기고 관객을 보는 시간을 1.5초 → 2.2초로 늘린다. 비명(52s)은 그대로.
-  const catT = art ? { in: T.catIn, stop: T.catStop, out: T.catOut + 0.7, gone: T.catGone + 0.5 } : null;
+  // 아트 월드 — 쉘터 기준 오른쪽에서 왼쪽으로 지나간다(사용자 요청). 시야 밖(오른쪽 65°)에서 걸어 들어와 쉘터 앞 인도를
+  // 천천히 가로지르다(연석 흰 선에서 0.6m 안쪽) 거의 정면(0.35, −2.05 — 오른쪽 8°·아래 19°)에 멈춰 2초간 관객을 보고, 다시 왼쪽으로 빠져나간다.
+  // (예전 자리는 화면 오른쪽 아래 귀퉁이였고, 빠르게 달려 지나가 눈에 띄지 않았다.) 비명(52s)은 그대로.
+  const catT = art ? { in: T.catIn, stop: T.catIn + 3.2, out: T.catIn + 5.2, gone: T.catIn + 7.7 } : null;
   if (art && t >= catT.in && t <= catT.gone) {
     let x, z, running = true, facingBench = false, yaw = -Math.PI / 2;
-    if (t < catT.stop) { const p = seg(t, catT.in, catT.stop); x = lerp(8, 0.35, p); z = lerp(-2.45, -2.25, p); }
-    else if (t < catT.out) { x = 0.35; z = -2.25; running = false; facingBench = true; yaw = heading(-0.35, 2.6); } // 관객 쪽을 똑바로
-    else { const p = seg(t, catT.out, catT.gone); x = lerp(0.35, -9, p); z = lerp(-2.25, -2.0, p); }
+    if (t < catT.stop) { const p = (t - catT.in) / (catT.stop - catT.in); x = lerp(5.5, 0.35, p); z = lerp(-2.15, -2.05, p); } // 걷는 속도로 일정하게
+    else if (t < catT.out) { x = 0.35; z = -2.05; running = false; facingBench = true; yaw = heading(-0.35, 2.4); }
+    else { const p = seg(t, catT.out, catT.gone); x = lerp(0.35, -6.5, p); z = lerp(-2.05, -1.95, p); }
     a.cat = { visible: true, x, z, running, facingBench, yaw, bob: t };
   } else if (!art && t >= T.catIn && t <= T.catGone) {
     let x, z, running = true, facingBench = false;
