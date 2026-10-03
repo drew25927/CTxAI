@@ -19,12 +19,30 @@ const OBSERVE_MS = 5 * 60 * 1000; // 시간 제한에 쫓기지 않도록 5분 �
 const EXPR_TH = 0.4; // 이 값 넘으면 "뚜렷이 지었다"고 본다. lib/interimGrader.js의 0.5보다
                       // 살짝 낮다 — 여긴 등급이 아니라 "인식 자체가 되는가"를 보는 자리라서.
 
-const LABELS = ["무표정", "공포", "웃음"];
-const LABEL_DESC = { 무표정: "표정 없이 평소 얼굴", 공포: "눈 크게 뜨고 눈썹 위로(무서운 표정)", 웃음: "활짝 웃으며 볼 조이기" };
+// 앞의 3개(무표정·공포·웃음)가 지금 판정(/interim 등)이 실제로 쓰는 것. 뒤 4개는
+// "이 표정들도 구분되는가"를 팀이 실측해 보는 실험용 — 임계값은 추정치이고 판정에는
+// 아직 반영되지 않는다(로맨스에 긍정 신호가 없는 문제를 풀 후보: 미소).
+const LABELS = ["무표정", "공포", "웃음", "미소", "놀람", "찌푸림", "슬픔"];
+const EXPERIMENTAL = new Set(["미소", "놀람", "찌푸림", "슬픔"]);
+const LABEL_DESC = {
+  무표정: "표정 없이 평소 얼굴",
+  공포: "눈 크게 뜨고 눈썹 위로, 입은 다문 채(무서운 표정)",
+  웃음: "활짝 웃으며 볼 조이기",
+  미소: "입꼬리만 살짝 올리는 부드러운 미소 (로맨스 후보 신호)",
+  놀람: "입을 벌리고 눈을 크게 (헉! 하는 표정)",
+  찌푸림: "눈살·코를 찌푸림 (싫어하는 표정)",
+  슬픔: "입꼬리를 아래로 내림",
+};
 
-function classify(fear, amusement) {
+function classify(live) {
+  const { fear = 0, amusement = 0, extra = {} } = live;
+  const { smile = 0, surprise = 0, frown = 0, sad = 0 } = extra;
   if (amusement >= fear && amusement > EXPR_TH) return "웃음";
-  if (fear > amusement && fear > EXPR_TH) return "공포";
+  if (surprise > 0.35) return "놀람";
+  if (fear > EXPR_TH) return "공포";
+  if (frown > EXPR_TH) return "찌푸림";
+  if (sad > EXPR_TH) return "슬픔";
+  if (smile > 0.15) return "미소";
   return "무표정";
 }
 
@@ -78,7 +96,7 @@ export default function FaceCheck() {
     }
   }
 
-  const judged = live.faceFound && typeof live.fear === "number" ? classify(live.fear, live.amusement) : null;
+  const judged = live.faceFound && typeof live.fear === "number" ? classify(live) : null;
 
   async function submit(correct) {
     if (!judged) return;
@@ -90,6 +108,7 @@ export default function FaceCheck() {
         body: JSON.stringify({
           name, intended, judged, correct,
           fear: live.fear, amusement: live.amusement,
+          scores: { fear: live.fear, amusement: live.amusement, ...live.extra },
         }),
       });
       const data = await res.json();
@@ -142,7 +161,7 @@ export default function FaceCheck() {
               className={s.copy}
               style={intended === l ? { background: "#3a4a3f", borderColor: "#5a8a68" } : {}}
             >
-              {l}
+              {l}{EXPERIMENTAL.has(l) ? " (실험)" : ""}
             </button>
           ))}
         </div>
@@ -167,7 +186,7 @@ export default function FaceCheck() {
               판정: {judged}
             </p>
             <p style={{ fontFamily: "ui-monospace, SFMono-Regular, monospace", fontSize: 14, color: "#8c9098" }}>
-              공포 {live.fear.toFixed(3)} · 웃음 {live.amusement.toFixed(3)} (문턱값 {EXPR_TH})
+              공포 {live.fear.toFixed(2)} · 웃음 {live.amusement.toFixed(2)} · 미소 {(live.extra?.smile ?? 0).toFixed(2)} · 놀람 {(live.extra?.surprise ?? 0).toFixed(2)} · 찌푸림 {(live.extra?.frown ?? 0).toFixed(2)} · 슬픔 {(live.extra?.sad ?? 0).toFixed(2)}
             </p>
           </>
         )}

@@ -8,7 +8,7 @@ import { listFacecheckResults, addFacecheckResult, removeFacecheckResult } from 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const LABELS = ["무표정", "공포", "웃음"];
+const LABELS = ["무표정", "공포", "웃음", "미소", "놀람", "찌푸림", "슬픔"];
 
 export async function GET() {
   return Response.json({ ok: true, results: await listFacecheckResults() });
@@ -34,7 +34,7 @@ export async function POST(req) {
 
   const rec = await addFacecheckResult({
     name: body?.name, intended, judged, correct,
-    fear: body?.fear, amusement: body?.amusement,
+    fear: body?.fear, amusement: body?.amusement, scores: body?.scores,
   });
   return Response.json({ ok: true, result: rec, results: await listFacecheckResults() });
 }
