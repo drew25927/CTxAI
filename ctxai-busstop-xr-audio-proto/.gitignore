@@ -7,7 +7,8 @@ out
 .env.production.local
 npm-debug.log*
 storage/
-assets/vo/
+# 원본 오디오(sfx·vo·truck, 약 71MB) — 로컬에만 둔다. 앱이 쓰는 파일은 public/ 에 있다
+/assets/
 .vercel-token
 .env*
 data/sessions/
