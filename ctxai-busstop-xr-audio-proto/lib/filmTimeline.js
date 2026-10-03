@@ -37,6 +37,12 @@ export const CUES = [
   { t: T.sceneStart, name: "scene" },
 ];
 
+import { pointOnRoute } from "./artWalkRoute.js";
+
+// 아트 월드용 큐 — 카페가 약 60m 왼쪽(−80° 방향)이라 "카페 종소리·우비 인물" 관찰 방위만 다르다.
+// 인물은 동선을 따라 −80°에서 −20° 쪽으로 다가오므로 그 사이(−60°, 허용 ±28°)를 잡는다.
+export const CUES_ART = CUES.map((c) => (c.name === "cafeBell" ? { ...c, sense: { ...c.sense, azimuth: -60 } } : c));
+
 function lerp(a, b, t) { return a + (b - a) * t; }
 function smooth(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
 function seg(t, a, b) { return smooth((t - a) / (b - a)); }
@@ -51,14 +57,30 @@ function seg(t, a, b) { return smooth((t - a) / (b - a)); }
 function heading(dx, dz) { return Math.atan2(dx, dz); } // 모델 정면(+z)이 진행 방향을 보게 하는 yaw
 const BUS_STOP_X = -1.2; // 정차 시 차체 중심. 앞문은 +2.4 → x≈1.2
 
-export function evalActors(t, { dominant = null, npcDistance = 0.9, busAt = null, leaveAt = null } = {}) {
+// layout: "classic"(예전 코드 지형) | "art"(아트팀 Unity 월드, components/ArtWorld.jsx). 아트 월드는 도로·쉘터·카페 위치가
+// 달라서 몇 군데 좌표가 바뀐다 — 가까운 차선 중앙 z −4.4, 트럭이 밟는 큰 물웅덩이 x≈−2, 옆사람 자리는 관객 왼쪽,
+// 우비 인물은 아트팀이 그어 둔 동선(lib/artWalkRoute.js)을 따라 카페(약 60m 왼쪽)에서 걸어온다.
+export function evalActors(t, { dominant = null, npcDistance = 0.9, busAt = null, leaveAt = null, layout = "classic" } = {}) {
   const a = {};
+  const art = layout === "art";
+  const laneZ = art ? -4.4 : -4.75;
 
   // 우비 인물 — 카페 문(-18,-24.4)에서 나와 횡단보도 건너편 끝(-5,-17.6)까지 걷고, 트럭이 지나가길
   // 기다렸다가(36~40s) 길을 건너(40~52s) 인도를 따라 정류장 왼쪽 옆(-2.8, 0.2)까지 오고(52~58s, 판정),
   // 정류장 왼쪽 관목(-3,1.9) 뒤로 돌아 들어가(58~61s) 사라진다 — 시야 안에서 갑자기 없어지지 않게.
   const figureEnd = T.judge + 3;
-  if (t >= T.cafeBell && t < figureEnd) {
+  if (art && t >= T.cafeBell && t < figureEnd) {
+    // 아트 동선 — 판정 시각까지 등속으로 따라와 쉘터 왼쪽 입구에 닿고, 보행로를 되짚어 쉘터 뒤 왼쪽 풀숲으로 빠진다
+    if (t < T.judge) {
+      const r = pointOnRoute((t - (T.cafeBell + 1)) / (T.judge - (T.cafeBell + 1)));
+      a.figure = { visible: true, x: r.x, z: r.z, walking: t >= T.cafeBell + 1, yaw: heading(r.dx, r.dz), bob: t };
+    } else {
+      const p = (t - T.judge) / (figureEnd - T.judge);
+      const x = p < 0.5 ? lerp(-2.17, -4.6, p * 2) : lerp(-4.6, -5.6, (p - 0.5) * 2);
+      const z = p < 0.5 ? lerp(0.74, 0.8, p * 2) : lerp(0.8, 2.8, (p - 0.5) * 2);
+      a.figure = { visible: true, x, z, walking: true, yaw: p < 0.5 ? heading(-1, 0) : heading(-0.5, 1), bob: t };
+    }
+  } else if (t >= T.cafeBell && t < figureEnd) {
     let x, z, walking = true;
     if (t < 36) { const p = seg(t, T.cafeBell + 1, 36); x = lerp(-18, -5, p); z = lerp(-24.4, -17.6, p); }
     else if (t < 40) { x = -5; z = -17.6; walking = false; }
@@ -73,7 +95,8 @@ export function evalActors(t, { dominant = null, npcDistance = 0.9, busAt = null
   // 포터 트럭 — 가까운 차선을 오른쪽에서 왼쪽으로(v2.md §1-3). 정류장 앞(x≈0.6)에서 물웅덩이를 밟는다.
   if (t >= T.truckStart && t <= T.truckEnd) {
     const p = (t - T.truckStart) / (T.truckEnd - T.truckStart);
-    a.truck = { visible: true, x: lerp(27, -27, p), z: -4.75 }; // 54m/9s ≈ 22km/h — 정면 시야(±48°)에 2초쯤 머문다
+    // 54m/9s ≈ 22km/h — 정면 시야(±48°)에 2초쯤 머문다. 아트 월드는 물웅덩이가 x≈−2 라 끝점을 −38 로 늘려 물보라 순간(29s)에 그 위를 지나게 한다
+    a.truck = { visible: true, x: lerp(27, art ? -38 : -27, p), z: laneZ };
     a.splash = t >= T.truckSplash - 0.2 && t <= T.truckSplash + 1.2 ? (t - (T.truckSplash - 0.2)) / 1.4 : null;
   } else { a.truck = { visible: false }; a.splash = null; }
 
@@ -92,9 +115,20 @@ export function evalActors(t, { dominant = null, npcDistance = 0.9, busAt = null
   // 옆사람 — 왼쪽 인도(-6,-1.7)에서 인도를 따라 걸어와(관객 앞 1.5m 를 지나며 얼굴이 보인다) 벤치 오른쪽 끝 앞에서
   // 멈춰 돌아선 뒤 앉는다. 관객 코앞(0.5m 안)으로는 절대 들어오지 않는다. 착석 뒤 거리는 연출 상태가 정한다.
   if (dominant && t >= T.npcWalkStart) {
-    const seatX = 0.35 + npcDistance;
+    // 아트 월드는 벤치가 관객 왼쪽으로 뻗어 있어(좌면 x −1.67…0.53) 옆사람이 왼쪽에 앉는다 — 왼쪽 인도에서 걸어와 바로 앉는다
+    const seatX = art ? Math.max(-1.55, -(0.35 + npcDistance)) : 0.35 + npcDistance;
     const turnAt = T.npcSeated - 1.1;
-    if (t < turnAt) {
+    if (art) {
+      if (t < turnAt) {
+        const p = (t - T.npcWalkStart) / (turnAt - T.npcWalkStart);
+        a.npc = { visible: true, x: lerp(-7.5, seatX, p), z: lerp(-1.6, -1.2, p), seated: false, walking: true, yaw: heading(7.5 + seatX, 0.4), bob: t };
+      } else if (t < T.npcSeated) {
+        const p = seg(t, turnAt, T.npcSeated);
+        a.npc = { visible: true, x: seatX, z: lerp(-1.2, 0.3, p), seated: false, walking: true, yaw: lerp(heading(7.5 + seatX, 0.4), Math.PI + 0.15, p), bob: t };
+      } else {
+        a.npc = { visible: true, x: seatX, z: 0.3, seated: true, walking: false, yaw: Math.PI, bob: t };
+      }
+    } else if (t < turnAt) {
       const p = (t - T.npcWalkStart) / (turnAt - T.npcWalkStart); // 등속 — 걷는 사람은 가감속이 거의 없다
       const x = lerp(-6, seatX + 0.15, p), z = lerp(-1.7, -1.25, p);
       a.npc = { visible: true, x, z, seated: false, walking: true, yaw: heading(seatX + 6.15, 0.45), bob: t };
@@ -114,11 +148,15 @@ export function evalActors(t, { dominant = null, npcDistance = 0.9, busAt = null
     const p = seg(t, busAt, busAt + 7);
     const x = lerp(-48, BUS_STOP_X, p);
     const stopped = t >= busAt + 7;
-    a.bus = { visible: true, x, z: -4.75, stopped, doorOpen: stopped, headlight: 1 - p * 0.4 };
+    a.bus = { visible: true, x, z: laneZ, stopped, doorOpen: stopped, headlight: 1 - p * 0.4 };
     // 인물 퇴장 — 공포: 벤치 뒤 풀숲으로 / 로맨스·코미디: 버스 문 앞(1.2,-2.6)으로. 정차는 9초(문 열림 1초 뒤 일어선다)
     if (stopped && a.npc.visible) {
       const q = seg(t, busAt + 8, busAt + 14);
-      if (dominant === "H") a.npc = { ...a.npc, seated: false, walking: q < 1, x: lerp(a.npc.x, 1.6, q), z: lerp(0.3, 3.6, q), yaw: heading(0.5, 3.3), bob: t, visible: q < 1 };
+      if (dominant === "H") {
+        // 공포: 벤치 뒤 풀숲으로 — 아트 월드에선 옆사람이 왼쪽에 있으니 왼쪽 뒤로
+        const ex = art ? -3.4 : 1.6;
+        a.npc = { ...a.npc, seated: false, walking: q < 1, x: lerp(a.npc.x, ex, q), z: lerp(0.3, 3.6, q), yaw: heading(ex - a.npc.x, 3.3), bob: t, visible: q < 1 };
+      }
       else a.npc = { ...a.npc, seated: false, walking: q < 1, x: lerp(a.npc.x, BUS_STOP_X + 2.4, q), z: lerp(0.3, -2.7, q), yaw: heading(BUS_STOP_X + 2.4 - a.npc.x, -3.0), bob: t, visible: q < 0.98 };
     }
     // 출발 시각 — 기본 +16. 마지막 말이 길면(배속 관찰 등) 디렉터가 leaveAt 을 뒤로 민다: 문은 말이 끝날 때까지 열려 있다

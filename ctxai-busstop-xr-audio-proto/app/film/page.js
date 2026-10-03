@@ -26,7 +26,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, PerspectiveCamera } from "@react-three/drei";
+import { OrbitControls, PerspectiveCamera, useProgress } from "@react-three/drei";
 import { XR, createXRStore, useXR } from "@react-three/xr";
 import { EffectComposer, Bloom, Vignette, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
@@ -35,7 +35,7 @@ import ReactiveStage from "@/components/ReactiveStage";
 import { createDirectionState, rank } from "@/lib/directionState";
 import { createHeadPoseSensor } from "@/lib/headPoseSense";
 import { deriveBgmGains, TRIGGERS } from "@/lib/directionMap";
-import { CUES, evalActors } from "@/lib/filmTimeline";
+import { CUES, CUES_ART, evalActors } from "@/lib/filmTimeline";
 import { DIALOGUE_V2_LINES, DIALOGUE_V2_GENRE_LABEL } from "@/lib/dialogueV2Lines";
 import { observe, judgeFromBehavior } from "@/lib/behaviorSense";
 import { loadDialoguePool, pickPoolLine, poolCoverage } from "@/lib/dialoguePool";
@@ -64,7 +64,9 @@ function useQuery() {
 }
 
 // 캔버스 안에서 도는 디렉터 — 카메라 포즈를 센서에 넣고, 상태를 tick 하고, 타임라인을 밀고, 큐를 쏜다.
-function FilmDirector({ directionRef, sensorRef, actorsRef, filmRef, onCue, speed, debugBus = false, debugTruck = false }) {
+function FilmDirector({ directionRef, sensorRef, actorsRef, filmRef, onCue, speed, debugBus = false, debugTruck = false, layout = "classic" }) {
+  const cues = layout === "art" ? CUES_ART : CUES;
+  const laneZ = layout === "art" ? -4.4 : -4.75;
   const session = useXR((xr) => xr.session);
   const euler = useMemo(() => new Euler(), []);
   useFrame((state, dt) => {
@@ -85,16 +87,16 @@ function FilmDirector({ directionRef, sensorRef, actorsRef, filmRef, onCue, spee
 
     // 영화 시간
     film.t += clamped * speed;
-    for (const cue of CUES) {
+    for (const cue of cues) {
       if (film.t >= cue.t && !film.fired.has(cue.name)) {
         film.fired.add(cue.name);
         onCue(cue);
       }
     }
 
-    const actors = evalActors(film.t, { dominant: film.dominant, npcDistance: film.npcDistance, busAt: film.busAt, leaveAt: film.leaveAt });
-    if (debugBus) actors.bus = { visible: true, x: -1.2, z: -4.75, stopped: true, doorOpen: true, headlight: 0.6 }; // ?bus=1 — 정차한 버스를 바로 본다 (디자인 점검용)
-    if (debugTruck) actors.truck = { visible: true, x: 1.0, z: -4.6 }; // ?truck=1 — 트럭을 물웅덩이 앞에 세운다
+    const actors = evalActors(film.t, { dominant: film.dominant, npcDistance: film.npcDistance, busAt: film.busAt, leaveAt: film.leaveAt, layout });
+    if (debugBus) actors.bus = { visible: true, x: -1.2, z: laneZ, stopped: true, doorOpen: true, headlight: 0.6 }; // ?bus=1 — 정차한 버스를 바로 본다 (디자인 점검용)
+    if (debugTruck) actors.truck = { visible: true, x: layout === "art" ? -2.0 : 1.0, z: laneZ }; // ?truck=1 — 트럭을 물웅덩이 앞에 세운다
     actorsRef.current = actors;
 
     // 옆사람이 앉아 있으면 그 방향을 센서에 알려 "사람에 대한 관심"을 잰다
@@ -207,7 +209,10 @@ export default function FilmPage() {
   const showHud = q.hud !== "0";
   const useRig = q.rig !== "0"; // ?rig=0 이면 리깅 캐릭터 대신 캡슐 실루엣
   const useCutout = q.cutout !== "0"; // ?cutout=0 이면 옆사람을 2D 컷아웃 대신 리깅 GLB로
-  const useArt = q.art !== "0"; // ?art=0 이면 정류장·카페·가로등·트럭·고양이를 예전 코드 지오메트리/PolyHaven 으로
+  const useArt = q.art !== "0"; // ?art=0 이면 예전 코드 지형(도로·숲·쉘터)과 예전 배치로
+  // 아트 월드(약 25MB)를 다 받기 전에 시작하면 도입부가 빈 화면 위에서 흘러간다 — 다 받을 때까지 시작 버튼을 잠근다
+  const { active: loading, progress: loadPct } = useProgress();
+  const ready = !loading && loadPct >= 100;
   const usePool = q.pool === "1"; // 대사 풀 모드 (lib/dialoguePool.js)
   const voiceFake = q.voicefake || null; // public/samples/<name>.m4a 를 마이크 대신 쓴다 (점검용)
   // 장면 목표 길이(초). 대사 오디오는 합쳐 1~1.5분이라 "5분 후 도착"을 채우려면 침묵을 늘려야 한다.
@@ -218,7 +223,7 @@ export default function FilmPage() {
   const [xrActive, setXrActive] = useState(false);
   // ?auto=1 — 마운트 직후 자동 시작 (관찰·리허설용. 브라우저 자동재생 정책에 따라 소리가 막힐 수 있다)
   const autoStart = q.auto === "1";
-  useEffect(() => { if (autoStart && phase === "gate") { const id = setTimeout(() => start(), 1500); return () => clearTimeout(id); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [autoStart]);
+  useEffect(() => { if (autoStart && phase === "gate" && ready) { const id = setTimeout(() => start(), 1500); return () => clearTimeout(id); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [autoStart, ready]);
   const useVoice = q.voice === "1" || !!voiceFake;
   const [signText, setSignText] = useState("");
   const [voiceStatus, setVoiceStatus] = useState("off");
@@ -620,7 +625,7 @@ export default function FilmPage() {
             <ReactiveStage directionRef={directionRef} actorsRef={actorsRef} dominant={dominant} paramsOut={paramsRef} cueRef={filmRef} useRig={useRig} useCutout={useCutout} useArt={useArt} rigTest={q.rigtest === "1"} signText={signText} reflect={fx && !xrActive} benchYaw={Number(q.benchyaw) || 0} />
             <XRProbe onChange={setXrActive} />
             <Effects enabled={fx} />
-            <FilmDirector directionRef={directionRef} sensorRef={sensorRef} actorsRef={actorsRef} filmRef={filmRef} onCue={onCue} speed={speed} debugBus={q.bus === "1"} debugTruck={q.truck === "1"} />
+            <FilmDirector directionRef={directionRef} sensorRef={sensorRef} actorsRef={actorsRef} filmRef={filmRef} onCue={onCue} speed={speed} debugBus={q.bus === "1"} debugTruck={q.truck === "1"} layout={useArt ? "art" : "classic"} />
             {q.gaze !== "0" && <DesktopGaze controlsRef={controlsRef} actorsRef={actorsRef} filmRef={filmRef} />}
           </XR>
           {/* 드래그 = 제자리에서 고개 돌리기. 타깃을 카메라 바로 앞 1cm 에 두면 궤도 회전이 머리 회전처럼 된다
@@ -710,8 +715,8 @@ export default function FilmPage() {
               바꿉니다. 헤드셋이 있으면 위 "Enter VR"로 들어가고, 없으면 드래그로 둘러보세요.
               {useCam ? " 웹캠은 몸의 반응을 보태는 보조 채널입니다." : ""}
             </p>
-            <button className={s.choiceBtn} onClick={start} style={{ justifyContent: "center" }}>
-              <span>시작하기{speed !== 1 ? ` (${speed}배속)` : ""}</span>
+            <button className={s.choiceBtn} onClick={start} disabled={!ready} style={{ justifyContent: "center", opacity: ready ? 1 : 0.55 }}>
+              <span>{ready ? `시작하기${speed !== 1 ? ` (${speed}배속)` : ""}` : `장면 불러오는 중… ${Math.round(loadPct)}%`}</span>
             </button>
           </div>
         </div>

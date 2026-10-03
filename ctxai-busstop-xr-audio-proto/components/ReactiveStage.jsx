@@ -22,7 +22,8 @@ import Puddles from "./Puddles";
 import Bus from "./Bus";
 import Truck from "./Truck";
 import CutoutPerson from "./CutoutPerson";
-import { ArtShelter, ArtCafe, ArtLantern, ArtTruck, ArtCat, LANTERN_HEAD } from "./ArtEnv";
+import { ArtTruck, ArtCat } from "./ArtEnv";
+import ArtWorld from "./ArtWorld";
 
 // HDRI 하늘 — PolyHaven(CC0) 순수 하늘 세 장을 연출 상태 가중치로 섞어 그린다.
 //   R: evening_road_01_puresky (낮은 저녁 해, 젖은 도로가 금빛으로)
@@ -34,6 +35,8 @@ export const HDRI = {
   H: "/reactive/hdri/kloofendal_overcast_puresky_2k.hdr",
   C: "/reactive/hdri/overcast_soil_puresky_2k.hdr",
 };
+const ART_HAZE = new Color(0.84, 0.6, 0.55); // 아트 하늘 지평선 평균색(0.84, 0.53, 0.43)을 조금 밝힌 것
+export const ART_SKY = "/reactive/hdri/art_sunset_sky.jpg"; // Unity 전달본 SunsetSky.png 를 2K로 줄인 것
 const SKY_VERT = `
   varying vec3 vWorld;
   void main() {
@@ -43,6 +46,7 @@ const SKY_VERT = `
   }`;
 const SKY_FRAG = `
   uniform sampler2D texR; uniform sampler2D texH; uniform sampler2D texC;
+  uniform sampler2D texA; uniform float artMix; // 아트 월드의 손그림 노을 하늘(?art) — 섞는 비율
   uniform vec3 weights;   // R,H,C (합 1)
   uniform vec3 exposures; // 장르별 노출
   uniform float rotation; // 해의 방위를 장면에 맞추는 회전(라디안)
@@ -63,6 +67,7 @@ const SKY_FRAG = `
     vec3 col = texture2D(texR, uv).rgb * weights.x * exposures.x
              + texture2D(texH, uv).rgb * weights.y * exposures.y
              + texture2D(texC, uv).rgb * weights.z * exposures.z;
+    col = mix(col, texture2D(texA, uv).rgb, artMix);
     // 지평선 부근에 안개색을 섞어 지형의 안개와 이어지게 한다
     float h = smoothstep(0.35, 0.0, dir.y);
     col = mix(col, hazeColor * max(0.35, dot(col, vec3(0.33))), h * haze);
@@ -401,11 +406,13 @@ function RealForest() {
 function SkyDome({ skyMat, envOut }) {
   const { gl } = useThree();
   const [texR, texH, texC] = useLoader(RGBELoader, [HDRI.R, HDRI.H, HDRI.C]);
+  const texA = useLoader(TextureLoader, ART_SKY);
+  useMemo(() => { texA.colorSpace = SRGBColorSpace; }, [texA]);
   const uniforms = useMemo(() => ({
-    texR: { value: texR }, texH: { value: texH }, texC: { value: texC },
+    texR: { value: texR }, texH: { value: texH }, texC: { value: texC }, texA: { value: texA }, artMix: { value: 0 },
     weights: { value: new Vector3(0, 1, 0) }, exposures: { value: new Vector3(1, 0.75, 1) },
     rotation: { value: 0 }, hazeColor: { value: new Color(0.56, 0.59, 0.64) }, haze: { value: 0.6 },
-  }), [texR, texH, texC]);
+  }), [texR, texH, texC, texA]);
   useEffect(() => {
     const pmrem = new PMREMGenerator(gl);
     pmrem.compileEquirectangularShader();
@@ -471,9 +478,9 @@ function usePosterTexture() {
 }
 
 // 비 갠 직후 — 정류장 지붕 앞 처마에서 물방울이 드문드문 떨어진다 (도입부 60초의 기다림에 움직임을 준다)
-function RoofDrips({ count = 9 }) {
+function RoofDrips({ count = 9, x0 = -0.85, y0 = 2.33, z0 = -0.98 }) {
   const drops = useMemo(() => Array.from({ length: count }, (_, i) => ({
-    x: -0.85 + (i / (count - 1)) * 3.0 + Math.sin(i * 7.3) * 0.08, phase: (Math.sin(i * 3.1) * 0.5 + 0.5) * 3.5, period: 2.6 + (i % 4) * 0.9,
+    x: x0 + (i / (count - 1)) * 3.0 + Math.sin(i * 7.3) * 0.08, phase: (Math.sin(i * 3.1) * 0.5 + 0.5) * 3.5, period: 2.6 + (i % 4) * 0.9,
   })), [count]);
   const refs = useRef([]);
   useFrame((state) => {
@@ -482,7 +489,7 @@ function RoofDrips({ count = 9 }) {
       const m = refs.current[i]; if (!m) return;
       const u = ((t + d.phase) % d.period) / d.period; // 0 → 1
       const fall = u < 0.32 ? u / 0.32 : 1; // 0.32 주기 동안 낙하, 나머지는 처마에 맺힘
-      m.position.set(d.x, 2.33 - fall * fall * 2.33, -0.98);
+      m.position.set(d.x, y0 - fall * fall * y0, z0);
       m.visible = u < 0.32 || u > 0.85; // 맺히는 마지막 구간에만 보인다
       const s = u > 0.85 ? 0.6 + (u - 0.85) / 0.15 * 0.6 : 1;
       m.scale.setScalar(s);
@@ -491,7 +498,7 @@ function RoofDrips({ count = 9 }) {
   return (
     <group>
       {drops.map((d, i) => (
-        <mesh key={i} ref={(el) => { refs.current[i] = el; }} position={[d.x, 2.33, -0.98]}>
+        <mesh key={i} ref={(el) => { refs.current[i] = el; }} position={[d.x, y0, z0]}>
           <sphereGeometry args={[0.011, 6, 6]} />
           <meshPhysicalMaterial color="#dfe9ee" roughness={0.05} metalness={0.1} transparent opacity={0.8} />
         </mesh>
@@ -512,7 +519,7 @@ function useRadialTexture() {
   }, []);
 }
 
-function Splash({ p }) {
+function Splash({ p, at = [0.6, 0.05, -3.6] }) {
   // 0~1 — 트럭이 물웅덩이를 밟아 물보라가 관객 쪽(+z)으로 부채꼴처럼 튀어 오르는 순간. 물방울 36개 + 안개 스프라이트.
   const mist = useRadialTexture();
   const drops = useMemo(() => Array.from({ length: 36 }, (_, i) => {
@@ -523,7 +530,7 @@ function Splash({ p }) {
   const spread = q * 2.8;
   const yArc = Math.sin(q * Math.PI) * 1.15;
   return (
-    <group position={[0.6, 0.05, -3.6]}>
+    <group position={at}>
       {drops.map((d, i) => (
         <mesh key={i} position={[Math.sin(d.a) * spread * d.s, yArc * d.up * d.s, Math.cos(d.a) * spread * d.s * 0.9]}>
           <sphereGeometry args={[d.r * (1 - q * 0.4), 6, 6]} />
@@ -608,6 +615,7 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
   const lampLight2 = useRef();
   const cafeGlow = useRef();
   const cafeLight = useRef();
+  const glowMat = useRef(); // 아트 월드 "Glow" 재질(가로등 확산판·카페 불빛)
   const busSigns = useBusSignTextures();
   const npcGaze = useRef();
   const npcGroup = useRef();
@@ -639,10 +647,19 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
       u.rotation.value = MathUtils.degToRad(p.sunAzimuth + 90);
       u.hazeColor.value.setRGB(p.fogColor[0], p.fogColor[1], p.fogColor[2]);
       u.haze.value = MathUtils.clamp(p.fogDensity * 7, 0.1, 0.55);
+      // 아트 월드: 도입부(판정 전)는 아트 노을 하늘 그대로, 판정이 굳을수록 장르 하늘이 35~65% 비쳐 든다
+      u.artMix.value = useArt ? 1 - 0.65 * sett : 0;
+      if (useArt) u.haze.value *= 0.35;
     }
     if (!scene.fog) scene.fog = fog;
     fog.color.setRGB(p.fogColor[0], p.fogColor[1], p.fogColor[2]);
     fog.density = p.fogDensity;
+    if (useArt) {
+      // 아트 월드는 장면이 넓고(숲까지 수십 m) 하늘이 손그림 노을이라, 회색 짙은 안개를 걷고 지평선 색(분홍빛 주황)으로 물들인다
+      const a = 1 - 0.65 * sett;
+      fog.density = p.fogDensity * MathUtils.lerp(1, 0.35, a);
+      fog.color.lerp(ART_HAZE, a * 0.8);
+    }
     scene.background = null;
     // 환경광 — 우세 장르(정착 전엔 H)의 PMREM 을 쓰고 세기만 상태로 보간한다.
     if (envMaps.current) {
@@ -682,6 +699,7 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
     if (lampBulb2.current) lampBulb2.current.emissiveIntensity = 0.1 + lampI * 1.4;
     if (lampLight2.current) lampLight2.current.intensity = lampI * 0.7;
     if (cafeGlow.current) cafeGlow.current.emissiveIntensity = 0.25 + p.cafeGlow * 0.9;
+    if (glowMat.current) glowMat.current.emissiveIntensity = 0.35 + lampI * 1.6;
     if (cafeLight.current) cafeLight.current.intensity = p.cafeGlow * 0.8;
 
     // 옆사람 시선 — 시선 접촉률만큼 관객(카메라)을 향해 고개를 돌린다.
@@ -724,6 +742,8 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
         shadow-camera-left={-14} shadow-camera-right={14} shadow-camera-top={14} shadow-camera-bottom={-14} shadow-camera-near={1} shadow-camera-far={40}
       />
 
+      {!useArt && (
+        <>
       {/* ================= 지형 — 스크립트 v2 §1 / 3D_배경_구성_기획 §4 =================
           관객은 벤치(원점)에 앉아 -z 를 본다. 도로는 정면에서 좌우(x)로 지나간다:
           가까운 연석 z=-3, 중앙선 z=-10, 건너편 연석 z=-17. 카페는 도로 건너 왼쪽(-38°),
@@ -776,15 +796,6 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
 
       {/* ================= 정류장 — 등 뒤가 유리, 앞은 도로로 열림 =================
           폭 3.2m (x −1.0…2.2): 관객은 벤치 왼쪽(x=0), 옆사람은 오른쪽(x 1.05~1.7)에 앉으므로 오른쪽으로 넓다 */}
-      {useArt && (
-        <>
-          <Suspense fallback={null}><ArtShelter /></Suspense>
-          {/* 지붕 아래 온광·빗방울은 연출이라 그대로 둔다 */}
-          <pointLight position={[0.6, 2.2, 0.0]} color="#ffb877" intensity={0.9} distance={5} decay={2} />
-          <RoofDrips />
-        </>
-      )}
-      {!useArt && (
       <group>
         {/* 지붕 + 네온 띠 */}
         <mesh position={[0.6, 2.38, 0.15]} rotation={[0.03, 0, 0]} castShadow receiveShadow>
@@ -819,7 +830,6 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
           </mesh>
         ))}
       </group>
-      )}
       {/* 정류장 이름 표지판 — 앞 왼쪽 기둥 옆 폴, 관객을 향한다 */}
       <mesh position={[-0.95, 1.05, -2.0]} castShadow>
         <cylinderGeometry args={[0.03, 0.035, 2.1, 8]} />
@@ -847,13 +857,6 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
       </mesh>
 
       {/* ================= 카페 — 도로 건너 왼쪽 약 -38°, 30m (v2.md §1-2) ================= */}
-      {useArt ? (
-        <Suspense fallback={null}>
-          <ArtCafe>
-            <pointLight ref={cafeLight} position={[0.8, 1.8, -3]} color="#ffa06a" intensity={1.2} distance={12} />
-          </ArtCafe>
-        </Suspense>
-      ) : (
       <group position={[-19, 0, -26]} rotation={[0, 0.25, 0]}>
         <mesh position={[0, 0.06, 0]} receiveShadow>
           <boxGeometry args={[4.6, 0.12, 3.6]} />
@@ -894,7 +897,6 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
           <meshStandardMaterial color="#2b2a28" roughness={0.6} />
         </mesh>
       </group>
-      )}
 
       {/* ================= 풀숲(뒤) · 길가 억새 ================= */}
       <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0.6, 0.02, 2.4]} receiveShadow>
@@ -916,24 +918,47 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
 
       {/* ================= 가로등 — 정류장 뒤(공포 트리거)와 도로 건너 ================= */}
       <group position={[1.6, 0, 1.7]}>
-        <Suspense fallback={null}>{useArt ? <ArtLantern armSign={-1} /> : <Prop url="/reactive/models/props/street_lamp_01.glb" scale={0.85} rotation={[0, Math.PI, 0]} />}</Suspense>
-        <mesh position={useArt ? [0, LANTERN_HEAD.y, -LANTERN_HEAD.z] : [0, 3.05, -0.35]}>
+        <Suspense fallback={null}><Prop url="/reactive/models/props/street_lamp_01.glb" scale={0.85} rotation={[0, Math.PI, 0]} /></Suspense>
+        <mesh position={[0, 3.05, -0.35]}>
           <sphereGeometry args={[0.1, 8, 8]} />
           <meshStandardMaterial ref={lampBulb} color="#fff2c0" emissive="#fff2c0" emissiveIntensity={0.1} />
         </mesh>
-        <pointLight ref={lampLight} position={useArt ? [0, LANTERN_HEAD.y, -LANTERN_HEAD.z] : [0, 3.0, -0.35]} color="#ffedb0" intensity={0} distance={6} />
+        <pointLight ref={lampLight} position={[0, 3.0, -0.35]} color="#ffedb0" intensity={0} distance={6} />
       </group>
       <group position={[5.5, 0, -18.6]}>
-        <Suspense fallback={null}>{useArt ? <ArtLantern armSign={1} /> : <Prop url="/reactive/models/props/street_lamp_01.glb" scale={0.85} />}</Suspense>
-        <mesh position={useArt ? [0, LANTERN_HEAD.y, LANTERN_HEAD.z] : [0, 3.05, 0.35]}>
+        <Suspense fallback={null}><Prop url="/reactive/models/props/street_lamp_01.glb" scale={0.85} /></Suspense>
+        <mesh position={[0, 3.05, 0.35]}>
           <sphereGeometry args={[0.1, 8, 8]} />
           <meshStandardMaterial ref={lampBulb2} color="#fff2c0" emissive="#fff2c0" emissiveIntensity={0.1} />
         </mesh>
-        <pointLight ref={lampLight2} position={useArt ? [0, LANTERN_HEAD.y, LANTERN_HEAD.z] : [0, 3.0, 0.35]} color="#ffedb0" intensity={0} distance={7} />
+        <pointLight ref={lampLight2} position={[0, 3.0, 0.35]} color="#ffedb0" intensity={0} distance={7} />
       </group>
       <group position={[-9.5, 0, -18.6]}>
-        <Suspense fallback={null}>{useArt ? <ArtLantern armSign={1} /> : <Prop url="/reactive/models/props/street_lamp_01.glb" scale={0.85} />}</Suspense>
+        <Suspense fallback={null}><Prop url="/reactive/models/props/street_lamp_01.glb" scale={0.85} /></Suspense>
       </group>
+
+        </>
+      )}
+      {/* ================= 아트 장면 전체(기본) — Unity 전달본 월드. 관객 기준 좌표는 components/ArtWorld.jsx 머리말 ================= */}
+      {useArt && (
+        <>
+          <Suspense fallback={null}><ArtWorld glowRef={glowMat} /></Suspense>
+          {/* 지붕 아래 온광·처마 빗방울 — 아트 쉘터(x −2.92…0.88, 앞 처마 z −0.97)에 맞춘 위치 */}
+          <pointLight position={[-1.0, 2.2, 0.3]} color="#ffb877" intensity={0.9} distance={6} decay={2} />
+          <RoofDrips x0={-2.75} y0={2.45} z0={-0.99} />
+          {/* 정류장 이름 표지판 — 관객 앞 왼쪽 인도(연석 z −2.7 안쪽) */}
+          <mesh position={[-0.95, 1.05, -2.0]} castShadow>
+            <cylinderGeometry args={[0.03, 0.035, 2.1, 8]} />
+            <meshStandardMaterial color="#33363c" />
+          </mesh>
+          <SignBoard text={signText || "호수공원 입구"} position={[-0.95, 1.78, -1.9]} />
+          {/* 포스터 — 아트 원본 포스터 자리(오른쪽 유리 안쪽, 관객 기준 약 +80°) */}
+          <mesh ref={posterRef} position={[0.62, 1.43, 0.27]} rotation={[0, -Math.PI / 2, 0.06]}>
+            <planeGeometry args={[0.32, 0.44]} />
+            <meshStandardMaterial map={posterTex} transparent alphaTest={0.4} roughness={0.9} side={2} />
+          </mesh>
+        </>
+      )}
 
       {/* 리깅 캐릭터 점검용 (?rigtest=1): 두 캐릭터를 관객 정면 3m에 세워 로딩·크기·방향을 확인한다 */}
       {rigTest && (
@@ -943,10 +968,9 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
           <mesh position={[1.2, 0.25, -3.2]}><boxGeometry args={[1.6, 0.5, 0.5]} /><meshStandardMaterial color="#6b4a2a" /></mesh>
           <group position={[0.8, 0, -3]}><RiggedPerson rig="A" seated facing={0} /></group>
           <group position={[1.6, 0, -3]}><RiggedPerson rig="B" seated facing={0} /></group>
-          {/* 아트 모델 점검(?art) — 트럭(−π/2 로 앞이 −x)·고양이(앞이 +z=관객)·가로등(팔 +z) */}
+          {/* 아트 모델 점검(?art) — 트럭(−π/2 로 앞이 −x)·고양이(앞이 +z=관객) */}
           <group position={[1.8, 0, -6]} rotation={[0, -Math.PI / 2, 0]}><ArtTruck /></group>
           <ArtCat x={-0.9} z={-1.6} running={false} facingBench bob={0} />
-          <group position={[-2.3, 0, -2.6]}><ArtLantern armSign={1} /></group>
           {/* 2D 컷아웃(?cutout) — 서 있는 3명 + 걷는 1명 + 벤치에 앉은 1명(오른쪽 옆자리) */}
           <group position={[-1.2, 0, -1.8]}><CutoutPerson genre="R" facing={0} /></group>
           <group position={[0, 0, -1.8]}><CutoutPerson genre="H" facing={Math.PI / 2} /></group>
@@ -987,7 +1011,7 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
           )}
         </group>
       )}
-      {actors.splash != null && <Splash p={actors.splash} />}
+      {actors.splash != null && <Splash p={actors.splash} at={useArt ? [-2.0, 0.05, -3.4] : undefined} />}
       {actors.cat?.visible && (useArt ? (
         <Suspense fallback={<Cat {...actors.cat} />}><ArtCat {...actors.cat} /></Suspense>
       ) : <Cat {...actors.cat} />)}
