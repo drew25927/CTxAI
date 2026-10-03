@@ -37,8 +37,8 @@ export function ArtTruck() {
 
 // 고양이 — 원본에서 머리가 +y_B(= GLB −z) 쪽이다. 기존 Cat 은 로컬 +z 가 앞이라 π 돌린다. 기준점 = 발 밑 중심(−0.45, 2.41).
 // 원본은 선 자세 하나뿐이라 달릴 땐 몸을 위아래로 들썩이고 앞뒤로 살짝 기울여 달리는 느낌만 낸다.
-export function ArtCat({ x, z, running, facingBench, bob }) {
-  const rot = facingBench ? 0.2 : -Math.PI / 2;
+export function ArtCat({ x, z, running, facingBench, bob, yaw }) {
+  const rot = yaw ?? (facingBench ? 0.2 : -Math.PI / 2);
   const y = running ? Math.abs(Math.sin(bob * 14)) * 0.05 : 0;
   const pitch = running ? Math.sin(bob * 14) * 0.07 : 0;
   return (

@@ -38,10 +38,16 @@ export const CUES = [
 ];
 
 import { pointOnRoute } from "./artWalkRoute.js";
+import { nearLane } from "./artRoad.js";
 
-// 아트 월드용 큐 — 카페가 약 60m 왼쪽(−80° 방향)이라 "카페 종소리·우비 인물" 관찰 방위만 다르다.
-// 인물은 동선을 따라 −80°에서 −20° 쪽으로 다가오므로 그 사이(−60°, 허용 ±28°)를 잡는다.
-export const CUES_ART = CUES.map((c) => (c.name === "cafeBell" ? { ...c, sense: { ...c.sense, azimuth: -60 } } : c));
+// 아트 월드용 큐 — 카페가 약 60m 왼쪽(−80° 방향)이고, 우비 인물 동선은 정류장 뒤편 보행로라 다가오는 내내 −85~−100°에 있다.
+// 그래서 관찰 방위를 −80°(허용 ±28° → −52~−108°)로 잡는다.
+// 고양이는 정면 가까이(오른쪽 8°)에 멈추므로 관찰 방위를 30° → 15°(들어오는 길과 멈춤 자리 사이)로, 머무는 시간만큼 길게.
+export const CUES_ART = CUES.map((c) => {
+  if (c.name === "cafeBell") return { ...c, sense: { ...c.sense, azimuth: -80 } };
+  if (c.name === "cat") return { ...c, sense: { ...c.sense, azimuth: 15, dur: c.sense.dur + 1.2 } };
+  return c;
+});
 
 function lerp(a, b, t) { return a + (b - a) * t; }
 function smooth(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
@@ -96,12 +102,24 @@ export function evalActors(t, { dominant = null, npcDistance = 0.9, busAt = null
   if (t >= T.truckStart && t <= T.truckEnd) {
     const p = (t - T.truckStart) / (T.truckEnd - T.truckStart);
     // 54m/9s ≈ 22km/h — 정면 시야(±48°)에 2초쯤 머문다. 아트 월드는 물웅덩이가 x≈−2 라 끝점을 −38 로 늘려 물보라 순간(29s)에 그 위를 지나게 한다
-    a.truck = { visible: true, x: lerp(27, art ? -38 : -27, p), z: laneZ };
+    const tx = lerp(27, art ? -38 : -27, p);
+    if (art) { const l = nearLane(tx); a.truck = { visible: true, x: tx, z: l.z, yaw: Math.atan2(-1, -l.slope) }; } // 휜 도로를 따라 −x 로
+    else a.truck = { visible: true, x: tx, z: laneZ };
     a.splash = t >= T.truckSplash - 0.2 && t <= T.truckSplash + 1.2 ? (t - (T.truckSplash - 0.2)) / 1.4 : null;
   } else { a.truck = { visible: false }; a.splash = null; }
 
   // 고양이 — 오른쪽 공원 진입로(9,-2.6)에서 뛰어들어 벤치 앞(0.9,-1.5)에 멈춰 관객을 보고, 왼쪽(-9,-2.2)으로 달아난다.
-  if (t >= T.catIn && t <= T.catGone) {
+  // 아트 월드 — 예전 멈춤 자리(0.9, −1.5)는 관객 눈(높이 1.15, 세로 시야 60°) 기준 오른쪽 26°·아래 22~29°라 화면 오른쪽 아래
+  // 귀퉁이에 걸리고, 좁은 화면(세로 화면·작은 창)에선 아예 화면 밖이었다. 멈춤 자리를 거의 정면 인도(0.35, −2.25 — 오른쪽 8°,
+  // 아래 17°)로 옮기고 관객을 보는 시간을 1.5초 → 2.2초로 늘린다. 비명(52s)은 그대로.
+  const catT = art ? { in: T.catIn, stop: T.catStop, out: T.catOut + 0.7, gone: T.catGone + 0.5 } : null;
+  if (art && t >= catT.in && t <= catT.gone) {
+    let x, z, running = true, facingBench = false, yaw = -Math.PI / 2;
+    if (t < catT.stop) { const p = seg(t, catT.in, catT.stop); x = lerp(8, 0.35, p); z = lerp(-2.45, -2.25, p); }
+    else if (t < catT.out) { x = 0.35; z = -2.25; running = false; facingBench = true; yaw = heading(-0.35, 2.6); } // 관객 쪽을 똑바로
+    else { const p = seg(t, catT.out, catT.gone); x = lerp(0.35, -9, p); z = lerp(-2.25, -2.0, p); }
+    a.cat = { visible: true, x, z, running, facingBench, yaw, bob: t };
+  } else if (!art && t >= T.catIn && t <= T.catGone) {
     let x, z, running = true, facingBench = false;
     if (t < T.catStop) { const p = seg(t, T.catIn, T.catStop); x = lerp(9, 0.9, p); z = lerp(-2.6, -1.5, p); }
     else if (t < T.catOut) { x = 0.9; z = -1.5; running = false; facingBench = true; }
@@ -149,13 +167,20 @@ export function evalActors(t, { dominant = null, npcDistance = 0.9, busAt = null
     const x = lerp(-48, BUS_STOP_X, p);
     const stopped = t >= busAt + 7;
     a.bus = { visible: true, x, z: laneZ, stopped, doorOpen: stopped, headlight: 1 - p * 0.4 };
+    if (art) { const l = nearLane(x); a.bus.z = l.z; a.bus.yaw = Math.atan2(1, l.slope); } // 휜 도로를 따라 +x 로
     // 인물 퇴장 — 공포: 벤치 뒤 풀숲으로 / 로맨스·코미디: 버스 문 앞(1.2,-2.6)으로. 정차는 9초(문 열림 1초 뒤 일어선다)
     if (stopped && a.npc.visible) {
       const q = seg(t, busAt + 8, busAt + 14);
       if (dominant === "H") {
         // 공포: 벤치 뒤 풀숲으로 — 아트 월드에선 옆사람이 왼쪽에 있으니 왼쪽 뒤로
-        const ex = art ? -3.4 : 1.6;
-        a.npc = { ...a.npc, seated: false, walking: q < 1, x: lerp(a.npc.x, ex, q), z: lerp(0.3, 3.6, q), yaw: heading(ex - a.npc.x, 3.3), bob: t, visible: q < 1 };
+        if (art) {
+          // 아트 쉘터는 뒤가 반투명 유리 벽이라 대각선으로 가면 벽을 뚫는다 — 손님이 들어온 왼쪽 입구(z≈0.7)로 나가 뒤편 풀숲으로
+          const x = q < 0.5 ? lerp(a.npc.x, -3.6, q * 2) : lerp(-3.6, -4.6, (q - 0.5) * 2);
+          const z = q < 0.5 ? lerp(0.3, 0.7, q * 2) : lerp(0.7, 3.2, (q - 0.5) * 2);
+          a.npc = { ...a.npc, seated: false, walking: q < 1, x, z, yaw: q < 0.5 ? heading(-1, 0.15) : heading(-0.4, 1), bob: t, visible: q < 1 };
+        } else {
+          a.npc = { ...a.npc, seated: false, walking: q < 1, x: lerp(a.npc.x, 1.6, q), z: lerp(0.3, 3.6, q), yaw: heading(0.5, 3.3), bob: t, visible: q < 1 };
+        }
       }
       else a.npc = { ...a.npc, seated: false, walking: q < 1, x: lerp(a.npc.x, BUS_STOP_X + 2.4, q), z: lerp(0.3, -2.7, q), yaw: heading(BUS_STOP_X + 2.4 - a.npc.x, -3.0), bob: t, visible: q < 0.98 };
     }
@@ -163,7 +188,10 @@ export function evalActors(t, { dominant = null, npcDistance = 0.9, busAt = null
     const leave = Math.max(leaveAt ?? busAt + 16, busAt + 16);
     a.bus.doorOpen = stopped && t < leave;
     a.busLeaving = t >= leave ? seg(t, leave, leave + 6) : 0;
-    if (a.busLeaving > 0) a.bus.x = lerp(BUS_STOP_X, 50, a.busLeaving);
+    if (a.busLeaving > 0) {
+      a.bus.x = lerp(BUS_STOP_X, 50, a.busLeaving);
+      if (art) { const l = nearLane(a.bus.x); a.bus.z = l.z; a.bus.yaw = Math.atan2(1, l.slope); }
+    }
     a.fade = t >= leave + 3 ? seg(t, leave + 3, leave + 7) : 0;
   } else { a.bus = { visible: false }; a.busLeaving = 0; a.fade = 0; }
 

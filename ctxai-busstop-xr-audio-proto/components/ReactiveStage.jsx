@@ -1003,7 +1003,7 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
         </group>
       )}
       {actors.truck?.visible && (
-        <group position={[actors.truck.x, 0, actors.truck.z]} rotation={[0, -Math.PI / 2, 0]}>
+        <group position={[actors.truck.x, 0, actors.truck.z]} rotation={[0, actors.truck.yaw ?? -Math.PI / 2, 0]}>
           {useArt ? (
             <Suspense fallback={<Truck x={0} z={0} />}><ArtTruck /></Suspense>
           ) : (
@@ -1048,7 +1048,7 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
         </group>
       )}
       {actors.bus?.visible && (
-        <group position={[actors.bus.x, 0, actors.bus.z]} rotation={[0, Math.PI / 2, 0]}>
+        <group position={[actors.bus.x, 0, actors.bus.z]} rotation={[0, actors.bus.yaw ?? Math.PI / 2, 0]}>
           <Bus {...actors.bus} x={0} z={0} signs={busSigns} />
         </group>
       )}
