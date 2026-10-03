@@ -639,7 +639,7 @@ export default function FilmPage() {
 
       <div className={s.topBar}>
         <a className={s.homeLink} href="/">← 대시보드</a>
-        <span className={s.dim}>반응형 실시간 영화 · 폐루프 연출 상태 · <a href="/story-vr" style={{ color: "inherit" }}>이전 버전(1회 판정)</a></span>
+        <span className={s.dim}>반응형 실시간 영화</span>
         <div className={s.genreChip}>
           <button className={s.resetBtn} onClick={enterVr}>🥽 Enter VR</button>
           {phase !== "gate" && (

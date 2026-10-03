@@ -159,7 +159,7 @@ export default function TodoPage() {
 
         {legacyScreens.length > 0 && (
           <details className={s.legacySection}>
-            <summary>이전 버전 <span className={s.dim}>{legacyScreens.length}개</span></summary>
+            <summary>숨긴 화면 <span className={s.dim}>{legacyScreens.length}개 · 이전 버전·개발 도구</span></summary>
             <div className={s.screenGrid}>
               {legacyScreens.map((it) => (
                 <a key={it.href} href={it.href} className={s.screenCard}>
@@ -274,9 +274,6 @@ export default function TodoPage() {
       )}
       </section>
 
-      <footer className={s.foot}>
-        <a href="/upload">파일 올리는 곳 →</a>
-      </footer>
     </main>
   );
 }
