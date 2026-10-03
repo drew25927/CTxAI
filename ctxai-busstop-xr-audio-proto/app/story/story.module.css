@@ -106,7 +106,7 @@
 .introCard {
   pointer-events: auto;
   width: min(560px, 92vw);
-  background: rgba(10, 10, 12, 0.55);
+  background: rgba(10, 10, 12, 0.72); /* 0.55 에서 올림 — 반투명 카드 뒤로 횡단보도 흰 줄이 흐릿한 글자처럼 비쳐 보였다(2026-10-02) */
   backdrop-filter: blur(6px);
   border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 18px;

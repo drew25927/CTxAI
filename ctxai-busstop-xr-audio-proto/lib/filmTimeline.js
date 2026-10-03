@@ -48,6 +48,24 @@ export const CUES_ART = CUES.map((c) => {
   return c;
 });
 
+// 고양이 구간 길이(초) — 뛰어드는(걷는) 시간 · 멈춰 보는 시간 · 빠져나가는 시간. classic 은 T.* 그대로, art 는 아트팀 동선(3.2 / 2 / 2.5).
+const CAT_BASE = {
+  classic: { stop: T.catStop - T.catIn, pause: T.catOut - T.catStop, out: T.catGone - T.catOut },
+  art: { stop: 3.2, pause: 2, out: 2.5 },
+};
+/**
+ * 고양이 동선의 절대 시각. cat(슬롯 제어기의 catSchedule 결과, classic 기준 시각)이 있으면 각 구간을 classic 중립 대비 같은 비율로
+ * 늘이거나 줄인다 — 중립 변형이면 레이아웃마다 기본 동선과 정확히 같다.
+ * @returns {{in:number, stop:number, out:number, gone:number}}
+ */
+export function catTimes(layout = "classic", cat = null) {
+  const base = CAT_BASE[layout === "art" ? "art" : "classic"], ref = CAT_BASE.classic;
+  const k = cat ? { stop: (cat.catStop - cat.catIn) / ref.stop, pause: (cat.catOut - cat.catStop) / ref.pause, out: (cat.catGone - cat.catOut) / ref.out } : { stop: 1, pause: 1, out: 1 };
+  const r2 = (x) => Math.round(x * 100) / 100;
+  const tin = T.catIn, stop = r2(tin + base.stop * k.stop), out = r2(stop + base.pause * k.pause), gone = r2(out + base.out * k.out);
+  return { in: tin, stop, out, gone };
+}
+
 function lerp(a, b, t) { return a + (b - a) * t; }
 function smooth(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
 function seg(t, a, b) { return smooth((t - a) / (b - a)); }
@@ -65,7 +83,8 @@ const BUS_STOP_X = -1.2; // 정차 시 차체 중심. 앞문은 +2.4 → x≈1.2
 // layout: "classic"(예전 코드 지형) | "art"(아트팀 Unity 월드, components/ArtWorld.jsx). 아트 월드는 도로·쉘터·카페 위치가
 // 달라서 몇 군데 좌표가 바뀐다 — 가까운 차선 중앙 z −4.4, 트럭이 밟는 큰 물웅덩이 x≈−2, 옆사람 자리는 관객 왼쪽,
 // 우비 인물은 건너편 인도 앞쪽 왼쪽에서 나타나 관객 앞에서 길을 건너고, 고양이는 쉘터 앞을 오른쪽→왼쪽으로 지나간다.
-export function evalActors(t, { dominant = null, npcDistance = 0.9, busAt = null, leaveAt = null, layout = "classic" } = {}) {
+// cat: 슬롯 제어기(lib/slotActuate.js catSchedule)가 정한 고양이 시각 {catIn, catStop, catOut, catGone}. 없으면 기본 동선(catTimes).
+export function evalActors(t, { dominant = null, npcDistance = 0.9, busAt = null, leaveAt = null, layout = "classic", cat = null } = {}) {
   const a = {};
   const art = layout === "art";
   const laneZ = art ? -4.4 : -4.75;
@@ -120,18 +139,19 @@ export function evalActors(t, { dominant = null, npcDistance = 0.9, busAt = null
   // 아트 월드 — 쉘터 기준 오른쪽에서 왼쪽으로 지나간다(사용자 요청). 시야 밖(오른쪽 65°)에서 걸어 들어와 쉘터 앞 인도를
   // 천천히 가로지르다(연석 흰 선에서 0.6m 안쪽) 거의 정면(0.35, −2.05 — 오른쪽 8°·아래 19°)에 멈춰 2초간 관객을 보고, 다시 왼쪽으로 빠져나간다.
   // (예전 자리는 화면 오른쪽 아래 귀퉁이였고, 빠르게 달려 지나가 눈에 띄지 않았다.) 비명(52s)은 그대로.
-  const catT = art ? { in: T.catIn, stop: T.catIn + 3.2, out: T.catIn + 5.2, gone: T.catIn + 7.7 } : null;
+  // 동선의 시각은 catTimes(layout, cat) — 슬롯 제어기가 변형을 주면 구간 길이만 달라지고, 없으면 위 기본 시각 그대로.
+  const catT = catTimes(layout, cat);
   if (art && t >= catT.in && t <= catT.gone) {
     let x, z, running = true, facingBench = false, yaw = -Math.PI / 2;
     if (t < catT.stop) { const p = (t - catT.in) / (catT.stop - catT.in); x = lerp(5.5, 0.35, p); z = lerp(-2.15, -2.05, p); } // 걷는 속도로 일정하게
     else if (t < catT.out) { x = 0.35; z = -2.05; running = false; facingBench = true; yaw = heading(-0.35, 2.4); }
     else { const p = seg(t, catT.out, catT.gone); x = lerp(0.35, -6.5, p); z = lerp(-2.05, -1.95, p); }
     a.cat = { visible: true, x, z, running, facingBench, yaw, bob: t };
-  } else if (!art && t >= T.catIn && t <= T.catGone) {
+  } else if (!art && t >= catT.in && t <= catT.gone) {
     let x, z, running = true, facingBench = false;
-    if (t < T.catStop) { const p = seg(t, T.catIn, T.catStop); x = lerp(9, 0.9, p); z = lerp(-2.6, -1.5, p); }
-    else if (t < T.catOut) { x = 0.9; z = -1.5; running = false; facingBench = true; }
-    else { const p = seg(t, T.catOut, T.catGone); x = lerp(0.9, -9, p); z = lerp(-1.5, -2.2, p); }
+    if (t < catT.stop) { const p = seg(t, catT.in, catT.stop); x = lerp(9, 0.9, p); z = lerp(-2.6, -1.5, p); }
+    else if (t < catT.out) { x = 0.9; z = -1.5; running = false; facingBench = true; }
+    else { const p = seg(t, catT.out, catT.gone); x = lerp(0.9, -9, p); z = lerp(-1.5, -2.2, p); }
     a.cat = { visible: true, x, z, running, facingBench, bob: t };
   } else a.cat = { visible: false };
 

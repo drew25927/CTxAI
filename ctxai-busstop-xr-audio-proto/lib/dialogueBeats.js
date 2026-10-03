@@ -93,6 +93,79 @@ export function beatsTotalSec(lines) {
   return lines.reduce((s, l) => { const b = beatOf(l); return s + (b.before || 0) + (b.after || 0) + (b.to === "ask" ? (b.wait ?? 2.5) : 0); }, 0);
 }
 
+// i 번째 줄 다음에 실제로 재생될 줄의 비트 — 갈래가 맞지 않는 줄은 건너뛴다(시간을 쓰지 않는다). 없으면 null
+export function nextPlayedBeat(lines, i, answered) {
+  for (let j = i + 1; j < lines.length; j++) { const b = beatOf(lines[j]); if (playsLine(b, answered)) return b; }
+  return null;
+}
+
+// ─── 자막 창과 화자 보기 창(B118) ───────────────────────────────────────────────────────
+// 자막은 말이 끝난 뒤(질문이면 기다림 뒤) 읽을 시간만큼만 남기고 지운다. 예전에는 다음 줄이 뜰 때까지 남아서
+// (H-05 는 말 2.5초에 자막 11.8초, 마지막 말은 버스가 떠날 때까지 8.8초) 합성 관객이 도로 쪽으로 돌아간 뒤에도
+// "자막은 있는데 말하는 사람이 없는" 화면이 줄마다 나왔다 — B21 녹화에서 자막이 떠 있는 표본 중 화자가 화면 안인
+// 비율이 38~40% 였다(work/evidence/b118/before.txt).
+// 합성 관객이 화자를 보는 창은 자막 창에 맞춘다: 줄이 뜨기 lookLead 초 전(돌아보는 데 걸리는 시간 — 공포형 22°→48° 가
+// TALK.rate 2.5 로 약 0.54초)부터 자막이 지워질 때까지. lookLead 는 줄 앞 기다림의 끝 부분을 떼어 쓰므로 대사 속도는 그대로다.
+// 숫자는 잠정치(창작값): 초당 12자로 읽는다고 보고, 말이 끝난 뒤 최소 0.7초·최대 2초 남긴다.
+export const SUBTITLE_TIMING = Object.freeze({ cps: 12, holdMin: 0.7, holdMax: 2.0, lookLead: 0.6 });
+
+/** 말이 끝난 뒤 자막을 더 남길 초. shownSec = 이미 떠 있던 초(말 + 질문 기다림). 공백은 글자 수에 넣지 않는다. */
+export function subtitleHoldSec(text, shownSec = 0) {
+  const T = SUBTITLE_TIMING;
+  const chars = String(text ?? "").replace(/\s/g, "").length;
+  const need = chars / T.cps - Math.max(0, Number(shownSec) || 0);
+  return Math.min(T.holdMax, Math.max(T.holdMin, need));
+}
+
+/** 줄 앞 기다림 waitSec 을 [그냥 쉬는 초, 화자 쪽을 보며 기다리는 초] 로 나눈다. 기다림이 lookLead 보다 짧으면 전부 보며 기다린다. */
+export function splitLead(waitSec, lead = SUBTITLE_TIMING.lookLead) {
+  const w = Math.max(0, Number(waitSec) || 0);
+  const l = Math.min(w, Math.max(0, Number(lead) || 0));
+  return [w - l, l];
+}
+
+// ─── 대사를 밟지 않는다(B118) ────────────────────────────────────────────────────────────
+// 연출 쪽 소리(제어기의 미세 자극 — 먼 기척)는 옆사람이 말하지 않고, 자막도 없고, 다음 줄을 보러 돌기(lookLead) 전까지
+// QUIET_NEED_SEC 이상 조용할 때만 낸다. B118 완주에서 질문 기다림 중(92.4s)이나 줄 사이 1.3초 틈(95.1s)에 울리면 합성 관객이
+// −50° 로 돌아서 다음 줄 자막이 떠 있는 동안 화자가 화면 밖이었다. 3초 = 그 틈에서 −50° → 45° 로 돌아오기까지 걸린 2.9초에
+// 맞춘 잠정치. 공포 트랙이면 H-05 뒤 8초("낙수 소리만 남는다")처럼 긴 침묵에서 울린다.
+export const QUIET_NEED_SEC = 3.0;
+
+/** 줄(beat)이 끝난 뒤 다음 줄을 보러 돌기 전까지 조용한 초 — after + 줄 사이 침묵(gapSec, 버스 앞 줄이면 0) + 다음 줄 before
+ *  (다음이 버스 장면이면 도착 7.2초) − lookLead. beat 가 null 이면 장면 첫 줄 앞(after·침묵 없음은 gapSec 0 으로 준다). */
+export function silenceAfter(beat, nextBeat, gapSec = 0, lead = SUBTITLE_TIMING.lookLead) {
+  const own = (beat?.after || 0) + (beat?.atBus ? 0 : Math.max(0, Number(gapSec) || 0));
+  const ahead = nextBeat ? (nextBeat.atBus ? 7.2 : nextBeat.before || 0) : 0;
+  return Math.max(0, own + ahead - (nextBeat ? lead : 0));
+}
+
+/** 지금(t) 연출 소리를 내도 대사를 밟지 않는가. s = { talking, lookAhead, lookUntil, quietUntil } (페이지의 filmRef 모양). */
+export function dialogueQuiet(s, t, need = QUIET_NEED_SEC) {
+  return quietState(s, t, need).quiet;
+}
+
+/**
+ * dialogueQuiet 의 사유판(B138) — 조용하지 않으면 왜인지와 모니터에 적을 한 마디를 돌려준다. 판정 규칙은 dialogueQuiet 와 같다.
+ * 디렉터 모니터가 대사 때문에 미룬 미세 자극을 "발동 조건 충족" 으로 적어, 보는 사람이 "조건이 됐는데 왜 안 울리나" 로 읽던 문제.
+ *   why "ask"  질문 뒤 관객의 고개 응답을 기다리는 중(talking 이면서 listen)
+ *       "talk" 옆사람이 말하는 중
+ *       "look" 다음 줄 직전 — 합성 관객이 화자 쪽으로 도는 중(lookAhead)
+ *       "sub"  말은 끝났고 자막이 남아 있음(lookUntil 까지) — left = 자막이 지워질 때까지 초
+ *       "gap"  조용하지만 다음 줄까지 need 초가 안 남음 — left = 남은 조용한 초
+ * @returns {{quiet:boolean, why:string|null, left?:number, label:string, need:number}}
+ */
+export function quietState(s, t, need = QUIET_NEED_SEC) {
+  const r = (quiet, why, label, left) => ({ quiet, why, label, need, ...(left != null ? { left } : {}) });
+  if (!s) return r(true, null, "");
+  if (s.talking) return s.listen ? r(false, "ask", "질문 뒤 응답 대기 중") : r(false, "talk", "대사 중");
+  if (s.lookAhead) return r(false, "look", "다음 줄 직전");
+  const lu = s.lookUntil ?? -Infinity;
+  if (t < lu) return r(false, "sub", "자막 표시 중", lu - t);
+  const left = (s.quietUntil ?? Infinity) - t;
+  if (left < need) return r(false, "gap", `다음 줄까지 ${Math.max(0, left).toFixed(1)}s`, Math.max(0, left));
+  return r(true, null, "");
+}
+
 // ─── 비언어 응답 감시 — 질문 뒤 wait 초 동안 머리 자세만 본다 ───────────────────────────
 // 응답으로 치는 것: 끄덕임(앙각 폭 ≥ NOD_DEG), 가로젓기(방위 폭 ≥ SHAKE_DEG 이면서 인물 쪽 반경 안),
 // 돌림(질문 시작 땐 인물에서 TURN_FROM_DEG 밖을 보다가 창 안에서 TURN_TO_DEG 안으로 들어옴).
