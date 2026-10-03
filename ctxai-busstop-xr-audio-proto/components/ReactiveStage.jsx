@@ -953,8 +953,8 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
           </mesh>
           <SignBoard text={signText || "호수공원 입구"} position={[-0.95, 1.78, -1.9]} />
           {/* 포스터 — 아트 원본 포스터 자리(오른쪽 유리 안쪽, 관객 기준 약 +80°). 원본 높이(중심 1.43m)는 앉은 눈높이(1.15m)보다
-              0.3m 위라 고개를 돌려도 화면 위쪽 끝에 걸렸다 — 눈높이(중심 1.12m)로 내렸다 */}
-          <mesh ref={posterRef} position={[0.62, 1.12, 0.27]} rotation={[0, -Math.PI / 2, 0.06]}>
+              0.3m 위라 고개를 돌려도 화면 위쪽 끝에 걸렸다 — 중심을 앉은 눈높이(1.15m)에 정확히 맞췄다 */}
+          <mesh ref={posterRef} position={[0.62, 1.15, 0.27]} rotation={[0, -Math.PI / 2, 0.06]}>
             <planeGeometry args={[0.32, 0.44]} />
             <meshStandardMaterial map={posterTex} transparent alphaTest={0.4} roughness={0.9} side={2} />
           </mesh>
