@@ -1,0 +1,68 @@
+{
+  "R": {
+    "front": {
+      "file": "R-front.png",
+      "w": 426,
+      "h": 1000
+    },
+    "threeq": {
+      "file": "R-threeq.png",
+      "w": 359,
+      "h": 1000
+    },
+    "side": {
+      "file": "R-side.png",
+      "w": 316,
+      "h": 1000
+    },
+    "back": {
+      "file": "R-back.png",
+      "w": 425,
+      "h": 1000
+    }
+  },
+  "H": {
+    "front": {
+      "file": "H-front.png",
+      "w": 443,
+      "h": 1000
+    },
+    "threeq": {
+      "file": "H-threeq.png",
+      "w": 393,
+      "h": 1000
+    },
+    "side": {
+      "file": "H-side.png",
+      "w": 309,
+      "h": 1000
+    },
+    "back": {
+      "file": "H-back.png",
+      "w": 447,
+      "h": 1000
+    }
+  },
+  "C": {
+    "front": {
+      "file": "C-front.png",
+      "w": 464,
+      "h": 1000
+    },
+    "threeq": {
+      "file": "C-threeq.png",
+      "w": 445,
+      "h": 1000
+    },
+    "side": {
+      "file": "C-side.png",
+      "w": 397,
+      "h": 1000
+    },
+    "back": {
+      "file": "C-back.png",
+      "w": 456,
+      "h": 1000
+    }
+  }
+}
