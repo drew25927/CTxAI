@@ -120,9 +120,11 @@ function FilmDirector({ directionRef, sensorRef, actorsRef, filmRef, onCue, spee
 }
 
 // 데스크톱 자동 시선 — 헤드셋에서는 관객이 직접 고개를 돌리지만, 화면 데모에서는 아무도 드래그하지 않으면
-// 옆사람이 앉은 뒤 카메라가 옆사람 쪽(오른쪽 약 60°)으로 천천히 돌아가고, 버스가 오면 정면으로 돌아온다.
+// 옆사람이 앉은 뒤 카메라가 옆사람 쪽으로 천천히 돌아가고, 버스가 오면 정면으로 돌아온다.
+// 옆사람 방향은 실제 앉은 자리에서 잰다(아트 장면은 왼쪽, 기본 장면은 오른쪽) — 옆사람이 화면 가장자리 1/3 에 오도록
+// 정옆에서 0.47rad(27°) 덜 돌리고, 앉은 머리(약 1.2m)를 보는 각에 0.1rad 를 더 내린다(도로가 화면에 남게).
 // 드래그하면 8초 동안 손을 뗀다. 자동으로 도는 동안은 "사람에 대한 관심" 측정을 끈다(film.autoGaze).
-const AUTO_GAZE_NPC = 1.1, AUTO_GAZE_BUS = 0.22, AUTO_GAZE_PITCH = -0.1; // 63° 오른쪽·약간 아래 — 옆사람이 화면 오른쪽 1/3 에 오고 도로가 남는다 (77° 는 얼굴이 화면을 채웠다)
+const AUTO_GAZE_BUS = 0.22, AUTO_GAZE_SHY = 0.47, AUTO_GAZE_PITCH = -0.1, NPC_HEAD_Y = 1.2; // 정옆보다 27° 덜 — 도로가 남는다 (정옆 가까이는 얼굴이 화면을 채웠다)
 function DesktopGaze({ controlsRef, actorsRef, filmRef }) {
   const session = useXR((xr) => xr.session);
   const manualUntil = useRef(0);
@@ -140,7 +142,13 @@ function DesktopGaze({ controlsRef, actorsRef, filmRef }) {
     const tune = (typeof window !== "undefined" && window.__gaze) || {}; // 점검용 덮어쓰기 {npc, bus, pitch} (rad)
     let target = null, targetPitch = 0;
     if (film.busAt != null) target = tune.bus ?? AUTO_GAZE_BUS;
-    else if (actors?.npc?.visible && actors.npc.seated) { target = tune.npc ?? AUTO_GAZE_NPC; targetPitch = tune.pitch ?? AUTO_GAZE_PITCH; }
+    else if (actors?.npc?.visible && actors.npc.seated) {
+      const cam = state.camera.position;
+      const dx = actors.npc.x - cam.x, dz = actors.npc.z - cam.z;
+      const npcYaw = Math.atan2(dx, -dz);
+      target = tune.npc ?? npcYaw - Math.sign(npcYaw) * AUTO_GAZE_SHY;
+      targetPitch = tune.pitch ?? Math.atan2(NPC_HEAD_Y - cam.y, Math.hypot(dx, dz)) + AUTO_GAZE_PITCH;
+    }
     if (target == null || performance.now() < manualUntil.current) { film.autoGaze = false; film.autoGazeHold = null; return; }
     // 현재 방위(오른쪽 +)·앙각을 카메라→타깃 벡터에서 읽어 목표 방위로 완만히 보간한다
     dir.copy(c.target).sub(state.camera.position);
