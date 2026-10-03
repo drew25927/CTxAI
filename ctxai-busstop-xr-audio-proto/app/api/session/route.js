@@ -5,8 +5,8 @@
 // 저장소는 다른 데이터와 같은 lib/store.js(배포판 Supabase, 키 없는 로컬은 storage/sessions/) —
 // 예전처럼 프로젝트 폴더에 파일로 쓰면 Vercel(읽기 전용 파일시스템)에서 500 이 난다.
 //
-//   POST /api/session  { ...exportSession() 결과, selfReport?: "R"|"H"|"C" }
-//   GET  /api/session  → 저장된 기록 목록과 요약(마지막 배합·앉은 인물·자기보고)
+//   POST /api/session  { ...exportSession() 결과, selfReport?: "R"|"H"|"C", route?: "film"|"interim" }
+//   GET  /api/session  → 저장된 기록 목록과 요약(라우트·합성 관객·배속·판정 때 배합·마지막 배합·앉은 인물·자기보고)
 //   GET  /api/session?id=...  → 기록 하나
 //   DELETE /api/session?id=... → 테스트·잘못된 기록 지우기
 
@@ -23,7 +23,10 @@ export async function POST(req) {
 
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const dom = /^[RHC]$/.test(body.dominant || "") ? body.dominant : "x";
-  const id = `${stamp}_${dom}`;
+  // film 이 아닌 라우트는 이름에 넣는다 — /interim 세션과 /film 세션을 목록에서 바로 가를 수 있게.
+  // /film 은 본문에 route:"film" 을 담지만(B100) 이름은 예전 그대로(<시각>_<장르>) 둔다 — 쌓인 파일럿 기록과 이름 규칙이 같도록.
+  const route = typeof body.route === "string" && /^[a-z]+$/.test(body.route) && body.route !== "film" ? `${body.route}_` : "";
+  const id = `${stamp}_${route}${dom}`;
   // 체험 카드 — 클라이언트가 한 회차 동안 같은 token 을 보내면(자기보고로 다시 저장해도) 같은 카드가 갱신된다.
   const { cardToken: wantedToken, ...rest } = body;
   const cardToken = typeof wantedToken === "string" && CARD_TOKEN.test(wantedToken) ? wantedToken : null;
@@ -52,7 +55,12 @@ export async function GET(req) {
     if (!j) continue;
     items.push({
       id: j.id, savedAt: j.savedAt, dominant: j.dominant ?? null, selfReport: j.selfReport ?? null,
+      // 라우트 — B100 이전 /film 세션은 route 가 없어 이름으로 가른다(/interim 은 처음부터 route·`_interim_`)
+      route: j.route || (/_interim_/.test(j.id || sid) ? "interim" : "film"),
+      viewer: j.viewer?.synthetic ? { profile: j.viewer.profile ?? null, label: j.viewer.label ?? null, seed: j.viewer.seed ?? null } : null,
+      speed: j.speed ?? 1,
       final: j.final?.current ?? null, settled: j.final?.settled ?? null, confidence: j.final?.confidence ?? null,
+      verdict: j.verdict ? { mix: j.verdict.mix ?? null, t: j.verdict.t ?? null } : null, // 판정 때 배합(B86 이후 /film 세션). final 은 끝 배합이라 판정과 1위가 다를 수 있다
       durationSec: j.trajectory?.length ? j.trajectory[j.trajectory.length - 1].t : null,
     });
   }

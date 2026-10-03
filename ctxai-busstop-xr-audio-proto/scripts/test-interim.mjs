@@ -10,6 +10,8 @@ import {
 } from "../lib/interimGrader.js";
 import { analyzeBurstFromSamples } from "../lib/interimMic.js";
 import { createStandUpSensor } from "../lib/standUpSense.js";
+import { createHeadPoseSensor } from "../lib/headPoseSense.js";
+import { CUES, T, S1_OBSERVE_END } from "../lib/interimTimeline.js";
 
 let n = 0;
 function test(name, fn) { try { fn(); n++; console.log("ok ", name); } catch (e) { console.log("FAIL", name, "—", e.message); process.exitCode = 1; } }
@@ -106,5 +108,48 @@ test("기립 — 3초에 걸친 완만한 상승(천천히 목을 폄)은 감지
   for (let i = 1; i <= steps; i++) stood = s.update(1.2 + (totalRise * i) / steps, dt, true) || stood;
   assert.equal(stood, false);
 });
+
+// ── S1 관찰 창이 판정 전에 닫히는가 (app/interim/page.js 의 프레임 순서 그대로) ─────────
+// 페이지는 매 프레임 sensor.update(실제 초) → 영화 시간 t += dt·speed → t ≥ cue.t 인 큐 발동 순으로 돌고,
+// sense 큐는 beginEvent(name, az, dur/speed, {tail: 4/speed}) 로 넘긴다. S1 은 dur 뒤 tail 까지 지켜본 다음에야
+// 채점되므로, 판정(T.judge) 시각에 figureApproach 채점이 이미 나와 있어야 judge() 에 S1 이 들어간다.
+// 2026-09-29 이전에는 dur = judge − figureStart 라 채점이 1:59 에 나와 판정에 S1 이 늘 빠졌다.
+function s1ScoredBeforeJudge(speed) {
+  const scoredAt = {};
+  const s = createHeadPoseSensor({ push: () => {}, mark: (name, d) => { if (name === "event:scored") scoredAt[d.name] = real; } });
+  const fired = new Set();
+  const dt = 1 / 24; // 헤드리스 크롬의 실제 프레임 간격 — 60fps 가 아니다
+  let real = 0, t = 0, judgeAt = null;
+  while (judgeAt == null && real < 200) {
+    s.update(-20, 0, 0, dt); real += dt;            // 인물 방향(-35°) 근처를 계속 본다 → looked
+    t += dt * speed;
+    for (const c of CUES) {
+      if (fired.has(c.name) || t < c.t) continue;
+      fired.add(c.name);
+      if (c.sense) s.beginEvent(c.name, c.sense.azimuth, c.sense.dur / speed, { kind: c.sense.kind, tail: 4 / speed });
+      if (c.name === "judge") judgeAt = real;
+    }
+  }
+  return { scoredAt: scoredAt.figureApproach, judgeAt, s1: s.report().events.find((e) => e.name === "figureApproach") };
+}
+
+test("S1 — 관찰 창(S1_OBSERVE_END)이 판정보다 2초(영화 시간) 먼저 닫힌다", () => {
+  assert.equal(S1_OBSERVE_END, T.judge - 2);
+  const s1 = CUES.find((c) => c.name === "figureApproach").sense;
+  assert.equal(T.figureStart + s1.dur + 4, S1_OBSERVE_END);
+});
+
+for (const speed of [1, 4, 6]) {
+  test(`S1 — 배속 ${speed}: 판정 시각에 figureApproach 채점이 이미 나와 있다(등급 병합 200ms 여유 포함)`, () => {
+    const r = s1ScoredBeforeJudge(speed);
+    assert.ok(r.judgeAt != null, "judge 큐가 발동해야 한다");
+    assert.ok(r.scoredAt != null, "figureApproach 가 채점돼야 한다");
+    assert.ok(r.judgeAt - r.scoredAt >= 0.2, `채점 ${r.scoredAt.toFixed(2)}s → 판정 ${r.judgeAt.toFixed(2)}s (실제 초) 차이가 0.2s 이상이어야 한다`);
+    assert.equal(r.s1.feats.looked, 1);
+    // 계속 봤으니 A(지속) 또는 B(사건 종료 1.5초 뒤에도 보고 있음 = 반복 확인). 배속에서는 그 1.5초(실제 초)가 tail(4/speed)보다
+    // 길어 재확인 판정이 안 나와 A 가 된다 — 센서 임계값이 실제 초 기준인 배속 인공물. 여기서는 "채점이 됐고 D 가 아님"만 본다.
+    assert.notEqual(gradeS1FromHeadPose(r.s1.feats), "D");
+  });
+}
 
 console.log(`\n${n} passed`);

@@ -30,7 +30,7 @@ export const T = {
   end: 140,                                         // 2:20 암전
 };
 
-// 한 번만 발동하는 큐 — 오디오·센서 사건. signal은 lib/interimJudge.js의 S1~S5와 대응한다.
+// 한 번만 발동하는 큐 — 오디오·센서 사건. sfx 는 /film 과 같은 public/reactive/audio/sfx_<키>.mp3(B13 · ?sfx=0 이면 재생 안 함). signal은 lib/interimJudge.js의 S1~S5와 대응한다.
 // sense가 있는 큐(S1·S3·S5)는 헤드셋 IMU 담당 — lib/headPoseSense.js의 beginEvent(name,
 // azimuthDeg, durationSec, {kind})에 그대로 넘긴다. sense가 없는 큐(S2·S4)는 웹캠 담당 —
 // lib/behaviorSense.js의 observe()를 그 시점에 짧게 돌린다. (프로젝트개요서 §3 센서 분담표)
@@ -38,15 +38,26 @@ export const T = {
 // S1(길 건너 판초 인물에 대한 지속적 관심)은 순간 사건이 아니라 0:15~1:55 내내 측정되는
 // 값이라, azimuth는 인물이 걸어오는 방향의 대략치(카페 쪽, -35°)로 근사했다 — 실제로는
 // 인물이 계속 이동하므로 이 고정값은 1차 근사다.
+//
+// S1 관찰 창은 판정(T.judge)보다 먼저 닫혀야 한다. lib/headPoseSense.js 는 dur 가 끝난 뒤 tail(4초, 회복·
+// 재확인 관찰)까지 더 지켜본 다음에야 채점(event:scored)하고, app/interim/page.js 는 그 등급을 200ms 주기로
+// judge() 입력에 병합한다. 예전처럼 dur = T.judge − T.figureStart 로 두면 채점이 1:59 에 나와 1:55 판정에
+// S1 이 한 번도 들어가지 못했다(2026-09-29 발견 — 세션 judge.breakdown 에 S3·S5 만 있었다). 그래서
+// dur = judge − figureStart − tail − 여유. 여유 2초는 배속 6 에서도 병합 주기가 판정 전에 한 번은 돌게 한다(0.33 실초).
+const S1_TAIL_SEC = 4;   // headPoseSense.beginEvent 의 tail 기본값 — page.js 도 4/speed 로 넘긴다
+const S1_MARGIN_SEC = 2; // 채점 → 등급 병합(200ms) → 판정 사이 여유(영화 초)
+export const S1_DUR = T.judge - T.figureStart - S1_TAIL_SEC - S1_MARGIN_SEC; // 94초 → 관찰 종료 0:15+94+4 = 1:53
+export const S1_OBSERVE_END = T.figureStart + S1_DUR + S1_TAIL_SEC;           // 113 — 회귀 테스트가 이 값으로 확인한다
 export const CUES = [
-  { t: 0.5, name: "ambience", loop: true },
-  { t: T.figureStart, name: "figureApproach", signal: "S1", sense: { azimuth: -35, dur: T.judge - T.figureStart, kind: "track" } },
-  { t: T.truckSplash, name: "truckSplash", signal: "S2" },
-  { t: T.poster, name: "poster", signal: "S3", sense: { azimuth: 72, dur: 3, kind: "probe" } },
-  { t: T.catIn + 3, name: "cat", signal: "S4" },
-  { t: T.frog, name: "frog", signal: "S5", sense: { azimuth: 135, dur: 3, kind: "probe" } },
+  { t: 0.5, name: "ambience", loop: true, sfx: "01", volume: 0.45 },
+  { t: T.figureStart, name: "figureApproach", signal: "S1", sfx: "09", volume: 0.55, sense: { azimuth: -35, dur: S1_DUR, kind: "track" } },
+  { t: T.truckSplash, name: "truckSplash", signal: "S2", sfx: "02", volume: 0.9 },
+  { t: T.poster, name: "poster", signal: "S3", sfx: "14", volume: 0.7, sense: { azimuth: 72, dur: 3, kind: "probe" } },
+  { t: T.catIn + 3, name: "cat", signal: "S4", sfx: "11", volume: 0.8 },
+  { t: T.frog, name: "frog", signal: "S5", sfx: "10", volume: 0.8, sense: { azimuth: 135, dur: 3, kind: "probe" } },
   { t: T.judge, name: "judge" },
   { t: T.figureGone, name: "figureGone" },
+  { t: T.npcSeated, name: "npcSeated", sfx: "16", volume: 0.6 }, // 옆사람 앉는 소리(B13) — signal·sense 없음, 판정에 쓰이지 않는다
   { t: T.transition, name: "transition" },
   { t: T.greeting, name: "greeting" },
   { t: T.end, name: "end" },
@@ -66,7 +77,9 @@ const PILLAR_X = -0.95, PILLAR_Z = 0.35; // components/BlockoutStage.jsx Shelter
 
 const NPC_ENTER_X = PILLAR_X, NPC_ENTER_Z = PILLAR_Z + 0.15; // figureGone과 거의 같은 자리에서 나온다
 
-export function evalActors(t, { dominant = null } = {}) {
+// seatDistance·approachSec(B170b) — 판정 뒤 관객별 연출. 기본값은 오늘 값(0.9 m · 6초)이라 인자를 안 넘기면 결과가 전과 같다.
+// 값은 lib/interimAdapt.js 가 θ̂·x̂ 로 정하고 app/interim/page.js 가 판정 순간 한 번 넘긴다. 판정(누가 앉는가)은 여기서 바꾸지 않는다.
+export function evalActors(t, { dominant = null, seatDistance = 0.9, approachSec = T.npcSeated - T.figureGone } = {}) {
   const a = {};
 
   // 판초 인물 — 정체 불명. T.figureGone에 기둥 옆으로 사라진다(판정된 인물로 "바뀌는" 게
@@ -95,14 +108,15 @@ export function evalActors(t, { dominant = null } = {}) {
   // 판정된 옆사람 — 기둥 옆(판초 인물이 사라진 자리)에서 나와 벤치로 걸어와 앉는다.
   // filmTimeline.evalActors의 npc 로직과 같은 모양(seatX·turnAt 보간)이지만 시작점만 다르다.
   if (dominant && t >= T.figureGone) {
-    const seatX = 0.35 + 0.9; // 착석 거리 — 연출 상태 세분화는 후속 튜닝 과제
-    const turnAt = T.npcSeated - 1.1;
+    const seatX = 0.35 + seatDistance; // 착석 거리 — 기본 0.9(오늘 값), 관객별 값은 interimAdapt(B170b)
+    const npcSeated = T.figureGone + approachSec; // 앉는 시각 — 기본 T.npcSeated(124)
+    const turnAt = npcSeated - 1.1;
     if (t < turnAt) {
       const p = seg(t, T.figureGone, turnAt);
       const x = lerp(NPC_ENTER_X, seatX + 0.15, p), z = lerp(NPC_ENTER_Z, -1.25, p);
       a.npc = { visible: true, x, z, seated: false, walking: true, yaw: heading(seatX + 6.15, 0.45), bob: t };
-    } else if (t < T.npcSeated) {
-      const p = seg(t, turnAt, T.npcSeated);
+    } else if (t < npcSeated) {
+      const p = seg(t, turnAt, npcSeated);
       const x = lerp(seatX + 0.15, seatX, p), z = lerp(-1.25, 0.3, p);
       a.npc = { visible: true, x, z, seated: false, walking: true, yaw: lerp(heading(seatX + 6.15, 0.45), Math.PI + 0.15, p), bob: t };
     } else {

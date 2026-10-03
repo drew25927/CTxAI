@@ -32,6 +32,43 @@ function useWindowTextures() {
   }, []);
 }
 
+// 열린 앞문 안쪽 — 이전 판은 어두운 평면에 emissive 온광을 균일하게 얹어서, 정차 중 바로 앞에서 보면 베이지 판 두 장으로 보였다(B30).
+// 창과 같은 방식으로 "승강 공간" 을 캔버스에 그린다: 천장 조명 띠 → 건너편 창(온광) → 어두운 통로 → 노란 논슬립 띠가 붙은 계단 두 단, 세로 손잡이 봉.
+// 좌우를 어둡게 눌러 개구부가 차체 안으로 들어가 보이게 한다. 발광은 어두운 부분이 남을 만큼만(0.35) 준다.
+function useDoorTexture() {
+  return useMemo(() => {
+    if (typeof document === "undefined") return null;
+    const W = 512, H = 960; // 개구부 1.04 × 1.96 m 비율
+    const c = document.createElement("canvas"); c.width = W; c.height = H; const g = c.getContext("2d");
+    const bg = g.createLinearGradient(0, 0, 0, H); bg.addColorStop(0, "#5a4c3a"); bg.addColorStop(0.35, "#3a3128"); bg.addColorStop(1, "#15130f");
+    g.fillStyle = bg; g.fillRect(0, 0, W, H);
+    g.fillStyle = "rgba(255,240,208,0.75)"; g.fillRect(0, 0, W, 34); // 천장 조명 띠
+    g.fillStyle = "rgba(255,232,190,0.28)"; g.fillRect(0, 34, W, 60); // 조명 번짐
+    // 건너편 창 — 통로 너머로 반대쪽 창의 온광이 보인다 (깊이감)
+    const far = g.createLinearGradient(0, 120, 0, 330); far.addColorStop(0, "#d8c19a"); far.addColorStop(1, "#9c8560");
+    g.fillStyle = far; g.fillRect(96, 120, 320, 210);
+    g.fillStyle = "#2b2620"; g.beginPath(); g.ellipse(300, 330, 58, 34, 0, Math.PI, 0); g.fill(); // 건너편 좌석의 승객 어깨
+    g.beginPath(); g.arc(300, 292, 24, 0, Math.PI * 2); g.fill();
+    g.fillStyle = "#1b1815"; g.fillRect(80, 330, 352, 150); // 건너편 좌석 등받이·통로 벽
+    g.fillStyle = "#26282b"; g.fillRect(0, 480, W, 220); // 통로 바닥(어두운 고무)
+    // 계단 두 단 — 발판(진회색)·수직면(더 어둡게)·논슬립 노란 띠
+    const step = (y, h) => {
+      g.fillStyle = "#3b3e43"; g.fillRect(0, y, W, h * 0.55);
+      g.fillStyle = "#24262a"; g.fillRect(0, y + h * 0.55, W, h * 0.45);
+      g.fillStyle = "#d9b530"; g.fillRect(0, y, W, 12);
+    };
+    step(700, 130); step(830, 130);
+    // 세로 손잡이 봉(크롬) — 천장에서 첫 계단까지
+    const pole = g.createLinearGradient(236, 0, 276, 0); pole.addColorStop(0, "#7c8288"); pole.addColorStop(0.45, "#e6eaee"); pole.addColorStop(1, "#5d6368");
+    g.fillStyle = pole; g.fillRect(236, 40, 40, 780);
+    // 좌우 그늘 — 개구부 안쪽이 차체 두께만큼 파여 보이게
+    const side = g.createLinearGradient(0, 0, W, 0);
+    side.addColorStop(0, "rgba(0,0,0,0.55)"); side.addColorStop(0.16, "rgba(0,0,0,0)"); side.addColorStop(0.84, "rgba(0,0,0,0)"); side.addColorStop(1, "rgba(0,0,0,0.55)");
+    g.fillStyle = side; g.fillRect(0, 0, W, H);
+    const tx = new CanvasTexture(c); tx.colorSpace = SRGBColorSpace; tx.anisotropy = 4; return tx;
+  }, []);
+}
+
 const L = 10.6, HW = 1.25, Y0 = 0.42, Y1 = 3.05; // 길이 · 반폭 · 바닥 · 지붕 (m)
 const BODY = "#2a62b4", SKIRT = "#dde2e7", TRIM = "#141920", GLASS = "#1f2c3a", RUBBER = "#0c0f12", CHROME = "#c9ced4";
 
@@ -110,6 +147,7 @@ function Arch({ side, z }) {
 export default function Bus({ x, z, headlight = 1, doorOpen = false, signs = {} }) {
   const body = useBodyGeometry();
   const winTex = useWindowTextures();
+  const doorTex = useDoorTexture();
   const rearPanes = [-4.55, -3.45, -2.35, -1.25, -0.15, 0.95];
   return (
     <group position={[x, 0, z]}>
@@ -150,15 +188,9 @@ export default function Bus({ x, z, headlight = 1, doorOpen = false, signs = {} 
           <group>
             <mesh position={[0, 1.42, 0.002]}>
               <planeGeometry args={[1.04, 1.96]} />
-              <meshStandardMaterial color="#2a2118" emissive="#ffd9a0" emissiveIntensity={0.55} roughness={1} />
-            </mesh>
-            <mesh position={[0, 0.5, 0.004]}>
-              <planeGeometry args={[1.04, 0.12]} />
-              <meshStandardMaterial color="#3a3d42" roughness={0.9} />
-            </mesh>
-            <mesh position={[0, 0.98, 0.004]}>
-              <planeGeometry args={[1.04, 0.05]} />
-              <meshStandardMaterial color="#3a3d42" roughness={0.9} />
+              {doorTex
+                ? <meshStandardMaterial map={doorTex} emissiveMap={doorTex} emissive="#ffffff" emissiveIntensity={0.35} roughness={1} />
+                : <meshStandardMaterial color="#2a2118" emissive="#ffd9a0" emissiveIntensity={0.35} roughness={1} />}
             </mesh>
             {[-0.5, 0.5].map((dx) => (
               <mesh key={dx} position={[dx, 1.42, 0.05]}>

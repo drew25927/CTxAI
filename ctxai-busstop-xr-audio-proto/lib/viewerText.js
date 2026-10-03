@@ -1,0 +1,316 @@
+// 관객에게 보여 주는 결과 문장 — /film 종료 카드와 /film/compare 비교 화면이 같은 규칙을 쓰도록 한곳에 둔다.
+//
+// 판정(0:58)은 "누가 옆에 앉는가" 를 한 번 정하는 이산 결정이고, 연출 상태(directionState)는 그 뒤에도
+// 반응을 계속 쌓는다(설계 원칙: 증거가 체험 내내 흐른다). 그래서 체험이 끝날 때의 배합은 판정 때와 다를 수
+// 있다 — 판정은 공포 42 : 로맨스 35 로 공포를 앉혔는데 끝 배합은 로맨스 42 가 앞서는 식. 이것을 "마지막 배합"
+// 하나로만 보이면 "옆에 앉은 사람: 공포 · 마지막 배합 로맨스 42%" 처럼 카드가 스스로 모순된다(B86).
+// 여기서는 판정 때 배합을 주 문장으로, 끝 배합은 "판정 뒤 흐름" 으로 나눠 적는다.
+//
+// 순수 함수만 둔다(node 로 테스트: scripts/test-viewer-text.mjs).
+
+import { ENGAGE_PARAMS } from "./engagementSense.js";
+
+export const GENRE_LABEL = { R: "로맨스", H: "공포", C: "블랙코미디" };
+const GENRES = ["R", "H", "C"];
+
+export function mmss(t) {
+  const s = Math.max(0, Math.floor(Number(t) || 0));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+function topOf(mix) {
+  return GENRES.slice().sort((a, b) => (mix[b] || 0) - (mix[a] || 0))[0];
+}
+
+/**
+ * 배합을 큰 순서로 "공포 42% · 로맨스 35% · 블랙코미디 23%".
+ * 반올림한 뒤 이웃끼리 같은 값이 되면(예: .359 vs .357 → "로맨스 36% · 공포 36%") 1위가 왜 1위인지 카드에서 안 보이므로
+ * 그때만 소수 한 자리(그래도 같으면 두 자리)로 내린다(B121). 동률이 아닌 보통 회차는 정수 그대로.
+ */
+export function mixText(mix, labels = GENRE_LABEL) {
+  if (!mix) return "";
+  const order = GENRES.slice().sort((a, b) => (mix[b] || 0) - (mix[a] || 0));
+  const pct = order.map((g) => (mix[g] || 0) * 100);
+  // 1위와 2위만 본다 — 2·3위의 동률(예: 드리프트가 끝난 /interim 의 "로맨스 100% · 공포 0% · 블랙코미디 0%")은 카드의 뜻을 바꾸지 않는다
+  let digits = 0;
+  for (; digits < 2; digits++) {
+    if (pct[0].toFixed(digits) !== pct[1].toFixed(digits)) break;
+  }
+  return order.map((g, i) => `${labels[g]} ${pct[i].toFixed(digits)}%`).join(" · ");
+}
+
+/**
+ * 판정 기록 — 세션에 저장된 verdict 가 있으면 그것, 없으면(B86 이전 세션) events 의 "cue judge" 시각에
+ * 가장 가까운 앞쪽 trajectory 표본으로 되살린다. 판정 전에 끝난 세션이면 null.
+ * @returns {{dominant, mix:{R,H,C}, t, confidence, source:"saved"|"trajectory"}|null}
+ */
+export function verdictOf(session) {
+  if (!session) return null;
+  const v = session.verdict;
+  if (v && v.dominant && v.mix) return { dominant: v.dominant, mix: v.mix, t: v.t ?? null, confidence: v.confidence ?? null, source: "saved" };
+  const judge = (session.events || []).find((e) => e.kind === "event" && e.name === "cue" && e.detail === "judge");
+  const traj = session.trajectory || [];
+  if (!judge || !traj.length) return null;
+  let p = null;
+  for (const s of traj) { if (s.t <= judge.t + 1e-6) p = s; else break; }
+  if (!p) return null;
+  const mix = { R: p.R, H: p.H, C: p.C };
+  // 페이지는 판정 순간의 current 로 dominant 를 정했으므로 저장된 dominant 를 우선한다(표본 간격 0.5초의 차이).
+  return { dominant: session.dominant || topOf(mix), mix, t: judge.t, confidence: p.confidence ?? null, source: "trajectory" };
+}
+
+/**
+ * 종료 카드·비교 화면의 배합 두 줄.
+ *  main  — "판정(0:58) 공포 42% · 로맨스 35% · 블랙코미디 23%" (판정이 없으면 끝 배합을 "끝 배합" 으로)
+ *  after — 판정 뒤 흐름. 끝 배합의 1위가 판정과 다르면 "판정 뒤 반응은 로맨스 쪽으로 기울었습니다 (끝 배합 …)",
+ *          같으면 "끝 배합 …". 판정이 없으면 null.
+ *  drifted — 끝 배합의 1위가 판정과 다른가.
+ */
+export function mixLines({ verdict, final }, labels = GENRE_LABEL) {
+  const fin = final?.current || final || null;
+  if (!verdict) return { main: fin ? `끝 배합 ${mixText(fin, labels)}` : "", after: null, drifted: false };
+  const when = verdict.t != null ? `판정(${mmss(verdict.t)})` : "판정";
+  const main = `${when} ${mixText(verdict.mix, labels)}`;
+  if (!fin) return { main, after: null, drifted: false };
+  const endTop = topOf(fin);
+  const drifted = endTop !== verdict.dominant;
+  const after = drifted
+    ? `판정 뒤 반응은 ${labels[endTop]} 쪽으로 기울었습니다 (끝 배합 ${mixText(fin, labels)})`
+    : `끝 배합 ${mixText(fin, labels)}`;
+  return { main, after, drifted };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 자극(탐침·사건) 이름 → 관객에게 보이는 이름. /film 종료 카드·/film/compare·/interim 이 같은 표를 쓴다(B108).
+export const STIMULUS_LABEL = {
+  poster: "포스터", cafeBell: "우비 인물", figure: "우비 인물", figureApproach: "우비 인물",
+  truck: "물보라", truckSplash: "물보라", frog: "개구리", cat: "고양이", catScream: "비명",
+  "micro-lamp": "가로등", "micro-door": "먼 문",
+};
+export function stimulusLabel(name) {
+  if (!name) return "";
+  if (STIMULUS_LABEL[name]) return STIMULUS_LABEL[name];
+  if (/^micro-\d+$/.test(name)) return "먼 문 소리"; // /film 의 미세 자극은 micro-1, micro-2 … 로 기록된다(슬롯 micro-door)
+  return name;
+}
+
+/**
+ * 관객 반응 지문 — fitViewerModel 의 θ̂ 를 사람이 읽는 한 문장으로. /film 종료 카드·/film/compare·/interim 이 같은 규칙(B84·B108).
+ * 이득 g 는 네 단(크게 흔들림 / 또렷이 / 살짝 / 차분). 문턱은 B152(반응 크기 항 포화) 뒤 1배속 합성 관객 실측으로 잡은 잠정치다(B224):
+ *   공포형 /interim g 1.005~1.007 · /film 제어 ON 0.980~0.984 · 같은 관객 OFF 0.895 · 호기심형 0.888 · 차분형 0.386(응답 1/5 · 사전값 쪽 수축).
+ *   gainClear 0.8 — 같은 합성 관객의 ON(0.980)·OFF(0.895)가 한 단에 들도록 그 묶음(0.89~1.01) 아래 0.09 여유를 두고 잡았다. 종전 0.9 는
+ *   두 값 사이에 있어 같은 관객이 ON "또렷이" · OFF "살짝" 으로 갈렸다. 그 대신 공포형과 호기심형은 θ̂ 가 가까워(g 1.0 vs 0.89 · L·τ·ρ 도 같은 단)
+ *   같은 지문 문장을 받는다 — 둘은 카드의 "돌아본·움찔만 한 사건" 줄(공포형은 뒤쪽 소리에 움찔·후퇴, 호기심형은 볼거리를 오래 읽음)과 팀 판정으로 갈린다.
+ *   gainHigh 1.2 는 B152 뒤 합성 관객이 닿지 않는 값(최대 1.007)이라 실제 관객의 더 큰 반응을 위해 남겨 둔다. B152 전 값(공포형 1.27 ·
+ *   호기심형 1.04 · 차분형 0.6)은 각속도 항이 상한 없이 더해져 부풀어 있었다.
+ * 응답이 minResp(3) 건 미만이면 θ̂ 는 사전분포에 끌린 값이라 성향을 단정하지 않고 반응 수만 적는다 — 1배속 /interim 차분형(응답 2/5 ·
+ * 신뢰도 0.2 · θ̂ 사전값)이 "…반복돼도 반응이 유지됐습니다" 를 받던 문제(B147). 습관화 구절은 반복 횟수(nth)가 다른 사건에 반응했을 때만
+ * (θ̂.levels ≥ 2) 붙인다 — 한 가지 nth 에서만 반응했으면 ρ 는 사전값 그대로다. 문장은 항상 나온다.
+ */
+export const FINGERPRINT_THRESHOLDS = { gainHigh: 1.2, gainClear: 0.8, gainLow: 0.45, latencyFast: 0.5, recoverFast: 2, habituate: 0.25, minResp: 3 }; // 잠정치(gainClear 0.9 → 0.8 · B224)
+const TIMES = ["", "한 번", "두 번", "세 번", "네 번"];
+export function fingerprintText(theta, T = FINGERPRINT_THRESHOLDS) {
+  if (!theta) return null;
+  const n = theta.n ?? 0, nResp = theta.nResp ?? 0;
+  if (n === 0) return "기록된 사건이 없어 반응 지문을 만들지 못했습니다";
+  if (nResp === 0) return `사건 ${n}개에 반응한 기록이 없어 반응 지문을 만들지 못했습니다`;
+  if (nResp < T.minResp) return `사건 ${n}개 중 ${TIMES[nResp] || `${nResp}번`}만 반응해 반응 지문을 쓰기에는 이릅니다`;
+  const gain = theta.g >= T.gainHigh ? "자극마다 크게 흔들렸고, "
+    : theta.g >= T.gainClear ? "자극에 또렷이 흔들렸고, "
+    : theta.g >= T.gainLow ? "자극에 살짝 흔들렸고, "
+    : "전반적으로 차분했고, ";
+  const lat = theta.L < T.latencyFast ? "빠르게 반응하고" : "한 박자 늦게 반응하고";
+  const fast = theta.tau < T.recoverFast;
+  if (!habituationObserved(theta)) return `${gain}${lat} ${fast ? "금방 가라앉았습니다" : "여운이 오래 남았습니다"}`;
+  const rec = fast ? "금방 가라앉았으며" : "여운이 오래 남았으며";
+  const hab = theta.rho > T.habituate ? "반복될수록 반응이 눈에 띄게 줄었습니다" : "반복돼도 반응이 유지됐습니다";
+  return `${gain}${lat} ${rec} ${hab}`;
+}
+/** 습관화 ρ 가 관측에서 나왔는가 — levels(응답이 걸친 nth 가짓수) ≥ 2. levels 가 없는 옛 θ̂ 는 확신도에 곱해진 0.5 배로 되살린다. */
+export function habituationObserved(theta) {
+  if (!theta) return false;
+  if (theta.levels != null) return theta.levels >= 2;
+  return (theta.confidence ?? 0) >= Math.min(1, (theta.nResp ?? 0) / 5) - 1e-3;
+}
+
+// 장면 이름 — /film 은 phase 이벤트(intro·judged·scene·bus), /interim 은 cue 이벤트(judge·transition·greeting)로 장면이 바뀐다.
+const PHASE_LABEL = { intro: "도입부", judged: "판정 직후", scene: "옆사람 장면", bus: "버스 장면", judge: "판정 직후", transition: "전환 장면", greeting: "인사 장면" };
+function phaseEvents(events) {
+  return (events || []).filter((e) => (e.name === "phase" && PHASE_LABEL[e.detail]) || (e.name === "cue" && typeof e.detail === "string" && ["judge", "transition", "greeting"].includes(e.detail)));
+}
+/** t 시각에 걸친 대사 줄 — talk 이벤트(detail.from ~ t). 창이 안 겹치면 3초 안의 가장 가까운 줄. */
+export function talkAt(events, t0, t1 = t0) {
+  let best = null;
+  for (const e of events || []) {
+    if (e.name !== "talk" || !e.detail || e.detail.from == null) continue;
+    const a = e.detail.from, b = e.t;
+    const overlap = a <= t1 && b >= t0;
+    const gap = overlap ? 0 : Math.min(Math.abs(a - t1), Math.abs(b - t0));
+    if (gap > 3) continue;
+    if (!best || gap < best.gap) best = { seq: e.detail.seq, from: a, to: b, gap };
+  }
+  return best;
+}
+export function sceneAt(events, t) {
+  let cur = null;
+  for (const e of phaseEvents(events)) { if (e.t <= t + 1e-6) cur = PHASE_LABEL[e.detail]; else break; }
+  return cur;
+}
+/**
+ * t(영화 시간) 앞에 시작한 마지막 사건 — 사건·대사·장면 이름이 없는 창에 "개구리 뒤 (1:51)" 로 자리를 주는 데 쓴다(B237).
+ * 탐침 레코드의 onset 은 센서 시계(실제 초)라 speed 를 곱해 영화 시간으로 맞춘다. 없으면 null.
+ * @param {Array<{name:string, onset:number}>} stimuli
+ */
+export function prevStimulus(stimuli, t, speed = 1) {
+  const sp = speed || 1;
+  let best = null;
+  for (const s of stimuli || []) {
+    if (s?.onset == null || !s.name) continue;
+    const at = s.onset * sp;
+    if (at <= t + 1e-6 && (!best || at > best.onset)) best = { name: s.name, onset: at };
+  }
+  return best;
+}
+
+/**
+ * /film 세션의 이벤트를 영화 시간으로 — /film 은 이벤트 t 와 집중도 시각이 실제 경과 초이고(directionState.elapsed),
+ * talk 의 detail.from 과 verdict.t 만 영화 시간(film.t = 실제 초 × speed)이다. 1배속이면 둘이 같아 아무것도 바뀌지 않는다.
+ * /interim 은 cue 이벤트가 이미 영화 시간이라 이 함수를 거치지 않는다.
+ */
+export function filmTimeEvents(events, speed = 1) {
+  const sp = speed || 1;
+  if (sp === 1) return events || [];
+  return (events || []).map((e) => ({ ...e, t: e.t * sp }));
+}
+
+/**
+ * 종료 카드·비교 화면의 "집중한 순간" — engagement.summary 의 집중 구간(focusSpan)을 사람이 읽는 말로(B117).
+ *  near 가 있으면 "고양이 (0:45)", 없으면 그 시각에 걸친 대사 줄("대사 05 무렵 (1:43)")이나 장면 이름("버스 장면 (2:30)"),
+ *  그것도 없으면 그 앞에 시작한 마지막 사건에 "뒤" 를 붙여 "개구리 뒤 (1:51)"(B237 · ctx.stimuli 가 있을 때), 아무것도 없으면 "2:28 무렵". 시각은 언제나 m:ss.
+ *  구간이 판정 전 창이면(focusSegments 의 before · 판정 뒤 창이 없던 회차 · B242) 괄호 안에 "· 판정 전" 을, 이름이 없으면 "판정 전 1:51 무렵" 으로 밝힌다.
+ * 집중도 센서의 시각은 실제 경과 초라 배속 회차에서는 ctx.speed 를 곱해 영화 시간으로 맞춘다. ctx.events 는 영화 시간이어야 한다
+ * (/film 은 filmTimeEvents 로 맞춰서, /interim 은 그대로). ctx.stimuli 는 센서 시계 그대로(여기서 × speed).
+ * @param {object} summary  engagement.summary
+ * @param {{events?:Array, speed?:number, stimuli?:Array, labelOf?:(name:string)=>string}} ctx  labelOf — 사건 이름표(기본 stimulusLabel · /interim 은 momentsOf 가 "S5 개구리" 로)
+ */
+export function focusText(summary, ctx = {}) {
+  const span = focusSpan(summary, ctx.speed);
+  if (!span) return null;
+  const { t0, t1, near, before } = span;
+  const label = ctx.labelOf || stimulusLabel;
+  const when = before ? `${mmss(t0)} · 판정 전` : mmss(t0);
+  if (near) return `${label(near)} (${when})`;
+  const talk = talkAt(ctx.events, t0, t1);
+  if (talk) return `대사 ${talk.seq} 무렵 (${when})`;
+  const scene = sceneAt(ctx.events, t0);
+  if (scene) return `${scene} (${when})`;
+  const prev = prevStimulus(ctx.stimuli, t0, ctx.speed);
+  if (prev) return `${label(prev.name)} 뒤 (${when})`;
+  return `${before ? "판정 전 " : ""}${mmss(t0)} 무렵`;
+}
+
+/**
+ * "가장 차분히 집중한 순간" 의 구간(영화 시간) — 그래프에 띠로 칠할 때 쓴다. 없으면 null.
+ * 요약에 focusSegments(사건 관측 밖 · 첫 사건 뒤 창 · engagementSense.focusSegmentsOf · B231)가 있으면 그것만 쓴다(비어 있으면 없음).
+ * focusSegments 가 없는 옛 요약은 topSegments(점수 최고 · 사건 창일 수 있음)로 — 옛 세션은 sessionCompare.momentsOf 가 창·점수 계열로 다시 만든다.
+ */
+export function focusSpan(summary, speed = 1) {
+  const seg = summary?.focusSegments ? summary.focusSegments[0] : summary?.topSegments?.[0];
+  if (!seg) return null;
+  const sp = speed || 1;
+  return { t0: seg.t0 * sp, t1: (seg.t1 ?? seg.t0) * sp, near: seg.near?.name || null, ...(seg.before ? { before: true } : {}) }; // before — 판정 전 창(B242)
+}
+
+/**
+ * 카드의 세 기준(B128·B144) — 한 카드에 나란히 놓이는 세 값은 서로 다른 것을 잰다.
+ *  turned/flinched/watched/missed
+ *                          사건마다 "돌아봤나" — 사건 방향 ±28°(ENGAGE_PARAMS.LOOK_TOL_DEG) 안으로 고개를 돌렸는가.
+ *                          돌아보지 않았어도 빠른 고개 움직임·후퇴가 있으면 반응(responded)이라 "움찔만" 으로 따로 센다.
+ *                          사건이 시작될 때 이미 그쪽을 보고 있었고 움찔하지도 않았으면 "보고만 있던" — 돌아본 것도, 놓친 것도 아니다(B158).
+ *  peak                    긴장 추정 x̂ 최고 — 반응의 크기. 돌아보지 않은 사건이 여기 올 수 있다(1배속 /film ON 공포형의 개구리:
+ *                          135° 뒤라 돌아보지 않았지만 511°/s 로 움찔해 x̂ 1.00).
+ *  calm                    판정 뒤 사건 사이 창(사건 관측 밖) 중 집중도 점수 최고 2초 — 사건 반응률·잔움직임 억제·의도 방향 응시의 합성
+ *                          (lib/engagementSense.js focusSegmentsOf · B231 · 판정 뒤 창 B242). 사건 창은 사건 쪽으로 고개를 돌려 멈춘 창이라 점수가 구조적으로 높아
+ *                          "가장 차분히 집중한 순간 비명 (0:52)"(1배속 /film OFF)이 나왔다 — 그래서 사건 창은 후보에서 뺀다. 판정 전 창은 /interim 에서
+ *                          S5 관측 종료~판정 사이 1:51 이 프로필과 무관하게 뽑혀 두 관객이 같은 문구가 됐다 — 그래서 판정 뒤 창으로 좁히고, 판정 뒤 창이
+ *                          없는 회차만 판정 전 창을 "판정 전" 표시로 쓴다. 크게 반응한 순간과 다른 때일 때가 많다 — 1배속 /interim 공포형은
+ *                          S5 개구리(1:37) vs 전환 장면(2:12), /film OFF 는 개구리(0:38) vs 판정 직후(1:02).
+ * 옛 이름("본 것/안 본 것"·"가장 집중"·"x̂ 최고")은 기준을 밝히지 않아 "안 본 개구리가 x̂ 최고" 가 모순으로 읽혔다.
+ */
+export const MOMENT_TEXT = {
+  turned: "돌아본 사건",
+  flinched: "움찔만 한 사건",
+  watched: "보고만 있던 사건",
+  missed: "반응 없던 사건",
+  peak: "가장 크게 반응한 순간",
+  calm: "가장 차분히 집중한 순간",
+};
+export const MOMENT_BASIS = [
+  "돌아본 사건 = 사건 방향 ±28° 안으로 고개를 돌림",
+  "움찔만 = 고개가 빠르게 움직였지만 사건 쪽으로 돌아보지는 않음(이미 보던 사건에 움찔한 경우 포함)",
+  "보고만 있던 = 사건이 시작될 때 이미 그쪽을 보고 있었고 움찔하지 않음",
+  "가장 크게 반응 = 사건 반응이 있는 순간 중 긴장 추정 x̂ 최고(반응의 크기 · 상한 1.0 에 닿은 봉우리가 여럿이면 잘리기 전 값으로 가름)",
+  "가장 차분히 집중 = 판정 뒤 사건 사이 창(사건 관측 밖) 중 집중도 점수 최고 2초(사건 반응률·잔움직임 억제·의도 방향 응시) · 판정 뒤 창이 없는 회차만 판정 전 창을 '판정 전' 표시로",
+];
+
+/**
+ * 사건별 반응 갈래 하나(B102) — 종료 카드·비교 화면(`sessionCompare.lookResponses`)과 `/film` HUD 사건 표가 이 한 함수로 가른다.
+ * 레코드는 집중도 센서 `engagement.stimuli` 의 한 항목(닫힌 것 또는 진행 중 잠정 레코드 · lib/engagementSense.js recordOf):
+ *   turned    사건 방향 ±LOOK_TOL_DEG 안으로 고개를 돌림(응답 창 안 · 시작할 때 이미 보던 것은 제외 · B158)
+ *   responded 돌아봄 · 빠른 고개 움직임(MOVE_RESP_DEG_S) · 후퇴(RETREAT_M) 중 하나 — θ̂ 의 "응답" 이 세는 것
+ *   atOnset   시작할 때 이미 그쪽을 보고 있었음
+ * turned 가 없는 옛 레코드(B158 이전)는 looked 를 돌아본 것으로 읽고, 헤드 포즈 채점 feats(looked 만 있음)를 넘기면 돌아봄/반응 없음 둘로만
+ * 갈린다 — 옛 `/film` 세션의 lookResponses 와 같은 규칙. 옛 HUD 의 "봤음/안 봄" 은 응시 여부라 θ̂ "응답" 과 어긋나 보였다
+ * (개구리는 "안 봄" 인데 509°/s 로 움찔해 응답 6/6 에 들어갔다 · work/evidence/review38/onh/onh-t072.png).
+ * @returns {"turned"|"flinched"|"watched"|"missed"|null}
+ */
+export function lookKind(rec) {
+  if (!rec) return null;
+  if (rec.turned ?? rec.looked) return "turned";
+  if (rec.responded) return "flinched";
+  if (rec.atOnset) return "watched";
+  return "missed";
+}
+
+/** HUD 사건 표의 짧은 갈래 이름(B102) — MOMENT_TEXT 의 "돌아본 사건 · 움찔만 한 사건 · 보고만 있던 사건 · 반응 없던 사건" 과 같은 낱말. */
+export const LOOK_KIND_SHORT = { turned: "돌아봄", flinched: "움찔만", watched: "보고만 있음", missed: "반응 없음" };
+
+/** HUD 사건 행 "복귀" 항의 즉시 문턱(초 · 잠정치 · B253) — 헤드 포즈 채점의 recoverySec 는 눈을 뗀 스텝에 이미 기준선 안이면 0 이 되므로, 이 값 미만은 "복귀 즉시" 로 적는다. */
+export const RECOVERY_INSTANT_SEC = 0.05;
+
+/** HUD 사건 표 툴팁(B102) — 네 갈래의 기준과 모니터 "응답" 의 관계. 수치는 lib/engagementSense.js ENGAGE_PARAMS 그대로.
+ *  "복귀" 는 헤드 포즈 복귀 시간(lib/headPoseSense.js · 기준선 ±LOOK_TOLERANCE_DEG×0.6)이고 디렉터 모니터 θ̂ 의 "회복 τ" 와 다른 값이라 낱말을 갈랐다(B254). */
+export const HUD_LOOK_BASIS = `돌아봄 = 사건 방향 ±${ENGAGE_PARAMS.LOOK_TOL_DEG}° 안으로 고개를 돌림 · 움찔만 = 돌아보지는 않았지만 빠른 고개 움직임(${ENGAGE_PARAMS.MOVE_RESP_DEG_S}°/s)·후퇴(${ENGAGE_PARAMS.RETREAT_M}m) · 보고만 있음 = 시작할 때 이미 그쪽을 보고 있었고 움찔하지 않음 · 반응 없음 = 셋 다 아님 · 응답 창 = 사건 시작 뒤 ${ENGAGE_PARAMS.RESPONSE_SEC}초(추적 사건은 길이 전체) — 창 뒤의 빠른 움직임은 응답으로 세지 않고 "(응답 창 밖)" 으로 밝힘 · 디렉터 모니터 θ̂ 의 "응답" = 돌아봄 + 움찔만(봤는지와 별개) · 속도·후퇴·복귀 수치는 헤드 포즈 채점(lib/headPoseSense.js) · 복귀 = 사건 방향에서 눈을 뗀 뒤 고개가 기준선 ±${(ENGAGE_PARAMS.LOOK_TOL_DEG * 0.6).toFixed(1)}° 안으로 돌아오기까지(${RECOVERY_INSTANT_SEC}초 미만이면 "즉시") · 모니터 θ̂ 의 "회복 τ" 는 반응이 가라앉는 시상수라 다른 값`;
+
+/** 디렉터 모니터 "응답 N/N" 툴팁(B102) — 응답의 정의 한 줄. HUD 사건 표·종료 카드·비교 화면과 같은 이름을 쓴다. */
+export const RESPONSE_BASIS = `응답 = 돌아봄 + 움찔만(빠른 고개 움직임 ${ENGAGE_PARAMS.MOVE_RESP_DEG_S}°/s · 후퇴 ${ENGAGE_PARAMS.RETREAT_M}m) · 봤는지(응시)와 별개 — 보고만 있음·반응 없음은 응답이 아님 · HUD 사건 표·종료 카드·비교 화면의 같은 이름`;
+
+/**
+ * `/film` HUD 사건 표 한 줄(B102) — "돌아봄 2.4s · 재확인 · 속도 492°/s · 후퇴 0.03m · 복귀 1.1s".
+ * 갈래는 집중도 센서 레코드(rec · 카드와 같은 기준 · lookKind)로, 초·속도·후퇴·복귀 수치는 헤드 포즈 채점 feats 로 적는다(종전 그대로).
+ * 복귀(feats.recoverySec · 눈을 뗀 뒤 기준선 안으로 돌아오기까지)는 θ̂ 의 "회복 τ" 와 다른 값이라 "복귀" 로 적고(B254), RECOVERY_INSTANT_SEC 미만이면 "복귀 즉시"(B253 · "회복 0.0s" 가 찍히던 문제).
+ * 응시 초(feats.lookSec)는 돌아봄·보고만 있음이면 갈래 뒤에("돌아봄 2.4s"), 움찔만·반응 없음인데 0 이 아니면(응답 창 뒤에 늦게 봄) "· 응시 1.2s".
+ * 보고만 있음·반응 없음인데 속도가 움찔만 기준(ENGAGE_PARAMS.MOVE_RESP_DEG_S) 이상이면 "속도 80°/s (응답 창 밖)"(B257) — 갈래는 응답 창
+ * (탐침 RESPONSE_SEC · 추적 사건은 길이 전체) 안의 움직임만 세고 속도는 관측 창(사건 + tail) 전체의 최댓값이라, 차분형 포스터 행이
+ * "반응 없음 · 속도 80°/s" 로 찍혀 툴팁의 60°/s 와 모순으로 읽혔다(work/evidence/b252/crop-hud-missed-s8.png). rec 가 없으면 창을 모르므로 안 붙인다.
+ * 진행 중 잠정 레코드면 "· 잠정". rec 가 없으면(집중도 센서 없음·옛 세션) feats 의 looked 로 돌아봄/반응 없음만 가른다.
+ */
+export function hudEventText(feats = {}, rec = null) {
+  const kind = lookKind(rec || feats) || "missed";
+  const lookSec = Number(feats.lookSec) || 0;
+  const parts = [`${LOOK_KIND_SHORT[kind]}${(kind === "turned" || kind === "watched") && lookSec > 0 ? ` ${lookSec.toFixed(1)}s` : ""}`];
+  if ((kind === "flinched" || kind === "missed") && lookSec > 0) parts.push(`응시 ${lookSec.toFixed(1)}s`);
+  if (rec?.provisional) parts.push("잠정");
+  if (feats.recheck) parts.push("재확인");
+  const vel = Number(feats.maxVel) || 0;
+  // 응답 창 밖의 빠른 움직임(B257) — 괄호 안은 NBSP 로 묶어 좁은 HUD 칸에서 "(응답 / 창 밖)" 으로 안 갈리게(B253 과 같은 이유)
+  const outside = !!rec && (kind === "watched" || kind === "missed") && vel >= ENGAGE_PARAMS.MOVE_RESP_DEG_S;
+  parts.push(`속도 ${vel.toFixed(0)}°/s${outside ? " (응답\u00a0창\u00a0밖)" : ""}`);
+  parts.push(`후퇴 ${(Number(feats.retreat) || 0).toFixed(2)}m`);
+  if (feats.recoverySec != null) {
+    const r = Number(feats.recoverySec);
+    // "복귀 즉시" 는 두 낱말이라 좁은 HUD 칸에서 "복귀 / 즉시" 로 갈린다(page.js glueNumbers 는 숫자 앞 공백만 묶는다) — monitorText 와 같은 NBSP 로 잇는다
+    parts.push(Number.isFinite(r) && r < RECOVERY_INSTANT_SEC ? "복귀\u00a0즉시" : `복귀 ${r.toFixed(1)}s`);
+  }
+  return parts.join(" · ");
+}
