@@ -35,6 +35,7 @@ export async function POST(req) {
   const rec = await addFacecheckResult({
     name: body?.name, intended, judged, correct,
     fear: body?.fear, amusement: body?.amusement, scores: body?.scores,
+    ambiguousWith: body?.ambiguousWith, baseline: body?.baseline,
   });
   return Response.json({ ok: true, result: rec, results: await listFacecheckResults() });
 }
