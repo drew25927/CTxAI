@@ -38,9 +38,10 @@ export const CUES = [
 ];
 
 import { nearLane, roadCenter } from "./artRoad.js";
+const CAT_CURB_OFFSET = 1.15, ROAD_Y = -0.08; // 고양이 길: 가까운 차선 중앙에서 인도 쪽으로 1.15m(연석 바로 밖), 차도 노면 높이
 
 // 아트 월드용 큐 — 우비 인물은 건너편 인도 앞쪽 왼쪽(−66°)에서 정면 쪽(−25°)으로 걸어오다 길을 건너므로(−63°)
-// 그 가운데 −42°(허용 ±28° → −14~−70°)로 잡는다. 고양이는 오른쪽에서 들어와 정면(오른쪽 8°)에 멈춘다.
+// 그 가운데 −42°(허용 ±28° → −14~−70°)로 잡는다. 고양이는 오른쪽에서 들어와 정면(오른쪽 6°)에 멈춘다.
 // 고양이는 정면 가까이(오른쪽 8°)에 멈추므로 관찰 방위를 30° → 15°(들어오는 길과 멈춤 자리 사이)로, 머무는 시간만큼 길게.
 export const CUES_ART = CUES.map((c) => {
   if (c.name === "cafeBell") return { ...c, sense: { ...c.sense, azimuth: -42 } };
@@ -56,7 +57,7 @@ function seg(t, a, b) { return smooth((t - a) / (b - a)); }
  * 시간 t(초) → 배우 상태. dominant는 판정 뒤 앉는 인물(R/H/C), npcDistance는 연출 상태에서 온 값.
  * busAt: 버스가 도착하기 시작한 시각(페이지가 대사 종료 시 설정). null이면 아직.
  */
-// 배우 좌표계 — 관객이 앉은 벤치 바닥 = 원점, 정면 = -z, 오른쪽 = +x.
+// 배우 좌표계 — 관객이 서 있는 자리(쉘터 안 벤치 오른쪽 끝) 바닥 = 원점, 정면 = -z, 오른쪽 = +x.
 // 도로: 가까운 차선 중심 z=-4.75, 건너편 차선 중심 z=-15.25 (연석 -3 / 중앙선 -10 / 건너편 연석 -17).
 // 카페 (-19,-26) · 횡단보도 x=-5 · 공원 입구 숲 +x 쪽 · 풀숲 뒤 z>2.
 function heading(dx, dz) { return Math.atan2(dx, dz); } // 모델 정면(+z)이 진행 방향을 보게 하는 yaw
@@ -117,16 +118,19 @@ export function evalActors(t, { dominant = null, npcDistance = 0.9, busAt = null
   } else { a.truck = { visible: false }; a.splash = null; }
 
   // 고양이 — 오른쪽 공원 진입로(9,-2.6)에서 뛰어들어 벤치 앞(0.9,-1.5)에 멈춰 관객을 보고, 왼쪽(-9,-2.2)으로 달아난다.
-  // 아트 월드 — 쉘터 기준 오른쪽에서 왼쪽으로 지나간다(사용자 요청). 시야 밖(오른쪽 65°)에서 걸어 들어와 쉘터 앞 인도를
-  // 천천히 가로지르다(연석 흰 선에서 0.6m 안쪽) 거의 정면(0.35, −2.05 — 오른쪽 8°·아래 19°)에 멈춰 2초간 관객을 보고, 다시 왼쪽으로 빠져나간다.
-  // (예전 자리는 화면 오른쪽 아래 귀퉁이였고, 빠르게 달려 지나가 눈에 띄지 않았다.) 비명(52s)은 그대로.
+  // 아트 월드 — 쉘터 기준 오른쪽에서 왼쪽으로 지나간다(사용자 요청). 시야 밖(오른쪽 57°)에서 걸어 들어와 연석 바로 밖 차도 가장자리
+  // (가까운 차선 중앙 +1.15m ≈ z −3.2, 노면 y −0.08)를 천천히 가로지르다 거의 정면(0.35, −3.2 — 오른쪽 6°·아래 22°)에 멈춰
+  // 2초간 관객을 보고, 다시 왼쪽으로 빠져나간다(큰 물웅덩이 x≈−2 를 지난다). 관객이 서 있게 바뀌어(눈 1.6m) 인도(z −2.05)에
+  // 멈추면 아래 31° 로 화면 밑에 걸려 차도 쪽으로 1.15m 물렸다. 트럭(25–34s)과 겹치지 않는다. 비명(52s)은 그대로.
   const catT = art ? { in: T.catIn, stop: T.catIn + 3.2, out: T.catIn + 5.2, gone: T.catIn + 7.7 } : null;
   if (art && t >= catT.in && t <= catT.gone) {
-    let x, z, running = true, facingBench = false, yaw = -Math.PI / 2;
-    if (t < catT.stop) { const p = (t - catT.in) / (catT.stop - catT.in); x = lerp(5.5, 0.35, p); z = lerp(-2.15, -2.05, p); } // 걷는 속도로 일정하게
-    else if (t < catT.out) { x = 0.35; z = -2.05; running = false; facingBench = true; yaw = heading(-0.35, 2.4); }
-    else { const p = seg(t, catT.out, catT.gone); x = lerp(0.35, -6.5, p); z = lerp(-2.05, -1.95, p); }
-    a.cat = { visible: true, x, z, running, facingBench, yaw, bob: t };
+    let x, running = true, facingBench = false, yaw = -Math.PI / 2;
+    if (t < catT.stop) { const p = (t - catT.in) / (catT.stop - catT.in); x = lerp(5.5, 0.35, p); } // 걷는 속도로 일정하게
+    else if (t < catT.out) { x = 0.35; running = false; facingBench = true; }
+    else { const p = seg(t, catT.out, catT.gone); x = lerp(0.35, -6.5, p); }
+    const z = nearLane(x).z + CAT_CURB_OFFSET;
+    if (facingBench) yaw = heading(-x, -z);
+    a.cat = { visible: true, x, y: ROAD_Y, z, running, facingBench, yaw, bob: t };
   } else if (!art && t >= T.catIn && t <= T.catGone) {
     let x, z, running = true, facingBench = false;
     if (t < T.catStop) { const p = seg(t, T.catIn, T.catStop); x = lerp(9, 0.9, p); z = lerp(-2.6, -1.5, p); }
