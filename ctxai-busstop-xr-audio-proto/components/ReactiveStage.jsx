@@ -944,7 +944,11 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
         <group position={[actors.figure.x, 0, actors.figure.z]} rotation={[0, actors.figure.yaw ?? 0, 0]}>
           {useRig ? (
             <Suspense fallback={<Person raincoat tint="#5d6f82" walking={actors.figure.walking} bob={actors.figure.bob} scale={0.95} />}>
-              <RiggedPerson rig="A" walking={actors.figure.walking} scale={0.98} facing={0} />
+              {useCutout ? (
+                <CutoutPerson genre="H" walking={actors.figure.walking} scale={0.97} facing={0} />
+              ) : (
+                <RiggedPerson rig="A" walking={actors.figure.walking} scale={0.98} facing={0} />
+              )}
             </Suspense>
           ) : (
             <Person raincoat tint="#5d6f82" walking={actors.figure.walking} bob={actors.figure.bob} scale={0.95} />
