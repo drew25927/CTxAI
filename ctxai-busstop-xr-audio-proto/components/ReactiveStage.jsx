@@ -952,8 +952,8 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
             <meshStandardMaterial color="#33363c" />
           </mesh>
           <SignBoard text={signText || "호수공원 입구"} position={[-0.95, 1.78, -1.9]} />
-          {/* 포스터 — 아트 원본 포스터 자리(오른쪽 유리 안쪽, 관객 기준 약 +80°). 원본 높이(중심 1.43m)는 화면 위쪽 끝에 걸려
-              중심 1.12m 로 내렸다. 관객이 서 있게 바뀐 뒤에도(눈높이 1.6m) 이 위치는 그대로 둔다 — 오른쪽으로 돌아 약간 내려다보는 자리 */}
+          {/* 포스터 — 아트 원본 포스터 자리(오른쪽 유리 안쪽, 관객 기준 약 +80°). 원본 높이(중심 1.43m)는 앉은 눈높이(1.15m)보다
+              0.3m 위라 고개를 돌려도 화면 위쪽 끝에 걸렸다 — 눈높이(중심 1.12m)로 내렸다 */}
           <mesh ref={posterRef} position={[0.62, 1.12, 0.27]} rotation={[0, -Math.PI / 2, 0.06]}>
             <planeGeometry args={[0.32, 0.44]} />
             <meshStandardMaterial map={posterTex} transparent alphaTest={0.4} roughness={0.9} side={2} />
@@ -1054,8 +1054,8 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
         </group>
       )}
 
-      {/* 암전 — 카메라 앞에 붙는 검은 판(서 있는 눈높이 1.6m 앞) */}
-      <mesh position={[0, 1.6, -0.6]} renderOrder={999}>
+      {/* 암전 — 카메라 앞에 붙는 검은 판 */}
+      <mesh position={[0, 1.15, -0.6]} renderOrder={999}>
         <planeGeometry args={[6, 4]} />
         <meshBasicMaterial ref={fadeMat} color="#000" transparent opacity={0} depthTest={false} />
       </mesh>
