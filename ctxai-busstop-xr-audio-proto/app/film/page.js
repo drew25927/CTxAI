@@ -596,16 +596,29 @@ export default function FilmPage() {
   // 종료 시 자동 저장 (data/sessions/, Supabase 아님). 실패해도 체험은 영향 없다.
   const [savedId, setSavedId] = useState(null);
   const [selfReport, setSelfReport] = useState(null);
+  // 체험 카드 — 한 회차 동안 같은 token(추측 불가한 32자 16진)을 쓴다. 저장이 성공하면 /card/<token> 을 QR 로 띄운다.
+  const cardTokenRef = useRef(null);
+  const [cardQr, setCardQr] = useState(null);
   async function saveSession(extra = {}) {
-    const data = sessionData(extra);
+    const data = sessionData({ cardToken: cardTokenRef.current, ...extra });
     if (!data) return;
     try {
       const r = await fetch("/api/session", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) });
       const j = await r.json();
-      if (j?.ok) setSavedId(j.id);
+      if (j?.ok) {
+        setSavedId(j.id);
+        if (j.cardToken && !cardQr) {
+          const QR = (await import("qrcode")).default;
+          setCardQr(await QR.toDataURL(`${window.location.origin}/card/${j.cardToken}`, { margin: 1, width: 280, color: { dark: "#0b0e13", light: "#ffffff" } }));
+        }
+      }
     } catch { /* 로컬 저장 실패는 무시 */ }
   }
-  useEffect(() => { if (phase === "end") { setSelfReport(null); saveSession(); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [phase]);
+  useEffect(() => { if (phase === "end") {
+    setSelfReport(null); setCardQr(null);
+    cardTokenRef.current = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
+    saveSession();
+  } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [phase]);
 
   function downloadSession() {
     const data = sessionData({ selfReport });
@@ -782,6 +795,14 @@ export default function FilmPage() {
               ))}
               {savedId && <span className={s.dim} style={{ fontSize: 11 }}>· 저장됨</span>}
             </div>
+            {cardQr && (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, margin: "14px 0 4px" }}>
+                <img src={cardQr} alt="내 카드 QR" width={132} height={132} style={{ borderRadius: 8, background: "#fff" }} />
+                <div style={{ textAlign: "left", fontSize: 14, lineHeight: 1.6, opacity: 0.85 }}>
+                  <b>폰으로 QR을 찍으면</b><br />오늘의 정류장 카드를<br />이미지로 가져갈 수 있어요.
+                </div>
+              </div>
+            )}
             <div className={f.endActions}>
               <button className={`${f.endBtn} ${f.endBtnMain}`} onClick={() => { reset(); setTimeout(start, 50); }}>다시 앉기</button>
               <button className={f.endBtn} onClick={downloadSession}>세션 기록 내려받기 (JSON)</button>

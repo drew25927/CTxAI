@@ -10,7 +10,8 @@
 //   GET  /api/session?id=...  → 기록 하나
 //   DELETE /api/session?id=... → 테스트·잘못된 기록 지우기
 
-import { putSessionRecord, getSessionRecord, listSessionIds, removeSessionRecord } from "../../../lib/store";
+import { putSessionRecord, getSessionRecord, listSessionIds, removeSessionRecord, putCard } from "../../../lib/store";
+import { makeCardSummary, CARD_TOKEN } from "../../../lib/cardSummary";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,12 +24,18 @@ export async function POST(req) {
   const stamp = new Date().toISOString().replace(/[:.]/g, "-");
   const dom = /^[RHC]$/.test(body.dominant || "") ? body.dominant : "x";
   const id = `${stamp}_${dom}`;
+  // 체험 카드 — 클라이언트가 한 회차 동안 같은 token 을 보내면(자기보고로 다시 저장해도) 같은 카드가 갱신된다.
+  const { cardToken: wantedToken, ...rest } = body;
+  const cardToken = typeof wantedToken === "string" && CARD_TOKEN.test(wantedToken) ? wantedToken : null;
   try {
-    await putSessionRecord(id, { id, savedAt: new Date().toISOString(), ...body });
+    await putSessionRecord(id, { id, savedAt: new Date().toISOString(), ...(cardToken ? { cardToken } : {}), ...rest });
   } catch (e) {
     return Response.json({ ok: false, error: `저장 실패: ${e.message}` }, { status: 502 });
   }
-  return Response.json({ ok: true, id });
+  if (cardToken) {
+    try { await putCard(cardToken, makeCardSummary(rest)); } catch { /* 카드 실패는 기록 저장에 영향 없다 */ }
+  }
+  return Response.json({ ok: true, id, ...(cardToken ? { cardToken } : {}) });
 }
 
 export async function GET(req) {

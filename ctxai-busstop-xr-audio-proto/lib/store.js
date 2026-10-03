@@ -431,3 +431,21 @@ export async function removeSessionRecord(id) {
   if (!SESSION_ID.test(id)) return;
   await removeKey(`sessions/${id}.json`);
 }
+
+// ---------- 체험 카드 (/card/<token>) ----------
+// 세션 기록(sessions/)과 따로 둔다 — 카드는 공개 주소로 열리므로 센서 데이터 없는 요약만 담고,
+// 주소(token)는 추측할 수 없는 16자 이상 16진 문자열이다. lib/cardSummary.js 참고.
+
+const CARD_TOKEN_RE = /^[a-f0-9]{16,32}$/;
+
+export async function putCard(token, summary) {
+  if (!CARD_TOKEN_RE.test(token)) throw new Error("bad card token");
+  await put(`cards/${token}.json`, Buffer.from(JSON.stringify(summary)), "application/json");
+}
+
+export async function getCard(token) {
+  if (!CARD_TOKEN_RE.test(token)) return null;
+  const raw = await get(`cards/${token}.json`);
+  if (!raw) return null;
+  try { return JSON.parse(raw.toString("utf8")); } catch (e) { return null; }
+}
