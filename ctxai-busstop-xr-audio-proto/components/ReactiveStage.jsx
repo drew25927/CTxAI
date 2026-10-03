@@ -239,7 +239,7 @@ function RiggedPerson({ rig = "A", walking = false, seated = false, scale = 1, f
 
 // 정류장 이름 표지판 — 요청서 v5.0 §2.6 "관객이 말한 단어를 정류장 이름 자리에 실시간으로 써 넣는다".
 // 글자 값은 D5 그대로: 색 #F5F2E8, Pretendard Bold, 글자 높이 = 이름 자리 판 높이의 45%.
-function SignBoard({ text = "호수공원 입구", position = [-0.62, 1.74, -1.03] }) {
+function SignBoard({ text = "호수공원 입구", position = [-0.62, 1.74, -1.03], rotation = [0, 0, 0] }) {
   const texture = useMemo(() => {
     if (typeof document === "undefined") return null;
     const W = 1024, H = 256;
@@ -259,7 +259,7 @@ function SignBoard({ text = "호수공원 입구", position = [-0.62, 1.74, -1.0
   }, [text]);
   if (!texture) return null;
   return (
-    <group position={position}>
+    <group position={position} rotation={rotation}>
       <mesh>
         <planeGeometry args={[0.8, 0.2]} />
         <meshStandardMaterial map={texture} emissiveMap={texture} emissive="#ffffff" emissiveIntensity={0.35} />
@@ -955,14 +955,15 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
           {/* 지붕 아래 온광·처마 빗방울 — 아트 쉘터(x −2.92…0.88, 앞 처마 z −0.97)에 맞춘 위치 */}
           <pointLight position={[-1.0, 2.2, 0.3]} color="#ffb877" intensity={0.9} distance={6} decay={2} />
           <RoofDrips x0={-2.75} y0={2.45} z0={-0.99} />
-          {/* 정류장 이름 표지판 — 쉘터 오른쪽 앞 기둥(0.63, −0.56) 바로 앞 인도. 앞 처마 끝(z −0.97)에서 0.5m 도로 쪽, 연석(z −2.7) 안쪽.
-              (예전엔 쉘터 중앙 앞(−0.95, −2.0)이었다 — 사용자 요청으로 오른쪽 기둥 앞으로 옮김.) 관객 기준 오른쪽 약 19°, 1.9m,
-              판 중심이 눈높이보다 0.6m 위라 위로 약 18° — 정면 시야 안이고, 인도 위 고양이(6°, 지면)와 겹치지 않는다. */}
-          <mesh position={[0.63, 1.05, -1.45]} castShadow>
+          {/* 정류장 이름 표지판 — 쉘터 오른쪽 앞 기둥(0.63, −0.56)과 앉은 자리에서 같은 시선 방향(오른쪽 약 35°)의 인도.
+              앞 처마 끝(z −0.97)에서 0.5m 도로 쪽, 쉘터 오른쪽 가장자리(x 0.88) 바깥, 연석(z −2.7) 안쪽. 사용자 선택 "B"(2026-10-03):
+              처음엔 쉘터 중앙 앞(−0.95, −2.0) → 기둥 앞(0.63, −1.45, 약 19°)으로 옮겼으나 관객 눈에는 기둥과 정면 사이로 보여
+              기둥과 같은 방향(1.25, −1.45)으로 다시 옮김. 판은 관객 쪽으로 약 23° 틀어 글자가 비스듬하지 않게 한다. 위로 약 12°, 거리 2.2m. */}
+          <mesh position={[1.25, 1.05, -1.45]} castShadow>
             <cylinderGeometry args={[0.03, 0.035, 2.1, 8]} />
             <meshStandardMaterial color="#33363c" />
           </mesh>
-          <SignBoard text={signText || "호수공원 입구"} position={[0.63, 1.78, -1.35]} />
+          <SignBoard text={signText || "호수공원 입구"} position={[1.25, 1.78, -1.35]} rotation={[0, -0.4, 0]} />
           {/* 포스터 — 아트 원본 포스터 자리(오른쪽 유리 안쪽, 관객 기준 약 +80°). 원본 높이(중심 1.43m)는 앉은 눈높이(1.15m)보다
               0.3m 위라 고개를 돌려도 화면 위쪽 끝에 걸렸다 — 중심을 앉은 눈높이(1.15m)에 정확히 맞췄다 */}
           <mesh ref={posterRef} position={[0.62, 1.15, 0.27]} rotation={[0, -Math.PI / 2, 0.06]}>
