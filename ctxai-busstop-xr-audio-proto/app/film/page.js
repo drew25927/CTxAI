@@ -32,6 +32,7 @@ import { EffectComposer, Bloom, Vignette, ToneMapping } from "@react-three/postp
 import { ToneMappingMode } from "postprocessing";
 import { Euler, MathUtils, Vector3 } from "three";
 import ReactiveStage from "@/components/ReactiveStage";
+import ColorGrade from "@/components/ColorGrade";
 import { createDirectionState, rank } from "@/lib/directionState";
 import { createHeadPoseSensor } from "@/lib/headPoseSense";
 import { deriveBgmGains, TRIGGERS } from "@/lib/directionMap";
@@ -173,7 +174,7 @@ function XRProbe({ onChange }) {
 }
 
 // 후처리 — 블룸·비네트·ACES 톤매핑. WebXR 세션 중에는 컴포저가 스테레오 렌더와 충돌하므로 끈다.
-function Effects({ enabled }) {
+function Effects({ enabled, directionRef, grade }) {
   const session = useXR((xr) => xr.session);
   if (!enabled || session) return null;
   return (
@@ -181,6 +182,7 @@ function Effects({ enabled }) {
       <Bloom luminanceThreshold={0.92} luminanceSmoothing={0.2} intensity={0.35} mipmapBlur />
       <Vignette eskil={false} offset={0.18} darkness={0.6} />
       <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
+      {grade > 0 && <ColorGrade directionRef={directionRef} strength={grade} />}
     </EffectComposer>
   );
 }
@@ -227,6 +229,8 @@ export default function FilmPage() {
   // 침묵은 상태가 정한 값(npcSilence)을 하한으로 두고, 남는 시간을 줄 사이에 고르게 나눈다.
   const sceneTarget = Math.max(0, Number(q.scene) || 0);
   const fx = q.fx !== "0"; // ?fx=0 이면 후처리·도로 반사 끄기 (성능 점검용)
+  // 컨셉 이미지 색감 보정 세기 — 기본 1, ?grade=0 이면 끔, 1.5 까지(비교용). 아트 월드에서만 기본 켬 — 예전 지형(?art=0)은 컨셉 색이 아니다
+  const grade = q.grade != null ? Math.max(0, Math.min(1.5, Number(q.grade) || 0)) : (useArt ? 1 : 0);
   const forceAnswer = q.answer === "1"; // ?answer=1 — 모든 질문을 "답함"으로 처리 (QA: 데스크톱에선 고개 응답이 생기지 않아 답함 갈래를 들을 수 없다)
   const [xrActive, setXrActive] = useState(false);
   // ?auto=1 — 마운트 직후 자동 시작 (관찰·리허설용. 브라우저 자동재생 정책에 따라 소리가 막힐 수 있다)
@@ -643,9 +647,9 @@ export default function FilmPage() {
         <Canvas shadows="soft" gl={{ antialias: true }}>
           <PerspectiveCamera makeDefault position={CANVAS_CAMERA.position} fov={CANVAS_CAMERA.fov} />
           <XR store={xrStore}>
-            <ReactiveStage directionRef={directionRef} actorsRef={actorsRef} dominant={dominant} paramsOut={paramsRef} cueRef={filmRef} useRig={useRig} useCutout={useCutout} useArt={useArt} rigTest={q.rigtest === "1"} signText={signText} reflect={fx && !xrActive} benchYaw={Number(q.benchyaw) || 0} />
+            <ReactiveStage directionRef={directionRef} actorsRef={actorsRef} dominant={dominant} paramsOut={paramsRef} cueRef={filmRef} useRig={useRig} useCutout={useCutout} useArt={useArt} rigTest={q.rigtest === "1"} signText={signText} reflect={fx && !xrActive} benchYaw={Number(q.benchyaw) || 0} gradeOn={grade > 0} />
             <XRProbe onChange={setXrActive} />
-            <Effects enabled={fx} />
+            <Effects enabled={fx} directionRef={directionRef} grade={grade} />
             <FilmDirector directionRef={directionRef} sensorRef={sensorRef} actorsRef={actorsRef} filmRef={filmRef} onCue={onCue} speed={speed} debugBus={q.bus === "1"} debugTruck={q.truck === "1"} layout={useArt ? "art" : "classic"} />
             {q.gaze !== "0" && <DesktopGaze controlsRef={controlsRef} actorsRef={actorsRef} filmRef={filmRef} />}
           </XR>

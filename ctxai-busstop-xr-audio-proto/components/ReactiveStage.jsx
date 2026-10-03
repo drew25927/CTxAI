@@ -35,6 +35,7 @@ export const HDRI = {
   H: "/reactive/hdri/kloofendal_overcast_puresky_2k.hdr",
   C: "/reactive/hdri/overcast_soil_puresky_2k.hdr",
 };
+const COOL_AMBIENT = new Color(0.6, 0.68, 0.76); // 컨셉 이미지 그림자의 청회색 (lib/colorGrade.js 근거)
 const ART_HAZE = new Color(0.84, 0.6, 0.55); // 아트 하늘 지평선 평균색(0.84, 0.53, 0.43)을 조금 밝힌 것
 export const ART_SKY = "/reactive/hdri/art_sunset_sky.jpg"; // Unity 전달본 SunsetSky.png 를 2K로 줄인 것
 const SKY_VERT = `
@@ -602,7 +603,7 @@ function Cat({ x, z, running, facingBench, bob }) {
  * @param {string|null} props.dominant                 앉는 인물 R/H/C
  * @param {React.MutableRefObject} [props.paramsOut]   파생 파라미터를 밖(HUD)에 노출
  */
-export default function ReactiveStage({ directionRef, actorsRef, dominant, paramsOut, cueRef = null, useRig = true, useCutout = true, useArt = true, rigTest = false, signText, reflect = true, benchYaw = 0 }) {
+export default function ReactiveStage({ directionRef, actorsRef, dominant, paramsOut, cueRef = null, useRig = true, useCutout = true, useArt = true, rigTest = false, signText, reflect = true, benchYaw = 0, gradeOn = true }) {
   const { scene, camera } = useThree();
   const skyMat = useRef();
   const sun = useRef();
@@ -685,6 +686,14 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
     if (amb.current) {
       amb.current.color.setRGB(p.ambientColor[0], p.ambientColor[1], p.ambientColor[2]);
       amb.current.intensity = p.ambientIntensity;
+      // 컨셉 이미지 색감 — 그림자 쪽 환경광을 청회색으로 식히고 조금 낮춘다. 따뜻한 건 가로등·카페 불빛·태양만 남아
+      // "차가운 바닥 위의 따뜻한 불빛" 대비가 산다. 정착(장르 확정)이 굳을수록 장르 고유 색을 존중해 효과를 줄인다.
+      if (useArt && gradeOn) {
+        const k = 0.5 * (1 - 0.6 * sett);
+        amb.current.color.lerp(COOL_AMBIENT, k);
+        amb.current.intensity *= 1 - 0.14 * (1 - 0.5 * sett);
+        if (hemi.current) hemi.current.color.lerp(COOL_AMBIENT, k * 0.8);
+      }
     }
     if (roadMat.current) {
       roadMat.current.color.setRGB(p.roadColor[0], p.roadColor[1], p.roadColor[2]);
