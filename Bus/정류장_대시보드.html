@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>정류장 — 운행 현황</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ============================================================
+   정류장 대시보드 — 디자인 토큰
+   색: 심야 정류장. 나트륨등(따뜻함) vs 안내판 형광(차가움).
+   ============================================================ */
+:root{
+  --night:      #0E1117;   /* 밤공기 */
+  --shelter:    #161B24;   /* 쉘터 패널 */
+  --shelter-hi: #1D2430;
+  --edge:       #29313F;   /* 헤어라인 */
+  --sodium:     #F2A03D;   /* 나트륨등 — 주 강조 */
+  --sodium-dim: #8A5C22;
+  --fluor:      #8FD6E8;   /* 안내판 형광 — 데이터/AI */
+  --ink:        #E6E9EF;
+  --ink-dim:    #79839A;
+  --ink-faint:  #4C5568;
+  --ok:         #7FBFA0;
+  --warn:       #E0C24A;
+  --stop:       #D9738F;
+
+  --g-horror:   #7C8AD6;
+  --g-romance:  #D9738F;
+  --g-comedy:   #E3B23C;
+  --g-fantasy:  #7FBFA0;
+
+  --sans:'IBM Plex Sans KR',system-ui,sans-serif;
+  --mono:'IBM Plex Mono','IBM Plex Sans KR',monospace;
+  --r:3px;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--night);
+  background-image:radial-gradient(circle at 1px 1px, rgba(255,255,255,.028) 1px, transparent 0);
+  background-size:14px 14px;
+  color:var(--ink);
+  font-family:var(--sans);
+  font-weight:400;
+  font-size:15px;
+  line-height:1.6;
+  min-height:100vh;
+}
+:focus-visible{outline:2px solid var(--fluor);outline-offset:2px}
+
+/* ---------- 상단 LED 도착 안내판 ---------- */
+.board{
+  position:sticky;top:0;z-index:50;
+  background:#0A0C11;
+  border-bottom:1px solid var(--edge);
+  box-shadow:0 1px 0 rgba(242,160,61,.14), 0 10px 34px rgba(0,0,0,.55);
+}
+.board-in{
+  max-width:1180px;margin:0 auto;
+  padding:11px 26px;
+  display:flex;align-items:center;gap:24px;flex-wrap:wrap;
+}
+.board-lamp{
+  width:7px;height:7px;border-radius:50%;
+  background:var(--sodium);
+  box-shadow:0 0 9px var(--sodium);
+  animation:blink 2.6s steps(1,end) infinite;flex:none;
+}
+@keyframes blink{0%,72%{opacity:1}73%,100%{opacity:.22}}
+.board-route{
+  font-family:var(--mono);font-size:11px;font-weight:600;
+  letter-spacing:.2em;color:var(--sodium);
+  text-shadow:0 0 12px rgba(242,160,61,.4);
+  white-space:nowrap;
+}
+.board-next{
+  font-family:var(--mono);font-size:12px;color:var(--ink-dim);
+  letter-spacing:.04em;
+}
+.board-next b{color:var(--ink);font-weight:500}
+.board-dday{
+  margin-left:auto;display:flex;align-items:baseline;gap:8px;
+  font-family:var(--mono);
+}
+.board-dday .n{
+  font-size:24px;font-weight:600;color:var(--sodium);
+  letter-spacing:.02em;line-height:1;
+  text-shadow:0 0 16px rgba(242,160,61,.35);
+}
+.board-dday .l{font-size:10px;letter-spacing:.18em;color:var(--ink-faint)}
+
+/* ---------- 레이아웃 ---------- */
+.wrap{max-width:1180px;margin:0 auto;padding:0 26px;
+  display:grid;grid-template-columns:158px 1fr;gap:44px;align-items:start}
+
+nav{position:sticky;top:78px;padding-top:38px}
+.nav-eyebrow{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.22em;
+  color:var(--ink-faint);margin-bottom:14px;
+}
+.nav-btn{
+  display:block;width:100%;text-align:left;
+  background:none;border:none;border-left:2px solid var(--edge);
+  padding:9px 0 9px 13px;margin-bottom:2px;
+  color:var(--ink-dim);font-family:var(--sans);font-size:14px;font-weight:500;
+  cursor:pointer;transition:color .16s,border-color .16s;
+}
+.nav-btn:hover{color:var(--ink)}
+.nav-btn[aria-current="page"]{color:var(--sodium);border-left-color:var(--sodium)}
+.nav-btn small{
+  display:block;font-family:var(--mono);font-size:9.5px;
+  letter-spacing:.12em;color:var(--ink-faint);font-weight:400;margin-top:1px;
+}
+
+main{padding:38px 0 90px;min-width:0}
+.page[hidden]{display:none}
+.page-head{margin-bottom:34px}
+.page-head h1{
+  font-size:29px;font-weight:600;letter-spacing:-.02em;line-height:1.25;
+}
+.page-head p{color:var(--ink-dim);font-size:14.5px;margin-top:7px;max-width:60ch}
+
+.sect{margin-bottom:46px}
+.sect-title{
+  font-family:var(--mono);font-size:10px;letter-spacing:.2em;
+  color:var(--ink-faint);
+  padding-bottom:8px;margin-bottom:18px;
+  border-bottom:1px solid var(--edge);
+  display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+}
+.sect-title span{color:var(--ink-dim);letter-spacing:.06em;text-transform:none}
+
+.panel{
+  background:var(--shelter);border:1px solid var(--edge);
+  border-radius:var(--r);padding:22px;
+}
+
+/* ---------- 언덕 차트 ---------- */
+.hill-note{color:var(--ink-dim);font-size:13px;margin-bottom:16px}
+.hill-note b{color:var(--ink);font-weight:500}
+.hill svg{width:100%;height:auto;display:block;overflow:visible}
+.hill-dot{transition:r .2s}
+.hill g:hover .hill-dot{r:9}
+.hill-lbl{font-family:var(--sans);font-size:11.5px;font-weight:500;fill:var(--ink)}
+.hill-axis{font-family:var(--mono);font-size:9px;letter-spacing:.14em;fill:var(--ink-faint)}
+
+/* ---------- 담당 레인 ---------- */
+.lanes{display:grid;grid-template-columns:repeat(auto-fit,minmax(238px,1fr));gap:12px}
+.lane{background:var(--shelter);border:1px solid var(--edge);border-radius:var(--r);padding:16px 17px}
+.lane-who{
+  display:flex;align-items:center;gap:8px;margin-bottom:13px;
+  padding-bottom:11px;border-bottom:1px solid var(--edge);
+}
+.lane-who .seat{
+  font-family:var(--mono);font-size:9px;letter-spacing:.1em;
+  color:var(--night);background:var(--ink-faint);
+  padding:2px 5px;border-radius:2px;flex:none;
+}
+.lane-who .role{font-size:13.5px;font-weight:600}
+.task{display:flex;gap:9px;align-items:flex-start;padding:5px 0;font-size:13.5px;line-height:1.5}
+.task .mark{
+  font-family:var(--mono);font-size:11px;flex:none;width:14px;padding-top:2px;
+}
+.task.done .mark{color:var(--ok)}
+.task.done .txt{color:var(--ink-faint);text-decoration:line-through;text-decoration-thickness:1px}
+.task.now  .mark{color:var(--sodium)}
+.task.now  .txt{color:var(--ink)}
+.task.wait .mark{color:var(--ink-faint)}
+.task.wait .txt{color:var(--ink-dim)}
+
+/* ---------- 막힌 것 ---------- */
+.block{
+  display:flex;gap:14px;align-items:flex-start;
+  background:var(--shelter);border:1px solid var(--edge);
+  border-left:2px solid var(--stop);
+  border-radius:var(--r);padding:14px 17px;margin-bottom:8px;
+}
+.block .days{
+  font-family:var(--mono);font-size:11px;color:var(--stop);
+  flex:none;padding-top:2px;letter-spacing:.04em;
+}
+.block h4{font-size:14px;font-weight:600;margin-bottom:3px}
+.block p{font-size:13px;color:var(--ink-dim);line-height:1.55}
+
+/* ---------- 히트맵 ---------- */
+.hm-wrap{display:grid;grid-template-columns:1fr 214px;gap:26px;align-items:start}
+.hm-scroll{overflow-x:auto;padding-bottom:4px}
+.hm{border-collapse:separate;border-spacing:4px;min-width:400px;width:100%}
+.hm th{
+  font-family:var(--mono);font-size:10px;font-weight:500;
+  letter-spacing:.1em;color:var(--ink-dim);padding:5px;font-weight:400;
+}
+.hm thead th{padding-bottom:9px}
+.hm tbody th{text-align:right;padding-right:11px;white-space:nowrap}
+.hm td{
+  position:relative;height:64px;border-radius:var(--r);
+  text-align:center;vertical-align:middle;
+  font-family:var(--mono);font-size:17px;font-weight:500;
+  cursor:default;transition:transform .15s;
+}
+.hm td:hover{transform:scale(1.045)}
+.hm td.pure{box-shadow:inset 0 0 0 1px var(--fluor)}
+.hm td .pct{
+  display:block;font-size:9px;color:var(--ink-faint);
+  letter-spacing:.06em;margin-top:1px;
+}
+.hm-corner{font-size:9px !important;color:var(--ink-faint) !important;text-align:left !important}
+
+.hm-side .stat{padding:13px 0;border-bottom:1px solid var(--edge)}
+.hm-side .stat:last-child{border:none}
+.hm-side .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.15em;color:var(--ink-faint)}
+.hm-side .v{font-family:var(--mono);font-size:27px;font-weight:600;line-height:1.25;margin-top:3px}
+.hm-side .v small{font-size:12px;color:var(--ink-dim);font-weight:400;margin-left:3px}
+.hm-side .d{font-size:12.5px;color:var(--ink-dim);line-height:1.5;margin-top:5px}
+.legend{
+  display:flex;align-items:center;gap:9px;margin-top:16px;
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;color:var(--ink-faint);
+}
+.legend .ramp{
+  height:7px;flex:1;border-radius:4px;
+  background:linear-gradient(90deg,#1A1F29,var(--sodium));
+}
+
+/* ---------- 파이프라인 ---------- */
+.pipe{display:flex;align-items:stretch;gap:0;flex-wrap:wrap}
+.pipe-step{
+  flex:1;min-width:118px;
+  background:var(--shelter);border:1px solid var(--edge);
+  padding:14px 15px;position:relative;
+}
+.pipe-step:not(:last-child){border-right:none}
+.pipe-step:first-child{border-radius:var(--r) 0 0 var(--r)}
+.pipe-step:last-child{border-radius:0 var(--r) var(--r) 0}
+.pipe-step .n{font-family:var(--mono);font-size:9px;letter-spacing:.14em;color:var(--ink-faint)}
+.pipe-step .t{font-size:13.5px;font-weight:600;margin:5px 0 3px}
+.pipe-step .s{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em}
+.pipe-step .tool{font-size:11px;color:var(--ink-faint);margin-top:4px}
+.pipe-step.live{background:var(--shelter-hi);border-color:var(--sodium-dim)}
+.pipe-step.live .s{color:var(--sodium)}
+.pipe-step.pass .s{color:var(--ok)}
+.pipe-step.todo .s{color:var(--ink-faint)}
+.pipe-step.todo{opacity:.62}
+
+/* ---------- 세션 로그 ---------- */
+.log{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12px}
+.log th{
+  text-align:left;font-weight:400;font-size:9.5px;letter-spacing:.15em;
+  color:var(--ink-faint);padding:0 12px 9px 0;border-bottom:1px solid var(--edge);
+}
+.log td{padding:9px 12px 9px 0;border-bottom:1px solid rgba(41,49,63,.5);color:var(--ink-dim)}
+.log tr:hover td{color:var(--ink)}
+.log .mix{color:var(--sodium)}
+.log .pure{color:var(--fluor)}
+
+/* ---------- 노선도 ---------- */
+.route{position:relative;padding-left:40px}
+.route::before{
+  content:'';position:absolute;left:8px;top:8px;bottom:34px;width:2px;
+  background:linear-gradient(180deg,var(--sodium) 0%,var(--sodium) 44%,var(--edge) 44%,var(--edge) 100%);
+}
+.stop{position:relative;padding-bottom:34px}
+.stop::before{
+  content:'';position:absolute;left:-38px;top:5px;
+  width:12px;height:12px;border-radius:50%;
+  background:var(--night);border:2px solid var(--edge);
+}
+.stop.past::before{background:var(--sodium);border-color:var(--sodium)}
+.stop.here::before{
+  background:var(--night);border-color:var(--sodium);
+  box-shadow:0 0 0 4px rgba(242,160,61,.16);
+}
+.stop-when{
+  font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;color:var(--ink-faint);
+}
+.stop.here .stop-when{color:var(--sodium)}
+.stop h3{font-size:17px;font-weight:600;margin:4px 0 7px;letter-spacing:-.01em}
+.stop p{font-size:14px;color:var(--ink-dim);line-height:1.7;max-width:64ch}
+.stop p + p{margin-top:9px}
+.stop strong{color:var(--ink);font-weight:500}
+.stop-tag{
+  display:inline-block;font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;
+  padding:2px 7px;border:1px solid var(--edge);border-radius:2px;
+  color:var(--ink-faint);margin-left:8px;vertical-align:2px;
+}
+.stop.here .stop-tag{border-color:var(--sodium-dim);color:var(--sodium)}
+
+.pull{
+  border-left:2px solid var(--fluor);padding:2px 0 2px 18px;
+  margin:18px 0 26px;
+}
+.pull p{font-size:15.5px;color:var(--ink);line-height:1.65;font-weight:300}
+.pull cite{
+  display:block;font-family:var(--mono);font-size:10px;letter-spacing:.14em;
+  color:var(--ink-faint);font-style:normal;margin-top:9px;
+}
+
+.foot{
+  margin-top:54px;padding-top:20px;border-top:1px solid var(--edge);
+  font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;color:var(--ink-faint);
+  display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
+}
+
+/* ---------- 반응형 ---------- */
+@media (max-width:900px){
+  .hm-wrap{grid-template-columns:1fr}
+}
+@media (max-width:720px){
+  .wrap{grid-template-columns:1fr;gap:0;padding:0 18px}
+  nav{position:static;padding-top:22px;display:flex;gap:4px;overflow-x:auto}
+  .nav-eyebrow{display:none}
+  .nav-btn{border-left:none;border-bottom:2px solid var(--edge);padding:8px 12px;white-space:nowrap;width:auto}
+  .nav-btn[aria-current="page"]{border-left-color:transparent;border-bottom-color:var(--sodium)}
+  .nav-btn small{display:none}
+  .board-in{padding:10px 18px;gap:14px}
+  .board-next{display:none}
+  .page-head h1{font-size:23px}
+  main{padding:26px 0 60px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation:none !important;transition:none !important}
+}
+</style>
+</head>
+<body>
+
+<!-- 상단 LED 도착 안내판 -->
+<header class="board">
+  <div class="board-in">
+    <span class="board-lamp" aria-hidden="true"></span>
+    <span class="board-route">정류장 · 아무도 같은 밤을 보지 않는다</span>
+    <span class="board-next">다음 정차 &nbsp;<b id="nextStop">페어 테스트</b></span>
+    <span class="board-dday">
+      <span class="n" id="dday">D-69</span>
+      <span class="l">전시 개막 11.01</span>
+    </span>
+  </div>
+</header>
+
+<div class="wrap">
+  <nav aria-label="페이지">
+    <p class="nav-eyebrow">NOSEON</p>
+    <button class="nav-btn" data-go="ops" aria-current="page">운행 현황<small>TEAM</small></button>
+    <button class="nav-btn" data-go="log">판정 기록<small>DATA</small></button>
+    <button class="nav-btn" data-go="route">노선도<small>REPORT</small></button>
+  </nav>
+
+  <main>
+
+  <!-- ========== 1. 운행 현황 ========== -->
+  <section class="page" id="ops">
+    <div class="page-head">
+      <h1>운행 현황</h1>
+      <p>지금 누가 어디쯤 와 있는지. 퍼센트 대신 언덕으로 봅니다 — 왼쪽 오르막은 아직 방법을 찾는 중이고, 오른쪽 내리막은 방법을 알고 만들기만 하면 되는 상태입니다.</p>
+    </div>
+
+    <div class="sect">
+      <div class="sect-title">HILL <span>작업별 위치</span></div>
+      <div class="panel hill">
+        <p class="hill-note"><b>왼쪽에 오래 머무는 점이 진짜 위험 신호입니다.</b> 오른쪽 점은 시간만 있으면 끝나지만, 왼쪽 점은 시간이 있어도 안 끝날 수 있습니다.</p>
+        <div id="hillChart"></div>
+      </div>
+    </div>
+
+    <div class="sect">
+      <div class="sect-title">SEATS <span>담당별 진행</span></div>
+      <div class="lanes" id="lanes"></div>
+    </div>
+
+    <div class="sect">
+      <div class="sect-title">STOPPED <span>막혀 있는 것</span></div>
+      <div id="blockers"></div>
+    </div>
+  </section>
+
+  <!-- ========== 2. 판정 기록 ========== -->
+  <section class="page" id="log" hidden>
+    <div class="page-head">
+      <h1>판정 기록</h1>
+      <p>관객이 어떤 밤을 봤는지. 세로가 사건(옆사람이 원하는 것), 가로가 태도(그것을 하는 방식)입니다. 대각선은 사건과 태도가 같은 순수·강화, 나머지 12칸은 혼합입니다.</p>
+    </div>
+
+    <div class="sect">
+      <div class="sect-title">MATRIX <span>사건 × 태도</span></div>
+      <div class="hm-wrap">
+        <div>
+          <div class="hm-scroll"><table class="hm" id="heatmap"></table></div>
+          <div class="legend"><span>적음</span><span class="ramp"></span><span>많음</span>
+            <span style="margin-left:10px;color:var(--fluor)">┃ 테두리 = 순수·강화</span></div>
+        </div>
+        <div class="hm-side" id="hmStats"></div>
+      </div>
+    </div>
+
+    <div class="sect">
+      <div class="sect-title">PIPELINE <span>목소리에서 이야기까지</span></div>
+      <div class="pipe" id="pipeline"></div>
+    </div>
+
+    <div class="sect">
+      <div class="sect-title">SESSIONS <span>최근 기록</span></div>
+      <div class="panel" style="padding:20px 22px 6px">
+        <table class="log" id="sessionLog"></table>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== 3. 노선도 ========== -->
+  <section class="page" id="route" hidden>
+    <div class="page-head">
+      <h1>노선도</h1>
+      <p>기획에서 전시까지, 이 작품이 지나온 정거장. 위에서 아래로 읽으면 그대로 중간 보고가 됩니다.</p>
+    </div>
+
+    <div class="pull">
+      <p>같은 벤치에 앉아도, 두 사람은 서로 다른 밤을 보고 갑니다. 관객의 목소리가 이야기의 방향을 정하기 때문입니다.</p>
+      <cite>ONE LINE</cite>
+    </div>
+
+    <div class="route" id="routeMap"></div>
+
+    <div class="foot">
+      <span>TEAM 7 · 4인</span>
+      <span id="stamp"></span>
+    </div>
+  </section>
+
+  </main>
+</div>
+
+<script>
+/* ============================================================
+   여기만 고치면 됩니다. 아래 DATA 객체가 화면 전체를 만듭니다.
+   레이아웃은 건드릴 필요 없습니다.
+   ============================================================ */
+const DATA = {
+
+  opening: '2026-11-01',          // 전시 개막일
+  nextStop: '페어 테스트',          // 안내판에 뜰 다음 정거장
+
+  /* --- 언덕 차트: pos 0~100 (0=막 시작, 50=정상, 100=완료) --- */
+  hill: [
+    { name:'판정 구조 16배합',  pos:88, owner:'AI' },
+    { name:'STT→LLM 파이프라인', pos:58, owner:'FE' },
+    { name:'옆사람 대사 4×4',    pos:44, owner:'기획' },
+    { name:'오디오 블렌딩',      pos:26, owner:'사운드' },
+    { name:'모션캡처 → GLB',     pos:14, owner:'아트' },
+    { name:'3D 씬 / WebXR',      pos:8,  owner:'FE' },
+  ],
+
+  /* --- 담당별 레인 --- */
+  lanes: [
+    { seat:'01', role:'기획 · 사운드', tasks:[
+      { s:'done', t:'Q1 / Q2 질문 문안 확정' },
+      { s:'now',  t:'옆사람 대사 16세트 초고' },
+      { s:'wait', t:'정류장 앰비언스 녹음' },
+      { s:'wait', t:'장르별 배경음 4종' },
+    ]},
+    { seat:'02', role:'AI · 데이터', tasks:[
+      { s:'done', t:'4축 감정 채점 프롬프트' },
+      { s:'done', t:'16배합 판정 규칙 문서화' },
+      { s:'now',  t:'파라링귀스틱 신호 가중치 조정' },
+      { s:'wait', t:'애매 판정 시 재질문 로직' },
+    ]},
+    { seat:'03', role:'아트', tasks:[
+      { s:'done', t:'정류장 컨셉 아트' },
+      { s:'now',  t:'옆사람 캐릭터 모델링' },
+      { s:'wait', t:'모션캡처 클립 촬영' },
+      { s:'wait', t:'FBX → GLB 변환 파이프라인' },
+    ]},
+    { seat:'04', role:'프론트 · 백엔드', tasks:[
+      { s:'done', t:'Whisper STT 터미널 검증' },
+      { s:'now',  t:'LLM 응답 JSON 스키마 고정' },
+      { s:'wait', t:'브라우저 마이크 입력 연결' },
+      { s:'wait', t:'WebXR 씬 골격' },
+    ]},
+  ],
+
+  /* --- 막혀 있는 것 --- */
+  blockers: [
+    { days:'6일째', t:'모션캡처 툴 미결정',
+      d:'Move.ai · DeepMotion · Plask · Rokoko 네 후보 중 결정 보류. 아트 작업 전체가 여기서 대기 중입니다. 무료 체험으로 같은 동작 하나만 뽑아 비교하면 하루면 끝납니다.' },
+    { days:'3일째', t:'노션 기획 문서 수정 3건',
+      d:'깨진 글자 3곳, Q1~Q3 설명 단락 정리, 14장 Q&A 콜아웃 교체. 짧은 단위로 나눠서 처리해야 표가 안 깨집니다.' },
+  ],
+
+  /* --- 히트맵: rows=사건, cols=태도 --- */
+  genres: ['공포','로맨스','코미디','판타지'],
+  matrix: [
+    [4, 1, 2, 1],   // 사건=공포
+    [2, 5, 3, 2],   // 사건=로맨스
+    [1, 3, 5, 3],   // 사건=코미디
+    [2, 2, 1, 4],   // 사건=판타지
+  ],
+
+  /* --- 파이프라인 --- */
+  pipeline: [
+    { t:'목소리 받기',   s:'검증 완료', k:'pass', tool:'브라우저 마이크' },
+    { t:'말 옮기기',     s:'검증 완료', k:'pass', tool:'Whisper API' },
+    { t:'감정 채점',     s:'조정 중',   k:'live', tool:'Claude Haiku · 4축' },
+    { t:'배합 판정',     s:'조정 중',   k:'live', tool:'사건 × 태도' },
+    { t:'소리 섞기',     s:'대기',      k:'todo', tool:'오디오 블렌딩' },
+    { t:'장면 재생',     s:'대기',      k:'todo', tool:'WebXR' },
+  ],
+
+  /* --- 최근 세션 (예시 데이터) --- */
+  sessions: [
+    { id:'0041', when:'08.23 19:42', ev:'코미디', at:'판타지', turns:2, sec:'1:48' },
+    { id:'0040', when:'08.23 19:26', ev:'로맨스', at:'로맨스', turns:2, sec:'2:11' },
+    { id:'0039', when:'08.23 19:04', ev:'공포',   at:'코미디', turns:3, sec:'2:37' },
+    { id:'0038', when:'08.22 20:15', ev:'판타지', at:'로맨스', turns:2, sec:'1:59' },
+    { id:'0037', when:'08.22 19:51', ev:'코미디', at:'코미디', turns:2, sec:'1:34' },
+    { id:'0036', when:'08.22 19:33', ev:'로맨스', at:'공포',   turns:3, sec:'2:52' },
+  ],
+
+  /* --- 노선도 --- */
+  route: [
+    { when:'2026.05', tag:'지남', state:'past', h:'벤치 하나에서 출발',
+      p:['버스 정류장 벤치에 관객이 앉으면, 먼저 앉아 있던 <strong>옆사람</strong>이 말을 겁니다. 둘은 서로 모르는 사이입니다. 이 한 장면에서 작품 전체가 나왔습니다.',
+         '목표는 처음부터 분명했습니다. 관객마다 다른 이야기가 나오는 경험, 즉 <strong>같은 작품을 두 번 보는 것이 불가능한 설치</strong>를 만드는 것입니다.'] },
+
+    { when:'2026.06', tag:'지남', state:'past', h:'질문 두 개로 좁히기',
+      p:['처음에는 질문 하나로 모든 걸 판정하려 했지만 실패했습니다. 한 가지 감정을 표현한 사람은 계속 같은 감정으로 말하기 때문에, 한 번의 대답에서 두 가지 축을 뽑아낼 수 없었습니다.',
+         '그래서 둘로 나눴습니다. <strong>Q1은 모든 관객에게 동일하게</strong> — "당신은 무엇을 기다리고 있습니까?" 여기서 <strong>사건</strong>이 정해집니다. <strong>Q2는 사건별로 다른 질문</strong>이고, 여기서 <strong>태도</strong>가 정해집니다.'] },
+
+    { when:'2026.07', tag:'지남', state:'past', h:'16가지 밤',
+      p:['사건 4종 × 태도 4종 = <strong>16가지 배합</strong>. 대각선에 놓이는 4가지는 사건과 태도가 같은 순수·강화 상태이고, 나머지 12가지는 혼합입니다.',
+         '강화는 실패가 아닙니다. 같은 장르를 두 번 가리킨 관객에게는 그 장르가 더 짙어진 밤이 주어집니다.',
+         '채점은 텍스트만 보지 않습니다. 목소리의 톤·빠르기·크기 같은 <strong>파라링귀스틱 신호</strong>를 함께 읽습니다. 같은 문장이라도 떨리는 목소리와 웃는 목소리는 다른 밤으로 갑니다.'] },
+
+    { when:'2026.08.17', tag:'지남', state:'past', h:'MVP 발표',
+      p:['목소리를 받아 텍스트로 옮기고, 감정을 채점해 16칸 중 하나를 고르는 데까지 터미널에서 동작을 확인했습니다. 아직 화면도 소리도 없는, 판정 로직만의 골격입니다.'] },
+
+    { when:'지금', tag:'현재 정차', state:'here', h:'브라우저로 옮기는 중',
+      p:['터미널에서 되던 것을 브라우저로 옮기고 있습니다. LLM 응답의 JSON 형식을 고정하는 작업이 남았습니다.',
+         '다음은 <strong>오디오 블렌딩</strong>, 그다음이 3D 씬입니다. 순서를 지키는 이유는 분명합니다 — 판정이 틀린 채로 3D를 예쁘게 만들면, 예쁜 화면으로 틀린 이야기를 보여주게 됩니다.'] },
+
+    { when:'09월 초', tag:'예정', state:'next', h:'페어 테스트',
+      p:['두 사람이 같은 벤치에 차례로 앉습니다. 나올 때 서로 이야기를 맞춰보고 <strong>"너 나랑 다른 걸 봤네"</strong>가 나오면 통과입니다.',
+         '이 문장이 안 나오면 시각적 완성도에는 한 시간도 쓰지 않습니다. 이 작품의 핵심은 화면이 아니라 갈라짐이기 때문입니다.'] },
+
+    { when:'09–10월', tag:'예정', state:'next', h:'몸을 붙이기',
+      p:['AI 모션캡처로 옆사람의 동작 클립을 만들고 GLB로 변환해 3D 씬에 올립니다. 시선, 앉은 자세, 말할 때 고개를 돌리는 각도까지가 대사만큼 중요합니다.'] },
+
+    { when:'2026.11', tag:'개막', state:'next', h:'전시',
+      p:['관객이 벤치에 앉습니다. 옆사람이 말을 겁니다. 그리고 아무도 같은 밤을 보지 않습니다.'] },
+  ],
+};
+
+/* ============================================================
+   렌더링
+   ============================================================ */
+const $ = s => document.querySelector(s);
+const esc = s => String(s).replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
+
+/* D-day */
+(function(){
+  const t = new Date(DATA.opening + 'T00:00:00');
+  const n = new Date(); n.setHours(0,0,0,0);
+  const d = Math.round((t - n) / 86400000);
+  $('#dday').textContent = d > 0 ? 'D-' + d : (d === 0 ? 'D-DAY' : 'D+' + -d);
+  $('#nextStop').textContent = DATA.nextStop;
+  $('#stamp').textContent = n.toISOString().slice(0,10).replace(/-/g,'.') + ' 기준';
+})();
+
+/* 언덕 차트 */
+(function(){
+  const W = 860, H = 260, PAD = 44, top = 44, base = H - 52;
+  const x = p => PAD + (p/100) * (W - PAD*2);
+  const y = p => base - Math.sin((p/100) * Math.PI) * (base - top);
+
+  let path = '';
+  for (let i = 0; i <= 100; i++) path += (i ? ' L' : 'M') + x(i).toFixed(1) + ' ' + y(i).toFixed(1);
+
+  const seen = {};
+  const dots = DATA.hill.map((d, i) => {
+    const cx = x(d.pos), cy = y(d.pos);
+    // 라벨 겹침 완화: 근처 x에 이미 라벨이 있으면 위/아래 번갈아
+    const key = Math.round(cx / 70);
+    seen[key] = (seen[key] || 0) + 1;
+    const off = seen[key] % 2 ? -17 : 25;
+    const anchor = cx > W - 150 ? 'end' : (cx < 120 ? 'start' : 'middle');
+    return `<g>
+      <line x1="${cx}" y1="${cy}" x2="${cx}" y2="${base}" stroke="var(--edge)" stroke-width="1" stroke-dasharray="2 3"/>
+      <circle class="hill-dot" cx="${cx}" cy="${cy}" r="6.5"
+        fill="${d.pos < 50 ? 'var(--sodium)' : 'var(--fluor)'}"
+        stroke="var(--night)" stroke-width="2"/>
+      <text class="hill-lbl" x="${cx}" y="${cy + off}" text-anchor="${anchor}">${esc(d.name)}</text>
+    </g>`;
+  }).join('');
+
+  $('#hillChart').innerHTML = `
+  <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="작업별 진행 언덕 차트">
+    <line x1="${PAD}" y1="${base}" x2="${W-PAD}" y2="${base}" stroke="var(--edge)"/>
+    <line x1="${W/2}" y1="${top-14}" x2="${W/2}" y2="${base}" stroke="var(--edge)" stroke-dasharray="3 4"/>
+    <path d="${path}" fill="none" stroke="var(--ink-faint)" stroke-width="1.5" opacity=".55"/>
+    <text class="hill-axis" x="${PAD}" y="${base+22}">알아내는 중</text>
+    <text class="hill-axis" x="${W/2}" y="${top-22}" text-anchor="middle">정상</text>
+    <text class="hill-axis" x="${W-PAD}" y="${base+22}" text-anchor="end">만들기만 하면 됨</text>
+    ${dots}
+  </svg>`;
+})();
+
+/* 레인 */
+$('#lanes').innerHTML = DATA.lanes.map(l => `
+  <div class="lane">
+    <div class="lane-who"><span class="seat">${esc(l.seat)}</span><span class="role">${esc(l.role)}</span></div>
+    ${l.tasks.map(t => `<div class="task ${t.s}">
+      <span class="mark">${t.s==='done'?'✓':t.s==='now'?'▸':'·'}</span>
+      <span class="txt">${esc(t.t)}</span></div>`).join('')}
+  </div>`).join('');
+
+/* 막힌 것 */
+$('#blockers').innerHTML = DATA.blockers.map(b => `
+  <div class="block">
+    <span class="days">${esc(b.days)}</span>
+    <div><h4>${esc(b.t)}</h4><p>${esc(b.d)}</p></div>
+  </div>`).join('');
+
+/* 히트맵 */
+(function(){
+  const g = DATA.genres, m = DATA.matrix;
+  const flat = m.flat();
+  const total = flat.reduce((a,b)=>a+b, 0);
+  const max = Math.max(...flat);
+
+  let html = '<thead><tr><th class="hm-corner">사건 ↓ / 태도 →</th>' +
+    g.map(n => `<th scope="col">${esc(n)}</th>`).join('') + '</tr></thead><tbody>';
+
+  m.forEach((row, i) => {
+    html += `<tr><th scope="row">${esc(g[i])}</th>` + row.map((v, j) => {
+      const a = max ? (v / max) : 0;
+      const bg = v === 0 ? 'rgba(255,255,255,.022)'
+        : `rgba(242,160,61,${(0.10 + a*0.72).toFixed(3)})`;
+      const col = v === 0 ? 'var(--ink-faint)' : (a > .5 ? '#1A1206' : 'var(--ink)');
+      const pctCol = v === 0 ? 'var(--ink-faint)' : (a > .5 ? 'rgba(26,18,6,.6)' : 'var(--ink-faint)');
+      const pct = total ? Math.round(v/total*100) : 0;
+      return `<td class="${i===j?'pure':''}" style="background:${bg};color:${col}"
+        title="${esc(g[i])} × ${esc(g[j])} — ${v}명">
+        ${v}<span class="pct" style="color:${pctCol}">${pct}%</span></td>`;
+    }).join('') + '</tr>';
+  });
+
+  $('#heatmap').innerHTML = html + '</tbody>';
+
+  const pure = m.reduce((s,r,i)=>s+r[i], 0);
+  const empty = flat.filter(v => v === 0).length;
+  const thin  = flat.filter(v => v > 0 && v <= 1).length;
+
+  $('#hmStats').innerHTML = `
+    <div class="stat"><div class="k">TOTAL</div>
+      <div class="v">${total}<small>명</small></div>
+      <div class="d">내부 테스트 누적. 실제 전시 데이터로 교체 예정입니다.</div></div>
+    <div class="stat"><div class="k">MIXED</div>
+      <div class="v" style="color:var(--sodium)">${Math.round((total-pure)/total*100)}<small>%</small></div>
+      <div class="d">혼합 ${total-pure}명 · 순수 ${pure}명. 혼합이 절반을 넘으면 갈라짐이 잘 일어나고 있다는 뜻입니다.</div></div>
+    <div class="stat"><div class="k">CHECK</div>
+      <div class="v" style="color:${empty?'var(--stop)':'var(--ok)'}">${empty + thin}<small>칸</small></div>
+      <div class="d">${empty ? `빈 칸 ${empty}개, 1명뿐인 칸 ${thin}개. 표본이 적어서인지 판정이 특정 칸으로 안 가는 것인지 확인이 필요합니다.` : '모든 칸에 기록이 있습니다.'}</div></div>`;
+})();
+
+/* 파이프라인 */
+$('#pipeline').innerHTML = DATA.pipeline.map((p, i) => `
+  <div class="pipe-step ${p.k}">
+    <div class="n">${String(i+1).padStart(2,'0')}</div>
+    <div class="t">${esc(p.t)}</div>
+    <div class="s">${esc(p.s)}</div>
+    <div class="tool">${esc(p.tool)}</div>
+  </div>`).join('');
+
+/* 세션 로그 */
+$('#sessionLog').innerHTML =
+  '<thead><tr><th>NO</th><th>시각</th><th>사건</th><th>태도</th><th>배합</th><th>발화</th><th>길이</th></tr></thead><tbody>' +
+  DATA.sessions.map(s => {
+    const pure = s.ev === s.at;
+    return `<tr><td>#${esc(s.id)}</td><td>${esc(s.when)}</td><td>${esc(s.ev)}</td><td>${esc(s.at)}</td>
+      <td class="${pure?'pure':'mix'}">${pure?'순수·강화':'혼합'}</td>
+      <td>${s.turns}회</td><td>${esc(s.sec)}</td></tr>`;
+  }).join('') + '</tbody>';
+
+/* 노선도 */
+$('#routeMap').innerHTML = DATA.route.map(s => `
+  <div class="stop ${s.state}">
+    <div class="stop-when">${esc(s.when)}<span class="stop-tag">${esc(s.tag)}</span></div>
+    <h3>${esc(s.h)}</h3>
+    ${s.p.map(p => `<p>${p}</p>`).join('')}
+  </div>`).join('');
+
+/* 페이지 전환 */
+document.querySelectorAll('.nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const id = btn.dataset.go;
+    document.querySelectorAll('.page').forEach(p => p.hidden = (p.id !== id));
+    document.querySelectorAll('.nav-btn').forEach(b =>
+      b.setAttribute('aria-current', b === btn ? 'page' : 'false'));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  });
+});
+</script>
+</body>
+</html>
