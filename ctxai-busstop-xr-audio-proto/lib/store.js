@@ -371,7 +371,7 @@ export async function listFacecheckResults() {
   }
 }
 
-export async function addFacecheckResult({ name, intended, judged, correct, fear, amusement }) {
+export async function addFacecheckResult({ name, intended, judged, correct, fear, amusement, scores, ambiguousWith, baseline }) {
   const results = await listFacecheckResults();
   const rec = {
     id: crypto.randomUUID(),
@@ -382,6 +382,11 @@ export async function addFacecheckResult({ name, intended, judged, correct, fear
     correct: !!correct,
     fear: Number(fear) || 0,
     amusement: Number(amusement) || 0,
+    ambiguousWith: typeof ambiguousWith === "string" ? ambiguousWith.slice(0, 10) : "",
+    baseline: !!baseline,
+    scores: scores && typeof scores === "object"
+      ? Object.fromEntries(Object.entries(scores).slice(0, 12).map(([k, v]) => [String(k).slice(0, 20), Number(v) || 0]))
+      : undefined,
   };
   results.push(rec);
   await put(FACECHECK_KEY, Buffer.from(JSON.stringify(results, null, 2)), "application/json");

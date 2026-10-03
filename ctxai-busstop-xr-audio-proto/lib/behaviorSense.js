@@ -98,6 +98,16 @@ function frameSignal(landmarks) {
 const FEAR_SHAPES = ["eyeWideLeft", "eyeWideRight", "browInnerUp"];
 const AMUSEMENT_SHAPES = ["mouthSmileLeft", "mouthSmileRight", "cheekSquintLeft", "cheekSquintRight"];
 
+// 측정 전용(판정에는 안 쓰임) — /facecheck에서 팀이 "이 표정들이 서로 구분되는가"를
+// 실측하려고 뽑는 보조 점수. 임계값은 추정치다.
+function extraExpressions(cats) {
+  const smile = blendshapeScore(cats, ["mouthSmileLeft", "mouthSmileRight"]);
+  const surprise = Math.min(blendshapeScore(cats, ["jawOpen"]), blendshapeScore(cats, ["eyeWideLeft", "eyeWideRight"]));
+  const frown = blendshapeScore(cats, ["noseSneerLeft", "noseSneerRight", "browDownLeft", "browDownRight"]);
+  const sad = blendshapeScore(cats, ["mouthFrownLeft", "mouthFrownRight"]);
+  return { smile, surprise, frown, sad };
+}
+
 function blendshapeScore(categories, names) {
   if (!categories?.length) return 0;
   let max = 0;
@@ -138,12 +148,16 @@ export async function observe(videoEl, durationMs, onTick) {
         const result = landmarker.detectForVideo(videoEl, now);
         const lm = result?.faceLandmarks?.[0];
         if (lm) {
+          const cats = result?.faceBlendshapes?.[0]?.categories;
+          const fear = blendshapeScore(cats, FEAR_SHAPES);
+          const amusement = blendshapeScore(cats, AMUSEMENT_SHAPES);
+          const extra = extraExpressions(cats);
           const vis = minVisibility(lm);
           if (vis < MIN_VISIBILITY_TH) {
             // 손 등으로 얼굴 일부가 가려져 신뢰도가 낮다 — 이번 프레임은
             // MAX_FRAME_JUMP 튐 처리와 동일하게 인식 오류로 버린다.
             if (elapsed > 1200) occludedMs += Math.max(0, frameDelta);
-            onTick?.({ faceFound: true, dx: 0, dy: 0, scaleRatio: 1, rejected: true });
+            onTick?.({ faceFound: true, dx: 0, dy: 0, scaleRatio: 1, rejected: true, fear, amusement, extra });
           } else {
             const sig = frameSignal(lm);
 
@@ -151,11 +165,9 @@ export async function observe(videoEl, durationMs, onTick) {
             // 튀면 인식 오류로 보고 버린다 (이전 유효값을 유지) — §관찰 로그 참고.
             const jump = lastAccepted ? Math.max(Math.abs(sig.dx - lastAccepted.dx), Math.abs(sig.dy - lastAccepted.dy)) : 0;
             if (lastAccepted && jump > MAX_FRAME_JUMP) {
-              onTick?.({ faceFound: true, dx: 0, dy: 0, scaleRatio: 1, rejected: true });
+              onTick?.({ faceFound: true, dx: 0, dy: 0, scaleRatio: 1, rejected: true, fear, amusement, extra });
             } else {
               lastAccepted = sig;
-              const fear = blendshapeScore(result?.faceBlendshapes?.[0]?.categories, FEAR_SHAPES);
-              const amusement = blendshapeScore(result?.faceBlendshapes?.[0]?.categories, AMUSEMENT_SHAPES);
               if (elapsed > 1200) {
                 if (fear > maxFear) maxFear = fear;
                 if (amusement > maxAmusement) maxAmusement = amusement;
@@ -177,6 +189,7 @@ export async function observe(videoEl, durationMs, onTick) {
                 scaleRatio: baseline ? sig.scale / baseline.scale : 1,
                 fear,
                 amusement,
+                extra,
               });
             }
           }
