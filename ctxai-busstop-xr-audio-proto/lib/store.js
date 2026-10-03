@@ -84,11 +84,11 @@ async function remoteRemoveKey(key) {
   });
 }
 
-async function remoteList(prefix) {
+async function remoteList(prefix, limit = 100) {
   const res = await fetch(`${URL_BASE}/storage/v1/object/list/${BUCKET}`, {
     method: "POST",
     headers: authHeaders({ "Content-Type": "application/json" }),
-    body: JSON.stringify({ prefix, limit: 100, offset: 0 }),
+    body: JSON.stringify({ prefix, limit, offset: 0, sortBy: { column: "name", order: "desc" } }),
     cache: "no-store",
   });
   if (!res.ok) return [];
@@ -133,7 +133,7 @@ async function localRemoveKey(key) {
 
 const put = (key, bytes, ct) => (REMOTE ? (ensureBucket().then(() => remotePut(key, bytes, ct))) : localPut(key, bytes));
 const get = (key) => (REMOTE ? remoteGet(key) : localGet(key));
-const list = (prefix) => (REMOTE ? remoteList(prefix) : localList(prefix));
+const list = (prefix, limit) => (REMOTE ? remoteList(prefix, limit) : localList(prefix));
 const removeKey = (key) => (REMOTE ? remoteRemoveKey(key) : localRemoveKey(key));
 
 export const storageMode = () => (REMOTE ? "supabase" : "local");
@@ -399,4 +399,35 @@ export async function removeFacecheckResult(id) {
   const next = results.filter((r) => r.id !== id);
   await put(FACECHECK_KEY, Buffer.from(JSON.stringify(next, null, 2)), "application/json");
   return next;
+}
+
+// ── /film 세션 기록 ─────────────────────────────────────
+//
+// 파일럿 "시스템 판정 vs 본인이 느낀 장르" 일치율용. 예전엔 프로젝트 안 data/sessions/ 에 파일로 썼는데,
+// Vercel 서버리스는 파일시스템이 읽기 전용이라 배포판에선 2026-09-12부터 저장이 전부 500으로 실패했다.
+// 다른 데이터처럼 Supabase(로컬 개발·키 없음이면 storage/ 폴더)에 둔다.
+
+const SESSION_ID = /^[\w\-]+$/;
+
+export async function putSessionRecord(id, record) {
+  if (!SESSION_ID.test(id)) throw new Error("bad session id");
+  await put(`sessions/${id}.json`, Buffer.from(JSON.stringify(record)), "application/json");
+}
+
+export async function getSessionRecord(id) {
+  if (!SESSION_ID.test(id)) return null;
+  const raw = await get(`sessions/${id}.json`);
+  if (!raw) return null;
+  try { return JSON.parse(raw.toString("utf8")); } catch (e) { return null; }
+}
+
+/** 최근 세션 id (오래된 → 최신 순), 최대 limit 개. */
+export async function listSessionIds(limit = 200) {
+  const names = await list("sessions", limit);
+  return names.filter((n) => n.endsWith(".json")).map((n) => n.replace(/\.json$/, "")).sort().slice(-limit);
+}
+
+export async function removeSessionRecord(id) {
+  if (!SESSION_ID.test(id)) return;
+  await removeKey(`sessions/${id}.json`);
 }
