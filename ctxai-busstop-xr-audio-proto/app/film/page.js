@@ -19,6 +19,7 @@
 //
 // URL 옵션: ?speed=2 (영화 시간 배속) · ?cam=0 (웹캠 채널 끄기) · ?hud=0 (HUD 숨김) · ?rig=0 (리깅 캐릭터 끄기) · ?fx=0 (후처리·도로 반사 끄기)
 //           ?gaze=0 (데스크톱 자동 시선 끄기) · ?auto=1 (게이트 없이 자동 시작)
+//           ?callback=1 (보조 장르 인물의 첫 줄을 한 번 끼워 넣기 — 기본 끔, 인물 등장 없이 목소리만 나와서)
 //           ?pool=1 (대사 풀 모드 — 원문 46줄 대신 상태에 따라 보조 장르 변주를 줄마다 고른다. 목소리는 ElevenLabs로 통일 — public/reactive/audio/pool)
 //           ?scene=240 (캐릭터 장면 목표 길이 초 — 대사 사이 침묵을 늘려 안내방송의 "5분 후 도착"에 가깝게. 기본 0 = 자연 길이)
 //           ?voice=1 (음성 채널 — 안내방송 뒤 "당신은 무엇을 기다리고 있습니까?"를 묻고 답을 STT·톤 분석해 증거로 넣고,
@@ -251,6 +252,9 @@ export default function FilmPage() {
   const { active: loading, progress: loadPct } = useProgress();
   const ready = !loading && loadPct >= 100;
   const usePool = q.pool === "1"; // 대사 풀 모드 (lib/dialoguePool.js)
+  // 보조 장르 콜백(다른 장르 인물의 첫 줄을 한 번 끼워 넣기) — 기본 끔. 그 인물이 화면에 없이 다른 목소리만 들려
+  // 오류처럼 들렸다(2026-10-24 Quest 실기기). 인물 등장과 묶기 전까지는 ?callback=1 일 때만.
+  const useCallback = q.callback === "1";
   const voiceFake = q.voicefake || null; // public/samples/<name>.m4a 를 마이크 대신 쓴다 (점검용)
   // 장면 목표 길이(초). 대사 오디오는 합쳐 1~1.5분이라 "5분 후 도착"을 채우려면 침묵을 늘려야 한다.
   // 침묵은 상태가 정한 값(npcSilence)을 하한으로 두고, 남는 시간을 줄 사이에 고르게 나눈다.
@@ -605,7 +609,7 @@ export default function FilmPage() {
       const { secondary, secondaryWeight } = rank(d.st.current);
 
       // 보조 장르 콜백 — 비중이 임계값을 넘는 순간 한 번, 그 장르의 첫 줄을 끼워 넣는다 (마지막 말 앞에는 넣지 않는다)
-      if (!insertedCallback && i >= 2 && !b.atBus && secondary !== dom && secondaryWeight >= TRIGGERS.secondaryCallback.above) {
+      if (useCallback && !insertedCallback && i >= 2 && !b.atBus && secondary !== dom && secondaryWeight >= TRIGGERS.secondaryCallback.above) {
         const cb = DIALOGUE_V2_LINES.find((x) => x.genre === secondary && x.seq === "01");
         if (cb) {
           insertedCallback = true;
