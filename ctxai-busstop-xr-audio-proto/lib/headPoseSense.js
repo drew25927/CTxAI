@@ -14,6 +14,11 @@
 //   블랙코미디 = 탐색 행동 AND 빠른 회복                (최솟값)
 //   로맨스   = 나머지 (사람에 대한 선택적 관심이 있으면 가산)
 // 임계값은 전부 잠정치다 — 파일럿 실측 전. 숫자는 위쪽 상수에 모아 뒀다.
+//
+// 파일럿 피팅용으로 원시 헤드 포즈를 30Hz 격자로 남기고(report({ full: true }).raw), 사건별 파생 피처 6개
+// (lib/headPoseFeatures.js)를 같이 낸다. 세션 기록에 들어가 scripts/fit-judging.mjs 가 읽는다.
+
+import { RAW_HZ, unpackRaw, sessionProbeFeatures, sessionVector } from "./headPoseFeatures.js";
 
 const LOOK_TOLERANCE_DEG = 28;    // 사건 방위각 ±이만큼이면 "그쪽을 봤다"
 const STARTLE_YAW_VEL = 140;      // deg/s — 이보다 빠른 고개 돌림은 "화들짝"
@@ -39,6 +44,12 @@ export function createHeadPoseSensor({ push, mark }) {
   let prev = null;                     // { yaw, pitch, t }
   const active = new Map();            // 사건 이름 → 진행 중 관찰
   const done = [];
+  const probes = [];                   // 피처 계산용 사건 목록 (센서 시간 기준 시작·끝·방향)
+  // 원시 기록 — 정확히 1/RAW_HZ 간격 격자에 선형 보간해서 담는다(프레임이 들쭉날쭉해도 t0 + i·dt 로 복원되게).
+  // 정수 압축: yaw·pitch 0.1°, z 1mm. 10분 상한.
+  const RAW_MAX = RAW_HZ * 600;
+  const raw = { hz: RAW_HZ, t0: null, yaw: [], pitch: [], z: [] };
+  let rawNext = null;
 
   // 상시 창 지표
   let win = freshWindow();
@@ -64,7 +75,24 @@ export function createHeadPoseSensor({ push, mark }) {
       maxVel: 0, retreat: 0, recoverySec: null, leftLookAt: null, everLeft: false,
       yawAtStart: prev?.yaw ?? 0,
     });
+    probes.push({ name, azimuth: azimuthDeg, start: t, end: t + durationSec, kind: meta.kind || "probe" });
     mark?.("event:start", { name, azimuthDeg });
+  }
+
+  function recordRaw(yawDeg, pitchDeg, posZ) {
+    if (raw.t0 == null) { raw.t0 = Math.round(t * 1000) / 1000; rawNext = raw.t0; }
+    const dtG = 1 / RAW_HZ;
+    const p = prev ? { t: prev.t, yaw: prev.yaw, pitch: prev.pitch, z: prev.z } : { t, yaw: yawDeg, pitch: pitchDeg, z: posZ };
+    // yaw 는 ±180 경계를 넘을 수 있어 가장 짧은 쪽으로 보간
+    const dy = ((yawDeg - p.yaw) % 360 + 540) % 360 - 180;
+    while (rawNext <= t + 1e-9 && raw.yaw.length < RAW_MAX) {
+      const a = t > p.t ? Math.max(0, Math.min(1, (rawNext - p.t) / (t - p.t))) : 1;
+      let y = p.yaw + dy * a; y = ((y + 540) % 360) - 180;
+      raw.yaw.push(Math.round(y * 10));
+      raw.pitch.push(Math.round((p.pitch + (pitchDeg - p.pitch) * a) * 10));
+      raw.z.push(Math.round((p.z + (posZ - p.z) * a) * 1000));
+      rawNext += dtG;
+    }
   }
 
   function scoreEvent(ev) {
@@ -111,6 +139,7 @@ export function createHeadPoseSensor({ push, mark }) {
    */
   function update(yawDeg, pitchDeg, posZ, dt) {
     t += dt;
+    recordRaw(yawDeg, pitchDeg, posZ);
     if (baseSamples.length < 60 && t < BASELINE_SEC) {
       baseSamples.push({ yaw: yawDeg, pitch: pitchDeg, z: posZ });
       if (!baseline) baseline = { yaw: yawDeg, pitch: pitchDeg, z: posZ };
@@ -204,10 +233,17 @@ export function createHeadPoseSensor({ push, mark }) {
       win = freshWindow();
     }
 
-    prev = { yaw: yawDeg, pitch: pitchDeg, t };
+    prev = { yaw: yawDeg, pitch: pitchDeg, z: posZ, t };
   }
 
-  function report() { return { baseline, events: done, activeCount: active.size }; }
+  /** HUD 용(가벼움). full 이면 세션 저장용 — 원시 30Hz 기록·사건 목록·사건별/세션 피처까지. */
+  function report({ full = false } = {}) {
+    const base = { baseline, events: done, activeCount: active.size };
+    if (!full) return base;
+    const samples = unpackRaw(raw);
+    const probeFeats = sessionProbeFeatures(samples, probes, baseline?.yaw ?? 0);
+    return { ...base, probes, raw, features: { perProbe: probeFeats, session: sessionVector(probeFeats) } };
+  }
 
   return { update, beginEvent, setNpcAzimuth, report };
 }

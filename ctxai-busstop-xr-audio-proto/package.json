@@ -13,7 +13,8 @@
     "synthesize-dialogue": "node scripts/synthesize-dialogue.mjs",
     "pull-assets": "node scripts/pull-assets.mjs",
     "test": "node scripts/test-direction.mjs && node scripts/sim-headpose.mjs && node scripts/test-interim.mjs && node scripts/sim-interim.mjs",
-    "gen-pool": "node scripts/gen-dialogue-pool.mjs"
+    "gen-pool": "node scripts/gen-dialogue-pool.mjs",
+    "fit": "node scripts/fit-judging.mjs"
   },
   "dependencies": {
     "@google/model-viewer": "^4.3.1",

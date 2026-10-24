@@ -733,7 +733,7 @@ export default function FilmPage() {
   function sessionData(extra = {}) {
     const d = directionRef.current;
     if (!d) return null;
-    return d.exportSession({ dominant: filmRef.current.dominant, speed, headPose: sensorRef.current?.report?.(), ...extra });
+    return d.exportSession({ dominant: filmRef.current.dominant, speed, headPose: sensorRef.current?.report?.({ full: true }), ...extra });
   }
 
   // 종료 시 자동 저장 (data/sessions/, Supabase 아님). 실패해도 체험은 영향 없다.
