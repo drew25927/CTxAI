@@ -4,7 +4,7 @@
 //   node scripts/fit-judging.mjs --base http://localhost:3000
 //   node scripts/fit-judging.mjs --file sessions.json  (세션 객체 배열 JSON, 또는 그런 파일이 든 폴더)
 //   node scripts/fit-judging.mjs --synthetic 20        파이프라인 점검용 가짜 관객 20명 (실데이터 아님)
-//   옵션: --lambda 1 (L2 세기) · --out fit.json (피팅 결과 저장)
+//   옵션: --lambda 1 (L2 세기) · --weighted (자기보고 강도 1~7 을 표본 가중치로) · --out fit.json (피팅 결과 저장)
 //
 // 정답 라벨 = 종료 카드의 자기보고(selfReport: R/H/C). 같은 회차가 여러 번 저장되면(자기보고로 다시 저장)
 // cardToken 기준으로 하나만 쓴다. 원시 헤드 포즈(headPose.raw)가 있으면 lib/headPoseFeatures.js 로 다시
@@ -76,7 +76,7 @@ async function synthetic(n) {
       s.update(yaw, 0, z, dt); t += dt;
     }
     const hp = s.report({ full: true });
-    out.push({ id: `synthetic_${k}`, selfReport: label[profile], dominant: null, headPose: { raw: hp.raw, probes: hp.probes, baseline: hp.baseline, features: hp.features } });
+    out.push({ id: `synthetic_${k}`, selfReport: label[profile], selfIntensity: 1 + Math.floor(rnd() * 7), dominant: null, headPose: { raw: hp.raw, probes: hp.probes, baseline: hp.baseline, features: hp.features } });
   }
   return out;
 }
@@ -117,14 +117,15 @@ function prepare(train) {
 
 function softmax(v) { const m = Math.max(...v); const e = v.map((x) => Math.exp(x - m)); const s = e.reduce((a, b) => a + b, 0); return e.map((x) => x / s); }
 
-function fitLogistic(Z, y, lambda, iters = 3000, lr = 0.2) {
+function fitLogistic(Z, y, lambda, iters = 3000, lr = 0.2, sw = null) {
   const K = CLASSES.length, D = Z[0].length, N = Z.length;
+  const w8 = sw || new Array(N).fill(1), W8 = w8.reduce((a, b) => a + b, 0) || 1;
   const W = Array.from({ length: K }, () => new Array(D).fill(0)), b = new Array(K).fill(0);
   for (let it = 0; it < iters; it++) {
     const gW = Array.from({ length: K }, () => new Array(D).fill(0)), gb = new Array(K).fill(0);
     for (let i = 0; i < N; i++) {
       const p = softmax(W.map((w, k) => b[k] + w.reduce((a, wj, j) => a + wj * Z[i][j], 0)));
-      for (let k = 0; k < K; k++) { const e = p[k] - (y[i] === k ? 1 : 0); gb[k] += e / N; for (let j = 0; j < D; j++) gW[k][j] += (e * Z[i][j]) / N; }
+      for (let k = 0; k < K; k++) { const e = (p[k] - (y[i] === k ? 1 : 0)) * w8[i]; gb[k] += e / W8; for (let j = 0; j < D; j++) gW[k][j] += (e * Z[i][j]) / W8; }
     }
     for (let k = 0; k < K; k++) { b[k] -= lr * gb[k]; for (let j = 0; j < D; j++) W[k][j] -= lr * (gW[k][j] + lambda * W[k][j]); }
   }
@@ -143,13 +144,18 @@ for (const s of all) {
   if (!CLASSES.includes(s.selfReport)) { noLabel++; continue; }
   const f = featuresOf(s);
   if (!f) { noFeat++; continue; }
-  rows.push({ id: s.id, y: CLASSES.indexOf(s.selfReport), sys: s.dominant || null, x: FEATURE_NAMES.map((n) => f.vec[n]), from: f.from });
+  const inten = Number.isFinite(Number(s.selfIntensity)) ? Math.max(1, Math.min(7, Number(s.selfIntensity))) : null;
+  rows.push({ id: s.id, y: CLASSES.indexOf(s.selfReport), sys: s.dominant || null, x: FEATURE_NAMES.map((n) => f.vec[n]), from: f.from, inten });
 }
 
 console.log(`세션 ${sessions.length}개 → 회차 ${all.length}개 (같은 cardToken 합침) · 자기보고 없음 ${noLabel} · 피처 없음(10/24 이전 기록) ${noFeat} · 사용 ${rows.length}`);
 if (has("synthetic")) console.log("⚠️  --synthetic: 가짜 관객으로 파이프라인만 점검하는 중 — 아래 숫자는 실측이 아님");
 const counts = CLASSES.map((c, k) => `${LABEL[c]} ${rows.filter((r) => r.y === k).length}`).join(" · ");
 console.log(`라벨 분포: ${counts}`);
+const WEIGHTED = has("weighted");
+const sw = (rs) => (WEIGHTED ? rs.map((r) => (r.inten ?? 4) / 7) : null);
+const intenLine = CLASSES.map((c, k) => { const xs = rows.filter((r) => r.y === k && r.inten != null).map((r) => r.inten); return `${LABEL[c]} ${xs.length ? (xs.reduce((a, b) => a + b, 0) / xs.length).toFixed(1) : "–"}`; }).join(" · ");
+console.log(`자기보고 강도 평균(1~7): ${intenLine}${WEIGHTED ? "  — 표본 가중치로 사용" : ""}`);
 if (rows.length < 6) { console.log("피팅하기엔 자기보고가 있는 회차가 너무 적다 (최소 6, 권장 15~20). 파일럿 뒤 다시 실행."); process.exit(0); }
 
 // 현재 시스템 일치율 (비교 기준)
@@ -165,7 +171,7 @@ let correct = 0;
 for (let i = 0; i < rows.length; i++) {
   const train = rows.filter((_, j) => j !== i);
   const prep = prepare(train);
-  const m = fitLogistic(train.map((r) => prep.z(r.x)), train.map((r) => r.y), LAMBDA, 1500);
+  const m = fitLogistic(train.map((r) => prep.z(r.x)), train.map((r) => r.y), LAMBDA, 1500, 0.2, sw(train));
   const p = m.predict(prep.z(rows[i].x));
   const pred = p.indexOf(Math.max(...p));
   confusion[rows[i].y][pred]++;
@@ -179,7 +185,7 @@ CLASSES.forEach((c, k) => console.log("  " + LABEL[c].padEnd(10) + confusion[k].
 
 // 전체로 다시 피팅 — 가중치(표준화 단위)
 const prep = prepare(rows);
-const model = fitLogistic(rows.map((r) => prep.z(r.x)), rows.map((r) => r.y), LAMBDA);
+const model = fitLogistic(rows.map((r) => prep.z(r.x)), rows.map((r) => r.y), LAMBDA, 3000, 0.2, sw(rows));
 console.log("\n가중치 (표준화 1σ 당, +면 그 장르 쪽)");
 console.log("  " + "피처".padEnd(14) + CLASSES.map((c) => LABEL[c].padEnd(10)).join(""));
 FEATURE_NAMES.forEach((f, j) => console.log("  " + f.padEnd(14) + CLASSES.map((_, k) => model.W[k][j].toFixed(2).padStart(6).padEnd(10)).join("")));
@@ -196,7 +202,7 @@ console.log("  참고: flinch_peak 중앙값 → lib/headPoseSense.js STARTLE_YA
 const outPath = opt("out", null);
 if (outPath) {
   const result = {
-    fittedAt: new Date().toISOString(), synthetic: has("synthetic"), n: rows.length, lambda: LAMBDA, loo, confusion,
+    fittedAt: new Date().toISOString(), synthetic: has("synthetic"), n: rows.length, lambda: LAMBDA, weighted: WEIGHTED, loo, confusion,
     classes: CLASSES, features: FEATURE_NAMES, impute: prep.med, mean: prep.mu, std: prep.sd, weights: model.W, bias: model.b,
   };
   fs.writeFileSync(outPath, JSON.stringify(result, null, 2));

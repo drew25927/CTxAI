@@ -5,7 +5,7 @@
 // 저장소는 다른 데이터와 같은 lib/store.js(배포판 Supabase, 키 없는 로컬은 storage/sessions/) —
 // 예전처럼 프로젝트 폴더에 파일로 쓰면 Vercel(읽기 전용 파일시스템)에서 500 이 난다.
 //
-//   POST /api/session  { ...exportSession() 결과, selfReport?: "R"|"H"|"C" }
+//   POST /api/session  { ...exportSession() 결과, selfReport?: "R"|"H"|"C", selfIntensity?: 1~7 }
 //   GET  /api/session  → 저장된 기록 목록과 요약(마지막 배합·앉은 인물·자기보고)
 //   GET  /api/session?id=...  → 기록 하나
 //   DELETE /api/session?id=... → 테스트·잘못된 기록 지우기
@@ -51,7 +51,7 @@ export async function GET(req) {
     const j = await getSessionRecord(sid);
     if (!j) continue;
     items.push({
-      id: j.id, savedAt: j.savedAt, dominant: j.dominant ?? null, selfReport: j.selfReport ?? null,
+      id: j.id, savedAt: j.savedAt, dominant: j.dominant ?? null, selfReport: j.selfReport ?? null, selfIntensity: j.selfIntensity ?? null,
       final: j.final?.current ?? null, settled: j.final?.settled ?? null, confidence: j.final?.confidence ?? null,
       durationSec: j.trajectory?.length ? j.trajectory[j.trajectory.length - 1].t : null,
     });

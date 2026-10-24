@@ -739,6 +739,9 @@ export default function FilmPage() {
   // 종료 시 자동 저장 (data/sessions/, Supabase 아님). 실패해도 체험은 영향 없다.
   const [savedId, setSavedId] = useState(null);
   const [selfReport, setSelfReport] = useState(null);
+  // 파일럿 라벨 — 3지선다 + 7점 강도. 판정 결과는 이걸 받은 뒤에 보여 준다(먼저 보면 자기보고가 오염된다).
+  const [selfIntensity, setSelfIntensity] = useState(null);
+  const [surveyDone, setSurveyDone] = useState(false);
   // 체험 카드 — 한 회차 동안 같은 token(추측 불가한 32자 16진)을 쓴다. 저장이 성공하면 /card/<token> 을 QR 로 띄운다.
   const cardTokenRef = useRef(null);
   const [cardQr, setCardQr] = useState(null);
@@ -758,13 +761,13 @@ export default function FilmPage() {
     } catch { /* 로컬 저장 실패는 무시 */ }
   }
   useEffect(() => { if (phase === "end") {
-    setSelfReport(null); setCardQr(null);
+    setSelfReport(null); setSelfIntensity(null); setSurveyDone(false); setCardQr(null);
     cardTokenRef.current = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
     saveSession();
   } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [phase]);
 
   function downloadSession() {
-    const data = sessionData({ selfReport });
+    const data = sessionData({ selfReport, selfIntensity });
     if (!data) return;
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -921,6 +924,39 @@ export default function FilmPage() {
 
       {phase === "end" && (
         <div className={s.intro}>
+          {!surveyDone ? (
+          <div className={f.endCard}>
+            {/* 1단계 — 자기보고만. 판정·배합·그래프는 아직 안 보여 준다. */}
+            <h2 className={f.endTitle}>방금 앉아 있던 정류장은 어땠나요?</h2>
+            <p className={f.endSub}>정답은 없습니다. 느낀 그대로 골라 주세요.</p>
+            <div className={f.endActions} style={{ marginTop: 18 }}>
+              {["R", "H", "C"].map((g) => (
+                <button key={g} className={f.endBtn}
+                  style={{ padding: "14px 22px", fontSize: 17, borderColor: selfReport === g ? GENRE_META[g].accent : undefined, color: selfReport === g ? GENRE_META[g].accent : undefined }}
+                  onClick={() => setSelfReport(g)}
+                >{{ R: "설렘·따뜻함", H: "불안·으스스함", C: "어이없음·웃김" }[g]}<br /><span style={{ fontSize: 12, opacity: 0.7 }}>{GENRE_META[g].label}</span></button>
+              ))}
+            </div>
+            <p className={f.endSub} style={{ marginTop: 18 }}>그 느낌이 얼마나 강했나요?</p>
+            <div className={f.endActions} style={{ gap: 6, alignItems: "center" }}>
+              <span className={s.dim} style={{ fontSize: 12 }}>아주 약하게</span>
+              {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                <button key={n} className={f.endBtn}
+                  style={{ width: 46, height: 46, padding: 0, fontSize: 17, borderColor: selfIntensity === n ? "#fff" : undefined, background: selfIntensity === n ? "rgba(255,255,255,.16)" : undefined }}
+                  onClick={() => setSelfIntensity(n)}
+                >{n}</button>
+              ))}
+              <span className={s.dim} style={{ fontSize: 12 }}>아주 강하게</span>
+            </div>
+            <div className={f.endActions} style={{ marginTop: 20 }}>
+              <button className={`${f.endBtn} ${f.endBtnMain}`} disabled={!selfReport || !selfIntensity}
+                style={{ opacity: selfReport && selfIntensity ? 1 : 0.45, padding: "12px 28px", fontSize: 16 }}
+                onClick={() => { saveSession({ selfReport, selfIntensity }); setSurveyDone(true); }}
+              >결과 보기</button>
+              <button className={f.endBtn} onClick={() => { setSelfReport(null); setSelfIntensity(null); setSurveyDone(true); }}>건너뛰기</button>
+            </div>
+          </div>
+          ) : (
           <div className={f.endCard}>
             <h2 className={f.endTitle}>오늘의 정류장은 이렇게 흘렀습니다</h2>
             <p className={f.endSub}>
@@ -932,19 +968,9 @@ export default function FilmPage() {
               {["R", "H", "C"].map((g) => <span key={g}><i style={{ background: GENRE_META[g].accent }} />{GENRE_META[g].label}</span>)}
               <span><i style={{ background: "rgba(255,255,255,0.35)" }} />정착도</span>
             </div>
-            {/* 파일럿용 자기보고 — "당신이 느낀 정류장은?" 시스템 판정과의 일치율 재료 */}
-            <div className={f.legend} style={{ justifyContent: "center", alignItems: "center", gap: 8 }}>
-              <span>당신이 느낀 정류장은?</span>
-              {["R", "H", "C"].map((g) => (
-                <button
-                  key={g}
-                  className={f.endBtn}
-                  style={{ padding: "5px 12px", borderColor: selfReport === g ? GENRE_META[g].accent : undefined, color: selfReport === g ? GENRE_META[g].accent : undefined }}
-                  onClick={() => { setSelfReport(g); saveSession({ selfReport: g }); }}
-                >{GENRE_META[g].label}</button>
-              ))}
-              {savedId && <span className={s.dim} style={{ fontSize: 11 }}>· 저장됨</span>}
-            </div>
+            {selfReport && (
+              <p className={f.endSub}>당신이 느낀 정류장: <b style={{ color: GENRE_META[selfReport].accent }}>{GENRE_META[selfReport].label}</b>{selfIntensity ? ` (강도 ${selfIntensity}/7)` : ""}{savedId ? " · 저장됨" : ""}</p>
+            )}
             {cardQr && (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 16, margin: "14px 0 4px" }}>
                 <img src={cardQr} alt="내 카드 QR" width={132} height={132} style={{ borderRadius: 8, background: "#fff" }} />
@@ -959,6 +985,7 @@ export default function FilmPage() {
               <button className={f.endBtn} onClick={reset}>처음으로</button>
             </div>
           </div>
+          )}
         </div>
       )}
     </div>
