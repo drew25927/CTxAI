@@ -576,7 +576,13 @@ export default function FilmPage() {
     setXrError("");
     try {
       await xrStore.enterVR();
-    } catch { setXrError("VR 진입에 실패했습니다 — 헤드셋 연결과 브라우저의 WebXR 지원을 확인해 주세요."); }
+    } catch (e) {
+      // 원인을 알 수 있게 에러 이름·메시지와 WebXR 지원 여부를 같이 보여준다 (헤드셋에서 직접 읽을 수 있도록).
+      console.error("enterVR failed", e);
+      let supported = "확인 불가";
+      try { supported = String(await navigator.xr?.isSessionSupported?.("immersive-vr")); } catch (e2) { supported = `오류 ${e2?.name || ""}`; }
+      setXrError(`VR 진입에 실패했습니다 — ${e?.name || "Error"}: ${e?.message || e} · navigator.xr ${navigator.xr ? "있음" : "없음"} · immersive-vr 지원 ${supported} · https ${window.isSecureContext}`);
+    }
   }
 
   function reset() {
