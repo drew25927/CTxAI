@@ -45,6 +45,8 @@ export const REPORTS = [
     desc: "지금까지 한 것 · 구현 중인 기술 · 최종 결과물 예시를 한 장으로 정리." },
   { href: "/guide?doc=tech-direction", title: "기술 발전 방향",
     desc: "지금 만드는 기술이 어디에 해당하고, 앞으로 어떻게 발전시킬지 정리한 문서." },
+  { href: "/guide?doc=dialogue-table", title: "대사표 (로맨스·공포·블랙코미디 현재본)",
+    desc: "원문 46줄 + 보조 장르 변주 92줄을 한 표로. 목소리는 ElevenLabs로 통일(10/24). 장면과 안 맞는 줄은 ⚠️ — 기획이 채택·수정할 곳." },
   { href: "/guide?doc=judgment-criteria", title: "판정 기준",
     desc: "행동·텍스트·음성 3채널을 어떻게 점수로 바꾸고 합치는지, 알려진 한계와 잠정치." },
   { href: "/guide?doc=implementation-risks", title: "구현 리스크 · 지원 필요사항",
