@@ -760,6 +760,8 @@ export default function FilmPage() {
       }
     } catch { /* 로컬 저장 실패는 무시 */ }
   }
+  // ?endpreview=1 — 영화를 돌리지 않고 종료 화면(자기보고 → 결과)만 띄워 본다. 진행 기록이 없어 저장은 되지 않는다.
+  useEffect(() => { if (q.endpreview === "1") setPhase("end"); }, [q.endpreview]);
   useEffect(() => { if (phase === "end") {
     setSelfReport(null); setSelfIntensity(null); setSurveyDone(false); setCardQr(null);
     cardTokenRef.current = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
