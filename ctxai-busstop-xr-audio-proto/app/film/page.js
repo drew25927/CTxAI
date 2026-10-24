@@ -231,6 +231,11 @@ function TrajectoryChart({ trajectory, events }) {
 
 export default function FilmPage() {
   const q = useQuery();
+  const [isQuest, setIsQuest] = useState(false); // 서버 렌더와 어긋나지 않게 마운트 뒤에 판정
+  useEffect(() => { setIsQuest(/OculusBrowser|Quest/i.test(navigator.userAgent)); }, []);
+  // 가벼운 모드 — Quest 브라우저에선 기본. 후처리·도로/웅덩이 반사·그림자를 끄고 해상도 배율을 1로 둔다.
+  // (2026-10-24 Quest 3 실측: 고화질 그대로면 장면 로드 뒤 초당 약 1프레임.) ?lite=1 강제, ?lite=0 해제.
+  const lite = q.lite === "1" || (q.lite !== "0" && isQuest);
   const speed = Math.max(0.25, Math.min(6, Number(q.speed) || 1));
   const useCam = q.cam !== "0";
   const showHud = q.hud !== "0";
@@ -245,7 +250,7 @@ export default function FilmPage() {
   // 장면 목표 길이(초). 대사 오디오는 합쳐 1~1.5분이라 "5분 후 도착"을 채우려면 침묵을 늘려야 한다.
   // 침묵은 상태가 정한 값(npcSilence)을 하한으로 두고, 남는 시간을 줄 사이에 고르게 나눈다.
   const sceneTarget = Math.max(0, Number(q.scene) || 0);
-  const fx = q.fx !== "0"; // ?fx=0 이면 후처리·도로 반사 끄기 (성능 점검용)
+  const fx = q.fx === "1" || (q.fx !== "0" && !lite); // ?fx=0 이면 후처리·도로 반사 끄기 (성능 점검용) — 가벼운 모드에선 기본으로 끔
   // 컨셉 이미지 색감 보정 세기 — 기본 1, ?grade=0 이면 끔, 1.5 까지(비교용). 아트 월드에서만 기본 켬 — 예전 지형(?art=0)은 컨셉 색이 아니다
   const grade = q.grade != null ? Math.max(0, Math.min(1.5, Number(q.grade) || 0)) : (useArt ? 1 : 0);
   const forceAnswer = q.answer === "1"; // ?answer=1 — 모든 질문을 "답함"으로 처리 (QA: 데스크톱에선 고개 응답이 생기지 않아 답함 갈래를 들을 수 없다)
@@ -273,8 +278,6 @@ export default function FilmPage() {
   const [diag, setDiag] = useState([]);
   const diagLogRef = useRef([]);
   // Quest 브라우저에서는 주소에 ?diag=1 이 없어도 켠다(주소 입력 실수·북마크로 빠지는 일이 잦아서). ?diag=0 이면 끈다.
-  const [isQuest, setIsQuest] = useState(false); // 서버 렌더와 어긋나지 않게 마운트 뒤에 판정
-  useEffect(() => { setIsQuest(/OculusBrowser|Quest/i.test(navigator.userAgent)); }, []);
   const diagOn = q.diag === "1" || (q.diag !== "0" && isQuest);
   useEffect(() => {
     if (!diagOn) return;
@@ -311,7 +314,8 @@ export default function FilmPage() {
       window.removeEventListener("webglcontextlost", onCtx, true); window.removeEventListener("webglcontextrestored", onCtx, true);
     };
   }, [diagOn]);
-  useEffect(() => { window.__diagPush?.(`phase ${phase} · xrActive ${xrActive}`); }, [phase, xrActive]);
+  useEffect(() => { window.__diagPush?.(`phase ${phase} · xrActive ${xrActive} · lite ${lite} · fx ${fx}`); }, [phase, xrActive, lite, fx, diagOn]);
+  useEffect(() => { if (xrError) window.__diagPush?.(`xrError ${xrError}`); }, [xrError]);
   const [camStatus, setCamStatus] = useState("off");
   const [askStatus, setAskStatus] = useState(null); // 질문 뒤 기다림·응답 결과 (HUD — 헤드셋 파일럿에서 고개 응답이 잡히는지 보는 용도)
 
@@ -710,7 +714,7 @@ export default function FilmPage() {
   return (
     <div className={s.stage} style={{ "--accent": accent }}>
       <div className={s.bgLayer}>
-        <Canvas shadows="soft" gl={{ antialias: true }}>
+        <Canvas shadows={lite ? false : "soft"} dpr={lite ? 1 : undefined} gl={{ antialias: !lite }}>
           <PerspectiveCamera makeDefault position={CANVAS_CAMERA.position} fov={CANVAS_CAMERA.fov} />
           <XR store={xrStore}>
             <ReactiveStage directionRef={directionRef} actorsRef={actorsRef} dominant={dominant} paramsOut={paramsRef} cueRef={filmRef} useRig={useRig} useCutout={useCutout} useArt={useArt} rigTest={q.rigtest === "1"} signText={signText} reflect={fx && !xrActive} benchYaw={Number(q.benchyaw) || 0} gradeOn={grade > 0} />
