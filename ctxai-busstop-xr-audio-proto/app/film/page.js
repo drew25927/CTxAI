@@ -276,7 +276,11 @@ export default function FilmPage() {
     if (q.diag !== "1") return;
     const id = `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     let dirty = true;
+    const seen = new Map(); // 같은 경고가 매 프레임 쌓이지 않게 — 같은 문구는 처음 한 번과 10·100·1000번째만 남긴다
     const push = (m) => {
+      const c = (seen.get(m) || 0) + 1; seen.set(m, c);
+      if (c > 1 && c !== 10 && c !== 100 && c !== 1000) return;
+      if (c > 1) m = `(x${c}) ${m}`;
       const line = `${new Date().toISOString().slice(11, 19)} ${m}`;
       diagLogRef.current = [...diagLogRef.current.slice(-79), line];
       setDiag(diagLogRef.current.slice(-8)); dirty = true;
