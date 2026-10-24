@@ -169,7 +169,12 @@ function DesktopGaze({ controlsRef, actorsRef, filmRef }) {
 // 렌더 루프가 실제로 도는지·장면이 얼마나 무거운지 5초마다 진단 로그에 남긴다 (?diag=1).
 function FrameProbe() {
   const n = useRef(0), last = useRef(0);
+  const fn = useRef(0), fl = useRef(0);
   useFrame((state) => {
+    // 운영자 모니터(/film/live)용 fps — 진단 로그와 별개로 늘 잰다
+    fn.current++; const t = performance.now();
+    if (!fl.current) fl.current = t;
+    else if (t - fl.current >= 2000) { window.__fps = Math.round((fn.current * 1000) / (t - fl.current)); fn.current = 0; fl.current = t; }
     if (!window.__diagPush) return;
     n.current++;
     const now = performance.now();
@@ -324,6 +329,28 @@ export default function FilmPage() {
   const actorsRef = useRef({});
   const paramsRef = useRef(null);
   const filmRef = useRef({ running: false, t: 0, dominant: null, npcDistance: 0.9, busAt: null, onFrame: null });
+  // 운영자 모니터 — 진행 상황 요약을 1.5초마다 /api/live 로 보낸다 (PC 에서 /film/live 로 본다). ?live=0 이면 끈다.
+  const liveRef = useRef({});
+  liveRef.current = { phase, hud, line, askStatus, caption, xrActive, camStatus, isQuest };
+  useEffect(() => {
+    if (q.live === "0") return;
+    const id = `l${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+    let busy = false;
+    const tick = () => {
+      if (busy) return; busy = true;
+      const v = liveRef.current, h = v.hud;
+      const body = {
+        id, device: v.isQuest ? "Quest 3" : /Mobile|Android|iPhone/i.test(navigator.userAgent) ? "모바일" : "PC",
+        phase: v.phase, t: h?.t ?? 0, dominant: filmRef.current?.dominant || null, settled: h?.settled ?? null,
+        weights: h?.current || null, line: v.line, ask: v.askStatus, caption: v.caption, xr: v.xrActive, fps: window.__fps ?? null, cam: v.camStatus,
+      };
+      fetch("/api/live", { method: "POST", keepalive: true, headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
+        .catch(() => {}).finally(() => { busy = false; });
+    };
+    tick();
+    const t = setInterval(tick, 1500);
+    return () => clearInterval(t);
+  }, [q.live]);
   const controlsRef = useRef(null);
   const audioRef = useRef(new Map());
   const bgmRef = useRef({});

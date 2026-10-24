@@ -464,3 +464,20 @@ export async function getDiag(id = "latest") {
   if (!raw) return null;
   try { return JSON.parse(raw.toString("utf8")); } catch (e) { return null; }
 }
+
+// 실시간 진행 상황 — /film 이 1.5초마다 올리고 /film/live(운영자 모니터)가 읽는다. 기기(페이지 로드)마다 파일 하나.
+// id 는 시각 기반이라 이름 역순 = 최근에 연 기기 순. 최근 몇 개만 읽어 마지막 갱신이 오래된 건 거른다.
+const LIVE_ID_RE = /^l[a-z0-9]{8,30}$/;
+export async function putLive(id, payload) {
+  if (!LIVE_ID_RE.test(id)) throw new Error("bad live id");
+  await put(`live/${id}.json`, Buffer.from(JSON.stringify(payload)), "application/json");
+}
+export async function listLive({ maxAgeSec = 90, limit = 8 } = {}) {
+  const names = (await list("live", limit)).filter((n) => n.endsWith(".json")).sort().reverse().slice(0, limit);
+  const now = Date.now();
+  const rows = await Promise.all(names.map(async (n) => {
+    const raw = await get(`live/${n}`);
+    try { return raw ? JSON.parse(raw.toString("utf8")) : null; } catch (e) { return null; }
+  }));
+  return rows.filter((r) => r && now - Date.parse(r.at) < maxAgeSec * 1000);
+}
