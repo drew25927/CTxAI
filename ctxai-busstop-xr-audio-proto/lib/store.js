@@ -458,6 +458,10 @@ export async function putDiag(id, payload) {
   await put(`diag/${id}.json`, body, "application/json");
   await put("diag/latest.json", body, "application/json");
 }
+export async function listDiagIds(limit = 20) {
+  const names = await list("diag", 200);
+  return names.filter((n) => n.endsWith(".json") && n !== "latest.json").map((n) => n.replace(/\.json$/, "")).sort().reverse().slice(0, limit);
+}
 export async function getDiag(id = "latest") {
   if (id !== "latest" && !DIAG_ID_RE.test(id)) return null;
   const raw = await get(`diag/${id}.json`);
