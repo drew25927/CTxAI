@@ -28,7 +28,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, PerspectiveCamera, useProgress } from "@react-three/drei";
-import { XR, createXRStore, useXR } from "@react-three/xr";
+import { XR, XROrigin, createXRStore, useXR } from "@react-three/xr";
 import { EffectComposer, Bloom, Vignette, ToneMapping } from "@react-three/postprocessing";
 import { ToneMappingMode } from "postprocessing";
 import { Euler, MathUtils, Vector3 } from "three";
@@ -49,7 +49,8 @@ import f from "./film.module.css";
 
 const xrStore = createXRStore();
 const AUDIO_BASE = "/reactive/audio";
-const CANVAS_CAMERA = { position: [0, 1.15, 0.35], fov: 60 };
+const CANVAS_CAMERA_Y = 1.15; // 앉은 눈높이 (데스크톱 카메라·헤드셋 보정 공통)
+const CANVAS_CAMERA = { position: [0, CANVAS_CAMERA_Y, 0.35], fov: 60 };
 const GENRE_META = {
   R: { accent: "#f2a7c0", label: "로맨스" },
   H: { accent: "#8fae95", label: "공포" },
@@ -189,6 +190,29 @@ function FrameProbe() {
   return null;
 }
 
+// 앉은 눈높이 맞추기 — 헤드셋은 실제 바닥 기준 머리 높이를 쓰는데, 바닥 인식·의자 높이에 따라 장면 땅속에 박혔다
+// (2026-10-24 Quest 실기기). VR 에 들어가고 자세가 잡히면(약 0.5초) 한 번, 머리가 데스크톱과 같은 앉은 눈높이(1.15m)에
+// 오도록 원점 높이를 옮긴다. 카메라는 XROrigin 의 자식이라 센서가 읽는 머리 위치(로컬)는 그대로다.
+const SEATED_EYE_Y = CANVAS_CAMERA_Y;
+function SeatedOrigin() {
+  const session = useXR((xr) => xr.session);
+  const origin = useRef(null);
+  const st = useRef({ session: null, frames: 0, done: false });
+  useFrame((state) => {
+    const o = origin.current;
+    if (!o) return;
+    if (st.current.session !== session) { st.current = { session, frames: 0, done: false }; o.position.y = 0; }
+    if (!session || st.current.done || !state.gl.xr.isPresenting) return;
+    if (++st.current.frames < 30) return;
+    const head = state.camera.position.y; // 원점 기준(로컬) 머리 높이
+    if (!(head > 0.2 && head < 2.5)) return; // 자세가 아직 안 잡혔으면 다음 프레임에
+    o.position.y = Math.max(-1.2, Math.min(1.2, SEATED_EYE_Y - head));
+    st.current.done = true;
+    window.__diagPush?.(`seated calib · head ${head.toFixed(2)}m → origin y ${o.position.y.toFixed(2)}m`);
+  });
+  return <XROrigin ref={origin} />;
+}
+
 // XR 세션 여부를 페이지 상태로 올린다 — 헤드셋에서는 도로 반사(장면을 한 번 더 그림)도 꺼서 프레임을 지킨다.
 function XRProbe({ onChange }) {
   const session = useXR((xr) => xr.session);
@@ -243,7 +267,9 @@ export default function FilmPage() {
   // (2026-10-24 Quest 3 실측: 고화질 그대로면 장면 로드 뒤 초당 약 1프레임.) ?lite=1 강제, ?lite=0 해제.
   const lite = q.lite === "1" || (q.lite !== "0" && isQuest);
   const speed = Math.max(0.25, Math.min(6, Number(q.speed) || 1));
-  const useCam = q.cam !== "0";
+  // 웹캠 채널 — Quest 에서는 기본 끔: 헤드셋이 얼굴을 가려 표정 인식이 안 된다(2026-10-24 실기기: 웹캠 근거 0건).
+  // Quest 판정은 머리 움직임(헤드 포즈)으로만. ?cam=1 강제, ?cam=0 해제.
+  const useCam = q.cam === "1" || (q.cam !== "0" && !isQuest);
   const showHud = q.hud !== "0";
   const useRig = q.rig !== "0"; // ?rig=0 이면 리깅 캐릭터 대신 캡슐 실루엣
   const useCutout = q.cutout !== "0"; // ?cutout=0 이면 옆사람을 2D 컷아웃 대신 리깅 GLB로
@@ -432,6 +458,9 @@ export default function FilmPage() {
       if ((m.lostTrackingSec || 0) > (CAM_WINDOW_MS / 1000) * 0.6) { setCamStatus("no-face"); continue; }
       setCamStatus("on");
       const r = judgeFromBehavior(m);
+      // "낮은/모호한 반응"은 근거로 넣지 않는다 — 규칙상 로맨스 100%라, 8초마다 쌓이면 결과를 로맨스로 끌고 갔다
+      // (2026-10-24 PC 기록: 웹캠 창 81개가 전부 모호 → 웹캠 켠 체험은 전부 로맨스). 방어·웃음 신호가 잡힌 창만 넣는다.
+      if (r.reason === "낮은/모호한 반응") { directionRef.current.markEvent("webcam:ambiguous"); continue; }
       directionRef.current.pushEvidence(r.scores, 0.5, "webcam", r.reason);
     }
   }
@@ -752,6 +781,7 @@ export default function FilmPage() {
           <XR store={xrStore}>
             <ReactiveStage directionRef={directionRef} actorsRef={actorsRef} dominant={dominant} paramsOut={paramsRef} cueRef={filmRef} useRig={useRig} useCutout={useCutout} useArt={useArt} rigTest={q.rigtest === "1"} signText={signText} reflect={fx && !xrActive} benchYaw={Number(q.benchyaw) || 0} gradeOn={grade > 0} />
             <XRProbe onChange={setXrActive} />
+            {q.seat !== "0" && <SeatedOrigin />}
             <FrameProbe />
             <Effects enabled={fx} directionRef={directionRef} grade={grade} />
             <FilmDirector directionRef={directionRef} sensorRef={sensorRef} actorsRef={actorsRef} filmRef={filmRef} onCue={onCue} speed={speed} debugBus={q.bus === "1"} debugTruck={q.truck === "1"} layout={useArt ? "art" : "classic"} />
