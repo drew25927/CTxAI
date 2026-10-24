@@ -252,6 +252,21 @@ export default function FilmPage() {
   const [line, setLine] = useState(null);
   const [dominant, setDominant] = useState(null);
   const [xrError, setXrError] = useState("");
+  // 헤드셋 브라우저에서 난 오류를 화면에 남긴다 (?diag=1 일 때만 표시) — Quest 콘솔은 밖에서 못 읽으므로.
+  const [diag, setDiag] = useState([]);
+  useEffect(() => {
+    const push = (m) => setDiag((d) => [...d.slice(-7), `${new Date().toLocaleTimeString()} ${m}`]);
+    const onErr = (e) => push(`error: ${e.message || e.type} ${e.filename ? e.filename.split("/").pop() + ":" + e.lineno : ""}`);
+    const onRej = (e) => push(`promise: ${e.reason?.name || ""} ${e.reason?.message || e.reason}`);
+    const onCtx = (e) => push(`webgl ${e.type}`);
+    window.addEventListener("error", onErr); window.addEventListener("unhandledrejection", onRej);
+    window.addEventListener("webglcontextlost", onCtx, true); window.addEventListener("webglcontextrestored", onCtx, true);
+    push(`UA ${navigator.userAgent.slice(0, 90)} · xr ${!!navigator.xr} · mem ${navigator.deviceMemory ?? "?"}GB`);
+    return () => {
+      window.removeEventListener("error", onErr); window.removeEventListener("unhandledrejection", onRej);
+      window.removeEventListener("webglcontextlost", onCtx, true); window.removeEventListener("webglcontextrestored", onCtx, true);
+    };
+  }, []);
   const [camStatus, setCamStatus] = useState("off");
   const [askStatus, setAskStatus] = useState(null); // 질문 뒤 기다림·응답 결과 (HUD — 헤드셋 파일럿에서 고개 응답이 잡히는지 보는 용도)
 
@@ -682,6 +697,11 @@ export default function FilmPage() {
         </div>
       </div>
 
+      {q.diag === "1" && (
+        <pre style={{ position: "absolute", left: 8, right: 8, bottom: 8, zIndex: 9, margin: 0, padding: 8, fontSize: 11, lineHeight: 1.35, whiteSpace: "pre-wrap", background: "rgba(0,0,0,.72)", color: "#9fe3a8", borderRadius: 6, pointerEvents: "none" }}>
+          {`xrActive ${xrActive} · phase ${phase}\n` + diag.join("\n")}
+        </pre>
+      )}
       {xrError && <p className={s.introSub} style={{ position: "absolute", top: 70, width: "100%", textAlign: "center", zIndex: 6 }}>{xrError}</p>}
 
       {showHud && snap && phase !== "gate" && phase !== "end" && (
