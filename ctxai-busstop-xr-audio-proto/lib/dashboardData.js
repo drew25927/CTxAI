@@ -45,6 +45,8 @@ export const REPORTS = [
     desc: "지금까지 한 것 · 구현 중인 기술 · 최종 결과물 예시를 한 장으로 정리." },
   { href: "/guide?doc=tech-direction", title: "기술 발전 방향",
     desc: "지금 만드는 기술이 어디에 해당하고, 앞으로 어떻게 발전시킬지 정리한 문서." },
+  { href: "/film/live", title: "운영자 모니터 (실시간)",
+    desc: "헤드셋에서 돌고 있는 /film 의 단계·장르 비중·지금 대사·VR 여부·fps를 PC에서 1초마다 본다. 화면 자체는 Quest 캐스팅으로." },
   { href: "/guide?doc=dialogue-table", title: "대사표 (로맨스·공포·블랙코미디 현재본)",
     desc: "원문 46줄 + 보조 장르 변주 92줄을 한 표로. 목소리는 ElevenLabs로 통일(10/24). 장면과 안 맞는 줄은 ⚠️ — 기획이 채택·수정할 곳." },
   { href: "/guide?doc=judgment-criteria", title: "판정 기준",
