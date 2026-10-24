@@ -634,6 +634,8 @@ export default function FilmPage() {
     film.running = false;
     stopBgm();
     audioRef.current.get("sfx_01.mp3")?.pause();
+    // 결과 화면(카드·QR)은 페이지 위 HTML 이라 헤드셋 안에서는 안 보인다 — 암전이 끝나면 VR 에서 나와 평면 화면으로 보여준다
+    xrStore.getState().session?.end().catch(() => {});
   }
 
   async function enterVr() {
