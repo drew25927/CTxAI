@@ -166,6 +166,23 @@ function DesktopGaze({ controlsRef, actorsRef, filmRef }) {
   return null;
 }
 
+// 렌더 루프가 실제로 도는지·장면이 얼마나 무거운지 5초마다 진단 로그에 남긴다 (?diag=1).
+function FrameProbe() {
+  const n = useRef(0), last = useRef(0);
+  useFrame((state) => {
+    if (!window.__diagPush) return;
+    n.current++;
+    const now = performance.now();
+    if (!last.current) { last.current = now; const g = state.gl.getContext(); const dbg = g.getExtension("WEBGL_debug_renderer_info"); window.__diagPush(`gl ${dbg ? g.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : "?"} · maxTex ${g.getParameter(g.MAX_TEXTURE_SIZE)} · xr.isPresenting ${state.gl.xr.isPresenting}`); return; }
+    if (now - last.current >= 5000) {
+      const i = state.gl.info;
+      window.__diagPush(`frames ${n.current} in ${Math.round((now - last.current) / 1000)}s · calls ${i.render.calls} · tris ${i.render.triangles} · geo ${i.memory.geometries} · tex ${i.memory.textures} · presenting ${state.gl.xr.isPresenting}`);
+      n.current = 0; last.current = now;
+    }
+  });
+  return null;
+}
+
 // XR 세션 여부를 페이지 상태로 올린다 — 헤드셋에서는 도로 반사(장면을 한 번 더 그림)도 꺼서 프레임을 지킨다.
 function XRProbe({ onChange }) {
   const session = useXR((xr) => xr.session);
@@ -252,21 +269,41 @@ export default function FilmPage() {
   const [line, setLine] = useState(null);
   const [dominant, setDominant] = useState(null);
   const [xrError, setXrError] = useState("");
-  // 헤드셋 브라우저에서 난 오류를 화면에 남긴다 (?diag=1 일 때만 표시) — Quest 콘솔은 밖에서 못 읽으므로.
+  // 헤드셋 브라우저에서 난 오류를 화면에 남기고 서버(/api/diag)에도 보낸다 (?diag=1 일 때만) — Quest 콘솔은 밖에서 못 읽으므로.
   const [diag, setDiag] = useState([]);
+  const diagLogRef = useRef([]);
   useEffect(() => {
-    const push = (m) => setDiag((d) => [...d.slice(-7), `${new Date().toLocaleTimeString()} ${m}`]);
+    if (q.diag !== "1") return;
+    const id = `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
+    let dirty = true;
+    const push = (m) => {
+      const line = `${new Date().toISOString().slice(11, 19)} ${m}`;
+      diagLogRef.current = [...diagLogRef.current.slice(-79), line];
+      setDiag(diagLogRef.current.slice(-8)); dirty = true;
+    };
+    window.__diagPush = push;
     const onErr = (e) => push(`error: ${e.message || e.type} ${e.filename ? e.filename.split("/").pop() + ":" + e.lineno : ""}`);
     const onRej = (e) => push(`promise: ${e.reason?.name || ""} ${e.reason?.message || e.reason}`);
     const onCtx = (e) => push(`webgl ${e.type}`);
     window.addEventListener("error", onErr); window.addEventListener("unhandledrejection", onRej);
     window.addEventListener("webglcontextlost", onCtx, true); window.addEventListener("webglcontextrestored", onCtx, true);
-    push(`UA ${navigator.userAgent.slice(0, 90)} · xr ${!!navigator.xr} · mem ${navigator.deviceMemory ?? "?"}GB`);
+    const ce = console.error, cw = console.warn;
+    console.error = (...a) => { try { push("console.error: " + a.map((x) => x?.message || String(x)).join(" ").slice(0, 300)); } catch {} ce.apply(console, a); };
+    console.warn = (...a) => { try { push("console.warn: " + a.map((x) => String(x)).join(" ").slice(0, 200)); } catch {} cw.apply(console, a); };
+    push(`diag id ${id}`);
+    push(`UA ${navigator.userAgent.slice(0, 120)} · xr ${!!navigator.xr} · mem ${navigator.deviceMemory ?? "?"}GB · secure ${window.isSecureContext}`);
+    const send = () => {
+      if (!dirty) return; dirty = false;
+      fetch("/api/diag", { method: "POST", keepalive: true, headers: { "content-type": "application/json" }, body: JSON.stringify({ id, ua: navigator.userAgent, log: diagLogRef.current }) }).catch(() => { dirty = true; });
+    };
+    const t = setInterval(send, 3000);
     return () => {
+      clearInterval(t); delete window.__diagPush; console.error = ce; console.warn = cw;
       window.removeEventListener("error", onErr); window.removeEventListener("unhandledrejection", onRej);
       window.removeEventListener("webglcontextlost", onCtx, true); window.removeEventListener("webglcontextrestored", onCtx, true);
     };
-  }, []);
+  }, [q.diag]);
+  useEffect(() => { window.__diagPush?.(`phase ${phase} · xrActive ${xrActive}`); }, [phase, xrActive]);
   const [camStatus, setCamStatus] = useState("off");
   const [askStatus, setAskStatus] = useState(null); // 질문 뒤 기다림·응답 결과 (HUD — 헤드셋 파일럿에서 고개 응답이 잡히는지 보는 용도)
 
@@ -670,6 +707,7 @@ export default function FilmPage() {
           <XR store={xrStore}>
             <ReactiveStage directionRef={directionRef} actorsRef={actorsRef} dominant={dominant} paramsOut={paramsRef} cueRef={filmRef} useRig={useRig} useCutout={useCutout} useArt={useArt} rigTest={q.rigtest === "1"} signText={signText} reflect={fx && !xrActive} benchYaw={Number(q.benchyaw) || 0} gradeOn={grade > 0} />
             <XRProbe onChange={setXrActive} />
+            <FrameProbe />
             <Effects enabled={fx} directionRef={directionRef} grade={grade} />
             <FilmDirector directionRef={directionRef} sensorRef={sensorRef} actorsRef={actorsRef} filmRef={filmRef} onCue={onCue} speed={speed} debugBus={q.bus === "1"} debugTruck={q.truck === "1"} layout={useArt ? "art" : "classic"} />
             {q.gaze !== "0" && <DesktopGaze controlsRef={controlsRef} actorsRef={actorsRef} filmRef={filmRef} />}

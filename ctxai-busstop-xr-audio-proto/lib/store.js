@@ -449,3 +449,18 @@ export async function getCard(token) {
   if (!raw) return null;
   try { return JSON.parse(raw.toString("utf8")); } catch (e) { return null; }
 }
+
+// 헤드셋 진단 로그 — /film?diag=1 이 보낸다. 개발자가 콘솔을 못 읽는 기기(Quest)의 오류를 서버에서 열어 보려는 용도.
+const DIAG_ID_RE = /^[a-z0-9_-]{6,40}$/;
+export async function putDiag(id, payload) {
+  if (!DIAG_ID_RE.test(id)) throw new Error("bad diag id");
+  const body = Buffer.from(JSON.stringify(payload));
+  await put(`diag/${id}.json`, body, "application/json");
+  await put("diag/latest.json", body, "application/json");
+}
+export async function getDiag(id = "latest") {
+  if (id !== "latest" && !DIAG_ID_RE.test(id)) return null;
+  const raw = await get(`diag/${id}.json`);
+  if (!raw) return null;
+  try { return JSON.parse(raw.toString("utf8")); } catch (e) { return null; }
+}
