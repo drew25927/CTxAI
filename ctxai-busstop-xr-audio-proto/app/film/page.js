@@ -273,7 +273,9 @@ export default function FilmPage() {
   const [diag, setDiag] = useState([]);
   const diagLogRef = useRef([]);
   // Quest 브라우저에서는 주소에 ?diag=1 이 없어도 켠다(주소 입력 실수·북마크로 빠지는 일이 잦아서). ?diag=0 이면 끈다.
-  const diagOn = q.diag === "1" || (q.diag !== "0" && typeof navigator !== "undefined" && /OculusBrowser|Quest/i.test(navigator.userAgent));
+  const [isQuest, setIsQuest] = useState(false); // 서버 렌더와 어긋나지 않게 마운트 뒤에 판정
+  useEffect(() => { setIsQuest(/OculusBrowser|Quest/i.test(navigator.userAgent)); }, []);
+  const diagOn = q.diag === "1" || (q.diag !== "0" && isQuest);
   useEffect(() => {
     if (!diagOn) return;
     const id = `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
