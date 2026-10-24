@@ -272,8 +272,10 @@ export default function FilmPage() {
   // 헤드셋 브라우저에서 난 오류를 화면에 남기고 서버(/api/diag)에도 보낸다 (?diag=1 일 때만) — Quest 콘솔은 밖에서 못 읽으므로.
   const [diag, setDiag] = useState([]);
   const diagLogRef = useRef([]);
+  // Quest 브라우저에서는 주소에 ?diag=1 이 없어도 켠다(주소 입력 실수·북마크로 빠지는 일이 잦아서). ?diag=0 이면 끈다.
+  const diagOn = q.diag === "1" || (q.diag !== "0" && typeof navigator !== "undefined" && /OculusBrowser|Quest/i.test(navigator.userAgent));
   useEffect(() => {
-    if (q.diag !== "1") return;
+    if (!diagOn) return;
     const id = `d${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
     let dirty = true;
     const seen = new Map(); // 같은 경고가 매 프레임 쌓이지 않게 — 같은 문구는 처음 한 번과 10·100·1000번째만 남긴다
@@ -306,7 +308,7 @@ export default function FilmPage() {
       window.removeEventListener("error", onErr); window.removeEventListener("unhandledrejection", onRej);
       window.removeEventListener("webglcontextlost", onCtx, true); window.removeEventListener("webglcontextrestored", onCtx, true);
     };
-  }, [q.diag]);
+  }, [diagOn]);
   useEffect(() => { window.__diagPush?.(`phase ${phase} · xrActive ${xrActive}`); }, [phase, xrActive]);
   const [camStatus, setCamStatus] = useState("off");
   const [askStatus, setAskStatus] = useState(null); // 질문 뒤 기다림·응답 결과 (HUD — 헤드셋 파일럿에서 고개 응답이 잡히는지 보는 용도)
@@ -739,7 +741,7 @@ export default function FilmPage() {
         </div>
       </div>
 
-      {q.diag === "1" && (
+      {diagOn && (
         <pre style={{ position: "absolute", left: 8, right: 8, bottom: 8, zIndex: 9, margin: 0, padding: 8, fontSize: 11, lineHeight: 1.35, whiteSpace: "pre-wrap", background: "rgba(0,0,0,.72)", color: "#9fe3a8", borderRadius: 6, pointerEvents: "none" }}>
           {`xrActive ${xrActive} · phase ${phase}\n` + diag.join("\n")}
         </pre>
