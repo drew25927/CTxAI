@@ -698,6 +698,13 @@ export default function FilmPage() {
     xrStore.getState().session?.end().catch(() => {});
   }
 
+  // Quest 에서는 "시작하기" 한 번으로 VR 진입까지 — Enter VR 을 따로 누르는 게 불편했다(2026-10-24).
+  // 세션 요청은 사용자 클릭 안에서 해야 하므로 start() 의 마이크·카메라 대기보다 먼저 부른다. ?autovr=0 이면 끈다.
+  function startClick() {
+    if (isQuest && q.autovr !== "0" && !xrActive) enterVr();
+    start();
+  }
+
   async function enterVr() {
     setXrError("");
     try {
@@ -876,10 +883,10 @@ export default function FilmPage() {
             <h1 className={s.introTitle}>정류장 벤치에 앉아 주세요</h1>
             <p className={s.introSub}>
               고르는 것은 없습니다. 당신이 어디를 보고 어떻게 움직이는지가 하늘과 빛, 옆에 앉는 사람을
-              바꿉니다. 헤드셋이 있으면 위 "Enter VR"로 들어가고, 없으면 드래그로 둘러보세요.
+              바꿉니다. {isQuest ? "시작하기를 누르면 바로 VR로 들어갑니다. 의자에 편히 앉아 주세요." : "헤드셋이 있으면 위 \"Enter VR\"로 들어가고, 없으면 드래그로 둘러보세요."}
               {useCam ? " 웹캠은 몸의 반응을 보태는 보조 채널입니다." : ""}
             </p>
-            <button className={s.choiceBtn} onClick={start} disabled={!ready} style={{ justifyContent: "center", opacity: ready ? 1 : 0.55 }}>
+            <button className={s.choiceBtn} onClick={startClick} disabled={!ready} style={{ justifyContent: "center", opacity: ready ? 1 : 0.55 }}>
               <span>{ready ? `시작하기${speed !== 1 ? ` (${speed}배속)` : ""}` : `장면 불러오는 중… ${Math.round(loadPct)}%`}</span>
             </button>
           </div>
