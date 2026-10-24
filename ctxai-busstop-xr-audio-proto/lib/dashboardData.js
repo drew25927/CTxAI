@@ -18,6 +18,8 @@ export const DEV_SCREENS = [
     items: [
       { href: "/facecheck", tag: "필수 · 점검", tagKind: "util", title: "웹캠 표정 인식 확인",
         desc: "공포·웃음 등 표정 판정이 맞는지 팀원 각자 체크 — 기록이 쌓여 정확도로 집계됨." },
+      { href: "/film/live", tag: "운영 · 실시간", tagKind: "util", title: "운영자 모니터",
+        desc: "헤드셋(Quest)에서 돌고 있는 /film의 단계·장르 비중·지금 대사·VR 여부·fps를 PC에서 1초마다 봄." },
     ],
   },
   // 아래는 숨김 — 대시보드에선 맨 아래 접힌 "숨긴 화면"에만 나온다(주소로는 그대로 열림).
