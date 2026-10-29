@@ -810,7 +810,8 @@ export default function FilmPage() {
       <video ref={videoRef} muted playsInline className={s.hiddenVideo} />
 
       <div className={s.topBar}>
-        <a className={s.homeLink} href="/">← 대시보드</a>
+        {/* 관람객(/visit)에게는 팀 내부 대시보드로 가는 길을 보이지 않는다 */}
+        {q.visitor !== "1" && <a className={s.homeLink} href="/">← 대시보드</a>}
         <span className={s.dim}>반응형 실시간 영화</span>
         <div className={s.genreChip}>
           <button className={s.resetBtn} onClick={enterVr}>🥽 Enter VR</button>
