@@ -733,7 +733,8 @@ export default function FilmPage() {
   function sessionData(extra = {}) {
     const d = directionRef.current;
     if (!d) return null;
-    return d.exportSession({ dominant: filmRef.current.dominant, speed, headPose: sensorRef.current?.report?.({ full: true }), ...extra });
+    // ?visitor=1 (/visit) — 관람객 회차. 카드는 그대로 주되 파일럿 집계에서는 빠진다(api/session GET).
+    return d.exportSession({ dominant: filmRef.current.dominant, speed, headPose: sensorRef.current?.report?.({ full: true }), ...(q.visitor === "1" ? { visitor: true } : {}), ...extra });
   }
 
   // 종료 시 자동 저장 (data/sessions/, Supabase 아님). 실패해도 체험은 영향 없다.

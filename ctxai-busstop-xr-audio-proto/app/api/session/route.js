@@ -6,7 +6,8 @@
 // 예전처럼 프로젝트 폴더에 파일로 쓰면 Vercel(읽기 전용 파일시스템)에서 500 이 난다.
 //
 //   POST /api/session  { ...exportSession() 결과, selfReport?: "R"|"H"|"C", selfIntensity?: 1~7 }
-//   GET  /api/session  → 저장된 기록 목록과 요약(마지막 배합·앉은 인물·자기보고)
+//   GET  /api/session  → 저장된 기록 목록과 요약(마지막 배합·앉은 인물·자기보고). 관람객 회차 제외
+//   GET  /api/session?visitor=1  → 관람객 회차(/visit)만
 //   GET  /api/session?id=...  → 기록 하나
 //   DELETE /api/session?id=... → 테스트·잘못된 기록 지우기
 
@@ -45,11 +46,14 @@ export async function GET(req) {
     const j = await getSessionRecord(id);
     return j ? Response.json({ ok: true, session: j }) : Response.json({ ok: false, error: "not found" }, { status: 404 });
   }
+  // 관람객 회차(/visit → visitor: true)는 파일럿 데이터가 아니라 기본 목록에서 뺀다. ?visitor=1 이면 관람객 회차만.
+  const wantVisitors = new URL(req.url).searchParams.get("visitor") === "1";
   const ids = await listSessionIds(200);
   const items = [];
   for (const sid of ids) {
     const j = await getSessionRecord(sid);
     if (!j) continue;
+    if (!!j.visitor !== wantVisitors) continue;
     items.push({
       id: j.id, savedAt: j.savedAt, dominant: j.dominant ?? null, selfReport: j.selfReport ?? null, selfIntensity: j.selfIntensity ?? null,
       final: j.final?.current ?? null, settled: j.final?.settled ?? null, confidence: j.final?.confidence ?? null,
