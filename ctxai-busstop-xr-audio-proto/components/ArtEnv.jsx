@@ -7,8 +7,10 @@
 //   "원본에서의 기준점 C 를 장면의 목표 위치 T 로" 옮기는 한 줄(바깥 그룹 = T·회전·크기, 안쪽 그룹 = −C)로 끝난다.
 // 기준점·방향은 원본을 직접 재서 정했다(주석 참고) — 값이 어긋나면 이 파일의 상수만 고치면 된다.
 
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
+import { useFrame } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
+import { Vector3 } from "three";
 
 // unity = 10/3 V03 원본에서 뽑은 것, v13 = 11/8 아트 V13 원본(scripts/blender/export_world_v13.py — 트럭은 청록 재도장판).
 // 기준점(C)은 원본에서 잰 값: 트럭 차체 중심, 고양이 발 밑 중심 (GLB 좌표 x, z).
@@ -17,13 +19,35 @@ const URLS = {
   v13: { truck: "/reactive/art_v13/truck.glb", cat: "/reactive/art_v13/cat.glb", truckC: [3.55, 8.15], catC: [-0.45, 1.635] },
 };
 
-function Model({ url }) {
+function useModel(url) {
   const { scene } = useGLTF(url, false, true);
-  const obj = useMemo(() => {
+  return useMemo(() => {
     const c = scene.clone(true);
     c.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
     return c;
   }, [scene]);
+}
+function Model({ url }) {
+  return <primitive object={useModel(url)} />;
+}
+
+// 트럭 바퀴 굴리기 — V13 트럭 GLB 에는 바퀴가 WHEEL_FL/FR/RL/RR 노드로 떨어져 있고 원점이 차축이다
+// (scripts/blender/export_world_v13.py). 차축은 Blender Y = glTF −Z 라, 캡 쪽(−X)으로 달릴 때 glTF Z 기준 +거리/반지름.
+// 트럭이 실제로 움직인 거리(월드)만큼 돌린다. 반지름은 원본에서 잰 값(축 높이 − 바닥).
+const TRUCK_WHEEL_R = { WHEEL_FL: 0.469, WHEEL_FR: 0.508, WHEEL_RL: 0.511, WHEEL_RR: 0.516 };
+function RollingTruck({ url }) {
+  const obj = useModel(url);
+  const wheels = useMemo(() => Object.keys(TRUCK_WHEEL_R).map((n) => [obj.getObjectByName(n), TRUCK_WHEEL_R[n]]).filter(([w]) => w), [obj]);
+  const st = useRef({ prev: null, dist: 0 });
+  const wp = useMemo(() => new Vector3(), []);
+  useFrame(() => {
+    if (!wheels.length) return;
+    obj.getWorldPosition(wp);
+    const s = st.current;
+    if (s.prev) s.dist += wp.distanceTo(s.prev);
+    s.prev = (s.prev || new Vector3()).copy(wp);
+    for (const [w, r] of wheels) w.rotation.z = s.dist / r;
+  });
   return <primitive object={obj} />;
 }
 
@@ -33,7 +57,7 @@ export function ArtTruck({ world = "v13" }) {
   const U = URLS[world] || URLS.unity;
   return (
     <group rotation={[0, Math.PI / 2, 0]}>
-      <group position={[-U.truckC[0], 0.08, U.truckC[1]]}><Model url={U.truck} /></group>
+      <group position={[-U.truckC[0], 0.08, U.truckC[1]]}><RollingTruck url={U.truck} /></group>
     </group>
   );
 }

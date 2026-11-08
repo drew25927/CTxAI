@@ -183,18 +183,59 @@ def flatten_textured(m):
     if img:
         nt.links.new(img.outputs["Color"], p.inputs["Base Color"])
         if img.image.size[0] > 2048: img.image.scale(2048, 2048)
+# 트럭 바퀴 — 원본은 메시 한 덩어리(조각 1,620개)라 바퀴가 따로 없다. 바깥 타이어 면에 원을 맞춰 잰 축 중심(x, z)과
+# 타이어 띠(y) 안의 면을 바퀴마다 떼어 내고 원점을 축에 둔다 → components/ArtEnv.jsx 가 굴린다(Blender Y축 = 차축).
+TRUCK_WHEELS = {  # 이름: (축 x, 축 z, y 띠 시작, 끝)
+    "WHEEL_FL": (2.071, 0.405, 7.15, 7.45), "WHEEL_FR": (2.136, 0.446, 8.77, 9.06),
+    "WHEEL_RL": (4.813, 0.449, 7.30, 7.60), "WHEEL_RR": (4.796, 0.454, 8.76, 9.05),
+}
+def split_truck_wheels(o):
+    import bmesh
+    ground = min((o.matrix_world @ v.co).z for v in o.data.vertices)
+    out = []
+    for name, (cx, cz, y0, y1) in TRUCK_WHEELS.items():
+        r = (cz - ground) * 0.97
+        bm = bmesh.new(); bm.from_mesh(o.data)
+        mw = o.matrix_world
+        def inside(v):
+            w = mw @ v.co
+            return (w.x - cx) ** 2 + (w.z - cz) ** 2 < r * r and y0 <= w.y <= y1
+        faces = [f for f in bm.faces if all(inside(v) for v in f.verts)]
+        if not faces: bm.free(); log("!! 바퀴 면 없음", name); continue
+        # 바퀴 면만 남긴 새 메시
+        keep = set(faces)
+        bm2 = bm.copy()
+        bmesh.ops.delete(bm2, geom=[f for f in bm2.faces if f.index not in {x.index for x in keep}], context="FACES")
+        me = bpy.data.meshes.new(name); bm2.to_mesh(me); bm2.free()
+        # 원래 메시에서는 지운다
+        bmesh.ops.delete(bm, geom=faces, context="FACES"); bm.to_mesh(o.data); bm.free()
+        w = bpy.data.objects.new(name, me)
+        for c in o.users_collection: c.objects.link(w)
+        for m in o.data.materials: me.materials.append(m)
+        w.matrix_world = o.matrix_world.copy()
+        # 원점을 차축으로: 메시를 축 위치만큼 옮기고 오브젝트를 반대로
+        from mathutils import Matrix, Vector
+        axle_world = Vector((cx, (y0 + y1) / 2, cz)); axle_local = o.matrix_world.inverted() @ axle_world
+        me.transform(Matrix.Translation(-axle_local)); w.matrix_world = o.matrix_world @ Matrix.Translation(axle_local)
+        log("트럭 바퀴", name, "면", len(me.polygons), "반지름", round(r, 3))
+        out.append(w)
+    return out
+
 def single_mesh_in(collname):
     c = next(c for c in bpy.data.collections if collname in c.name)
     return [o for o in c.all_objects if o.type == "MESH" and not o.hide_render]
 for name, collname, budget in (("truck", "포터_트럭", 25000), ("cat", "고양이", 12000)):
     if ONLY and name not in ONLY: continue
     objs = prepare(single_mesh_in(collname))
+    if name == "truck":
+        objs += split_truck_wheels(objs[0])
     for o in objs:
         for s in o.material_slots:
             if s.material: flatten_textured(s.material)
         before = tris(o)
-        if before > budget:
-            m = o.modifiers.new("dec", "DECIMATE"); m.ratio = budget / before
+        b = 1500 if o.name.startswith("WHEEL_") else budget
+        if before > b:
+            m = o.modifiers.new("dec", "DECIMATE"); m.ratio = b / before
             with ctx([o]): bpy.ops.object.modifier_apply(modifier="dec")
         mw = o.matrix_world.copy(); o.parent = None; o.matrix_world = mw
         bb = [o.matrix_world @ Vector(c) for c in o.bound_box]
