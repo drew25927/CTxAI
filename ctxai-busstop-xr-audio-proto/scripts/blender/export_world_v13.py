@@ -60,9 +60,14 @@ def prepare(objs):
 
 def classify(m):
     if m is None: return "PAINT"
+    types = {n.type for n in m.node_tree.nodes} if m.node_tree else set()
+    # 쉘터 옆 유리(V11 clear shelter glass)·안전 도트는 Principled 가 아니라 Transparent+Glossy 혼합이다 — 투명으로
+    if "BSDF_TRANSPARENT" in types: return "GLASS"
     p = next((n for n in m.node_tree.nodes if n.type == "BSDF_PRINCIPLED"), None) if m.node_tree else None
     if p is None: return "PAINT"
-    if p.inputs["Transmission Weight"].default_value > 0.5 or (not p.inputs["Alpha"].is_linked and p.inputs["Alpha"].default_value < 0.6): return "GLASS"
+    if p.inputs["Transmission Weight"].default_value > 0.5:
+        return "FROSTED" if p.inputs["Roughness"].default_value > 0.3 else "GLASS"  # 뒤쪽 사생활 유리는 거친 투과 = 반투명
+    if not p.inputs["Alpha"].is_linked and p.inputs["Alpha"].default_value < 0.6: return "GLASS"
     if p.inputs["Emission Strength"].default_value > 0.5 or "diffuser" in m.name.lower() or "window glow" in m.name.lower(): return "GLOW"
     return "PAINT"
 
@@ -92,10 +97,13 @@ def shared_materials():
     glass, _, p = mat("GlassClear")
     p.inputs["Base Color"].default_value = (0.85, 0.9, 0.92, 1); p.inputs["Alpha"].default_value = 0.16; p.inputs["Roughness"].default_value = 0.08
     glass.surface_render_method = "BLENDED"
+    frosted, _, p = mat("GlassFrosted")
+    p.inputs["Base Color"].default_value = (0.86, 0.9, 0.9, 1); p.inputs["Alpha"].default_value = 0.5; p.inputs["Roughness"].default_value = 0.6
+    frosted.surface_render_method = "BLENDED"
     glow, _, p = mat("Glow")
     p.inputs["Base Color"].default_value = (1.0, 0.82, 0.55, 1); p.inputs["Emission Color"].default_value = (1.0, 0.78, 0.48, 1)
     p.inputs["Emission Strength"].default_value = 1.0
-    return {"PAINT": paint, "GLASS": glass, "GLOW": glow}
+    return {"PAINT": paint, "GLASS": glass, "FROSTED": frosted, "GLOW": glow}
 
 def export_glb(objs, path, materials="EXPORT", image_format="AUTO"):
     for o in vl.objects: o.select_set(False)
