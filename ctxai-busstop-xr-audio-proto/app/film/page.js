@@ -19,6 +19,7 @@
 //
 // URL 옵션: ?speed=2 (영화 시간 배속) · ?cam=0 (웹캠 채널 끄기) · ?hud=0 (HUD 숨김) · ?rig=0 (리깅 캐릭터 끄기) · ?fx=0 (후처리·도로 반사 끄기)
 //           ?gaze=0 (데스크톱 자동 시선 끄기) · ?auto=1 (게이트 없이 자동 시작)
+//           ?world=unity (10/3 Unity 전달본 장면 — 기본은 11/8 아트 V13 장면) · ?busmodel=old (예전 코드 버스)
 //           ?callback=1 (보조 장르 인물의 첫 줄을 한 번 끼워 넣기 — 기본 끔, 인물 등장 없이 목소리만 나와서)
 //           ?pool=1 (대사 풀 모드 — 원문 46줄 대신 상태에 따라 보조 장르 변주를 줄마다 고른다. 목소리는 ElevenLabs로 통일 — public/reactive/audio/pool)
 //           ?scene=240 (캐릭터 장면 목표 길이 초 — 대사 사이 침묵을 늘려 안내방송의 "5분 후 도착"에 가깝게. 기본 0 = 자연 길이)
@@ -794,7 +795,7 @@ export default function FilmPage() {
         <Canvas shadows={lite ? false : "soft"} dpr={lite ? 1 : undefined} gl={{ antialias: !lite }}>
           <PerspectiveCamera makeDefault position={CANVAS_CAMERA.position} fov={CANVAS_CAMERA.fov} />
           <XR store={xrStore}>
-            <ReactiveStage directionRef={directionRef} actorsRef={actorsRef} dominant={dominant} paramsOut={paramsRef} cueRef={filmRef} useRig={useRig} useCutout={useCutout} useArt={useArt} rigTest={q.rigtest === "1"} signText={signText} reflect={fx && !xrActive} benchYaw={Number(q.benchyaw) || 0} gradeOn={grade > 0} busModel={q.busmodel === "old" ? "old" : "v13"} world={q.world === "v13" ? "v13" : "unity"} />
+            <ReactiveStage directionRef={directionRef} actorsRef={actorsRef} dominant={dominant} paramsOut={paramsRef} cueRef={filmRef} useRig={useRig} useCutout={useCutout} useArt={useArt} rigTest={q.rigtest === "1"} signText={signText} reflect={fx && !xrActive} benchYaw={Number(q.benchyaw) || 0} gradeOn={grade > 0} busModel={q.busmodel === "old" ? "old" : "v13"} world={q.world === "unity" ? "unity" : "v13"} />
             <XRProbe onChange={setXrActive} />
             {q.seat !== "0" && <SeatedOrigin />}
             <FrameProbe />

@@ -29,7 +29,7 @@ function Model({ url }) {
 
 // 트럭 — 원본에서 캡이 −X, 적재함이 +X(= 오른쪽→왼쪽으로 달리는 방향과 같다). 기존 Truck 은 로컬 +z 가 앞이라
 // 바깥 −π/2 회전과 합쳐 +π/2 를 한 번 더 돌린다. 기준점 = 차체 중심(x 3.66, z −8.15), 바퀴 바닥이 y −0.08.
-export function ArtTruck({ world = "unity" }) {
+export function ArtTruck({ world = "v13" }) {
   const U = URLS[world] || URLS.unity;
   return (
     <group rotation={[0, Math.PI / 2, 0]}>
@@ -40,7 +40,7 @@ export function ArtTruck({ world = "unity" }) {
 
 // 고양이 — 원본에서 머리가 +y_B(= GLB −z) 쪽이다. 기존 Cat 은 로컬 +z 가 앞이라 π 돌린다. 기준점 = 발 밑 중심(−0.45, 2.41).
 // 원본은 선 자세 하나뿐이라 달릴 땐 몸을 위아래로 들썩이고 앞뒤로 살짝 기울여 달리는 느낌만 낸다.
-export function ArtCat({ x, z, running, facingBench, bob, yaw, world = "unity" }) {
+export function ArtCat({ x, z, running, facingBench, bob, yaw, world = "v13" }) {
   const U = URLS[world] || URLS.unity;
   const rot = yaw ?? (facingBench ? 0.2 : -Math.PI / 2);
   const y = running ? Math.abs(Math.sin(bob * 14)) * 0.05 : 0;
@@ -56,4 +56,4 @@ export function ArtCat({ x, z, running, facingBench, bob, yaw, world = "unity" }
   );
 }
 
-export const ART_URLS = [URLS.unity.truck, URLS.unity.cat];
+export const ART_URLS = [URLS.v13.truck, URLS.v13.cat];

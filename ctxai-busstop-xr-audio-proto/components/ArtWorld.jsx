@@ -43,7 +43,7 @@ function useScene(url, { cast = false, receive = true, onMaterial } = {}) {
 }
 
 // glowRef 에는 "Glow"(가로등 확산판·카페 불빛) 재질이 들어온다 — 연출 상태의 점등 세기(lampI)를 매 프레임 거기에 쓴다.
-export default function ArtWorld({ glowRef, world = "unity" }) {
+export default function ArtWorld({ glowRef, world = "v13" }) {
   const URL = URLS[world] || URLS.unity;
   const onMat = useMemo(() => (m) => { if (m && m.name === "Glow" && glowRef) glowRef.current = m; }, [glowRef]);
   const stat = useScene(URL.static, { cast: true, receive: true, onMaterial: onMat });
@@ -58,4 +58,4 @@ export default function ArtWorld({ glowRef, world = "unity" }) {
   );
 }
 
-export const WORLD_URLS = Object.values(URLS.unity);
+export const WORLD_URLS = Object.values(URLS.v13);

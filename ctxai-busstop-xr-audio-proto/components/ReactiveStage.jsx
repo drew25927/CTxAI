@@ -616,7 +616,7 @@ function Cat({ x, z, running, facingBench, bob }) {
  * @param {string|null} props.dominant                 앉는 인물 R/H/C
  * @param {React.MutableRefObject} [props.paramsOut]   파생 파라미터를 밖(HUD)에 노출
  */
-export default function ReactiveStage({ directionRef, actorsRef, dominant, paramsOut, cueRef = null, useRig = true, useCutout = true, useArt = true, rigTest = false, signText, reflect = true, busModel = "v13", world = "unity", benchYaw = 0, gradeOn = true }) {
+export default function ReactiveStage({ directionRef, actorsRef, dominant, paramsOut, cueRef = null, useRig = true, useCutout = true, useArt = true, rigTest = false, signText, reflect = true, busModel = "v13", world = "v13", benchYaw = 0, gradeOn = true }) {
   const { scene, camera } = useThree();
   const skyMat = useRef();
   const sun = useRef();
