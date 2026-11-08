@@ -456,7 +456,7 @@ function useBusSignTextures() {
 
 // 아트팀 V13 포스터(반쯤 찢긴 "찾습니다", 투명 배경 1024×1536 → 512×768). 받을 때까지는 아래 캔버스 포스터를 보여 준다.
 const POSTER_URL = "/reactive/textures/poster_wanted_v13.png";
-const POSTER_SIZE = [0.3, 0.45]; // 원본 2:3
+const POSTER_SIZE = [0.468, 0.702]; // 아트 V13 포스터 메시 크기(2:3)
 function usePosterTexture() {
   const fallback = useCanvasPosterTexture();
   const [tex, setTex] = useState(null);
@@ -618,7 +618,7 @@ function Cat({ x, z, running, facingBench, bob }) {
  * @param {string|null} props.dominant                 앉는 인물 R/H/C
  * @param {React.MutableRefObject} [props.paramsOut]   파생 파라미터를 밖(HUD)에 노출
  */
-export default function ReactiveStage({ directionRef, actorsRef, dominant, paramsOut, cueRef = null, useRig = true, useCutout = true, useArt = true, rigTest = false, signText, reflect = true, busModel = "v13", benchYaw = 0, gradeOn = true }) {
+export default function ReactiveStage({ directionRef, actorsRef, dominant, paramsOut, cueRef = null, useRig = true, useCutout = true, useArt = true, rigTest = false, signText, reflect = true, busModel = "v13", world = "unity", benchYaw = 0, gradeOn = true }) {
   const { scene, camera } = useThree();
   const skyMat = useRef();
   const sun = useRef();
@@ -966,7 +966,7 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
       {/* ================= 아트 장면 전체(기본) — Unity 전달본 월드. 관객 기준 좌표는 components/ArtWorld.jsx 머리말 ================= */}
       {useArt && (
         <>
-          <Suspense fallback={null}><ArtWorld glowRef={glowMat} /></Suspense>
+          <Suspense fallback={null}><ArtWorld glowRef={glowMat} world={world} /></Suspense>
           {/* 지붕 아래 온광·처마 빗방울 — 아트 쉘터(x −2.92…0.88, 앞 처마 z −0.97)에 맞춘 위치 */}
           <pointLight position={[-1.0, 2.2, 0.3]} color="#ffb877" intensity={0.9} distance={6} decay={2} />
           <RoofDrips x0={-2.75} y0={2.45} z0={-0.99} />
@@ -978,9 +978,9 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
             <meshStandardMaterial color="#33363c" />
           </mesh>
           <SignBoard text={signText || "호수공원 입구"} position={[0.63, 1.78, -1.35]} />
-          {/* 포스터 — 아트 원본 포스터 자리(오른쪽 유리 안쪽, 관객 기준 약 +80°). 원본 높이(중심 1.43m)는 앉은 눈높이(1.15m)보다
-              0.3m 위라 고개를 돌려도 화면 위쪽 끝에 걸렸다 — 중심을 앉은 눈높이(1.15m)에 정확히 맞췄다 */}
-          <mesh ref={posterRef} position={[0.62, 1.15, 0.27]} rotation={[0, -Math.PI / 2, 0.06]}>
+          {/* 포스터 — 아트 V13 원본 자리·크기 그대로(오른쪽 유리 안쪽, 관객 기준 약 +80°, 중심 높이 1.43m, 0.47×0.70m).
+              눈높이가 1.15m 이던 때는 화면 위 끝에 걸려 1.15m 로 내렸었다 — 눈높이를 아트 기준 1.35m 로 올리며(2026-11-08) 원래대로 */}
+          <mesh ref={posterRef} position={[0.62, 1.43, 0.27]} rotation={[0, -Math.PI / 2, 0.06]}>
             <planeGeometry args={POSTER_SIZE} />
             <meshStandardMaterial map={posterTex} transparent alphaTest={0.4} roughness={0.9} side={2} />
           </mesh>
@@ -1032,7 +1032,7 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
       {actors.truck?.visible && (
         <group position={[actors.truck.x, 0, actors.truck.z]} rotation={[0, actors.truck.yaw ?? -Math.PI / 2, 0]}>
           {useArt ? (
-            <Suspense fallback={<Truck x={0} z={0} />}><ArtTruck /></Suspense>
+            <Suspense fallback={<Truck x={0} z={0} />}><ArtTruck world={world} /></Suspense>
           ) : (
             <Truck x={0} z={0} />
           )}
@@ -1040,7 +1040,7 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
       )}
       {actors.splash != null && <Splash p={actors.splash} at={useArt ? [-2.0, 0.05, -3.4] : undefined} />}
       {actors.cat?.visible && (useArt ? (
-        <Suspense fallback={<Cat {...actors.cat} />}><ArtCat {...actors.cat} /></Suspense>
+        <Suspense fallback={<Cat {...actors.cat} />}><ArtCat {...actors.cat} world={world} /></Suspense>
       ) : <Cat {...actors.cat} />)}
       {actors.npc?.visible && (
         <group ref={npcGroup} position={[actors.npc.x, 0, actors.npc.z]} rotation={[0, actors.npc.seated ? 0.15 : (actors.npc.yaw ?? 0) - Math.PI * 0.8, 0]}>
@@ -1086,7 +1086,7 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
       )}
 
       {/* 암전 — 카메라 앞에 붙는 검은 판 */}
-      <mesh position={[0, 1.15, -0.6]} renderOrder={999}>
+      <mesh position={[0, 1.35, -0.6]} renderOrder={999}>
         <planeGeometry args={[6, 4]} />
         <meshBasicMaterial ref={fadeMat} color="#000" transparent opacity={0} depthTest={false} />
       </mesh>

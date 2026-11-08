@@ -49,7 +49,9 @@ import f from "./film.module.css";
 
 const xrStore = createXRStore();
 const AUDIO_BASE = "/reactive/audio";
-const CANVAS_CAMERA_Y = 1.15; // 앉은 눈높이 (데스크톱 카메라·헤드셋 보정 공통)
+// 앉은 눈높이 (데스크톱 카메라·헤드셋 보정 공통) — 아트팀 V13 렌더의 고정 눈 위치(벤치 좌판 0.51m 위 0.84m)와 같게.
+// 2026-11-08 1.15 → 1.35. 같은 좌표계라 포스터·표지판·버스 구도가 아트 48컷과 같아진다.
+const CANVAS_CAMERA_Y = 1.35;
 const CANVAS_CAMERA = { position: [0, CANVAS_CAMERA_Y, 0.35], fov: 60 };
 const GENRE_META = {
   R: { accent: "#f2a7c0", label: "로맨스" },
@@ -792,7 +794,7 @@ export default function FilmPage() {
         <Canvas shadows={lite ? false : "soft"} dpr={lite ? 1 : undefined} gl={{ antialias: !lite }}>
           <PerspectiveCamera makeDefault position={CANVAS_CAMERA.position} fov={CANVAS_CAMERA.fov} />
           <XR store={xrStore}>
-            <ReactiveStage directionRef={directionRef} actorsRef={actorsRef} dominant={dominant} paramsOut={paramsRef} cueRef={filmRef} useRig={useRig} useCutout={useCutout} useArt={useArt} rigTest={q.rigtest === "1"} signText={signText} reflect={fx && !xrActive} benchYaw={Number(q.benchyaw) || 0} gradeOn={grade > 0} busModel={q.busmodel === "old" ? "old" : "v13"} />
+            <ReactiveStage directionRef={directionRef} actorsRef={actorsRef} dominant={dominant} paramsOut={paramsRef} cueRef={filmRef} useRig={useRig} useCutout={useCutout} useArt={useArt} rigTest={q.rigtest === "1"} signText={signText} reflect={fx && !xrActive} benchYaw={Number(q.benchyaw) || 0} gradeOn={grade > 0} busModel={q.busmodel === "old" ? "old" : "v13"} world={q.world === "v13" ? "v13" : "unity"} />
             <XRProbe onChange={setXrActive} />
             {q.seat !== "0" && <SeatedOrigin />}
             <FrameProbe />
@@ -802,7 +804,7 @@ export default function FilmPage() {
           </XR>
           {/* 드래그 = 제자리에서 고개 돌리기. 타깃을 카메라 바로 앞 1cm 에 두면 궤도 회전이 머리 회전처럼 된다
               (타깃이 멀면 카메라가 반대편으로 돌아가 도로 한가운데서 정류장을 보게 된다). */}
-          <OrbitControls ref={controlsRef} target={[0, 1.15, 0.34]} enableZoom={false} enablePan={false} enableDamping dampingFactor={0.08} rotateSpeed={-0.35} />
+          <OrbitControls ref={controlsRef} target={[0, CANVAS_CAMERA_Y, 0.34]} enableZoom={false} enablePan={false} enableDamping dampingFactor={0.08} rotateSpeed={-0.35} />
         </Canvas>
         <div className={s.vignette} />
       </div>

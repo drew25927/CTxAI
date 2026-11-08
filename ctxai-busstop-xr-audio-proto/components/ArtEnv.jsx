@@ -10,9 +10,11 @@
 import { useMemo } from "react";
 import { useGLTF } from "@react-three/drei";
 
-const URL = {
-  truck: "/reactive/art/truck.glb",
-  cat: "/reactive/art/cat.glb",
+// unity = 10/3 V03 원본에서 뽑은 것, v13 = 11/8 아트 V13 원본(scripts/blender/export_world_v13.py — 트럭은 청록 재도장판).
+// 기준점(C)은 원본에서 잰 값: 트럭 차체 중심, 고양이 발 밑 중심 (GLB 좌표 x, z).
+const URLS = {
+  unity: { truck: "/reactive/art/truck.glb", cat: "/reactive/art/cat.glb", truckC: [3.66, 8.15], catC: [-0.45, 2.41] },
+  v13: { truck: "/reactive/art_v13/truck.glb", cat: "/reactive/art_v13/cat.glb", truckC: [3.55, 8.15], catC: [-0.45, 1.635] },
 };
 
 function Model({ url }) {
@@ -27,17 +29,19 @@ function Model({ url }) {
 
 // 트럭 — 원본에서 캡이 −X, 적재함이 +X(= 오른쪽→왼쪽으로 달리는 방향과 같다). 기존 Truck 은 로컬 +z 가 앞이라
 // 바깥 −π/2 회전과 합쳐 +π/2 를 한 번 더 돌린다. 기준점 = 차체 중심(x 3.66, z −8.15), 바퀴 바닥이 y −0.08.
-export function ArtTruck() {
+export function ArtTruck({ world = "unity" }) {
+  const U = URLS[world] || URLS.unity;
   return (
     <group rotation={[0, Math.PI / 2, 0]}>
-      <group position={[-3.66, 0.08, 8.15]}><Model url={URL.truck} /></group>
+      <group position={[-U.truckC[0], 0.08, U.truckC[1]]}><Model url={U.truck} /></group>
     </group>
   );
 }
 
 // 고양이 — 원본에서 머리가 +y_B(= GLB −z) 쪽이다. 기존 Cat 은 로컬 +z 가 앞이라 π 돌린다. 기준점 = 발 밑 중심(−0.45, 2.41).
 // 원본은 선 자세 하나뿐이라 달릴 땐 몸을 위아래로 들썩이고 앞뒤로 살짝 기울여 달리는 느낌만 낸다.
-export function ArtCat({ x, z, running, facingBench, bob, yaw }) {
+export function ArtCat({ x, z, running, facingBench, bob, yaw, world = "unity" }) {
+  const U = URLS[world] || URLS.unity;
   const rot = yaw ?? (facingBench ? 0.2 : -Math.PI / 2);
   const y = running ? Math.abs(Math.sin(bob * 14)) * 0.05 : 0;
   const pitch = running ? Math.sin(bob * 14) * 0.07 : 0;
@@ -45,11 +49,11 @@ export function ArtCat({ x, z, running, facingBench, bob, yaw }) {
     <group position={[x, y, z]} rotation={[0, rot, 0]}>
       <group rotation={[pitch, 0, 0]}>
         <group rotation={[0, Math.PI, 0]}>
-          <group position={[0.45, 0, 2.41]}><Model url={URL.cat} /></group>
+          <group position={[-U.catC[0], 0, U.catC[1]]}><Model url={U.cat} /></group>
         </group>
       </group>
     </group>
   );
 }
 
-export const ART_URLS = Object.values(URL);
+export const ART_URLS = [URLS.unity.truck, URLS.unity.cat];

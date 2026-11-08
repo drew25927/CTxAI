@@ -11,7 +11,12 @@ import { useGLTF } from "@react-three/drei";
 import { Color } from "three";
 
 export const WORLD_OFFSET = [-1.017, 0, 0.54];
-const URL = { static: "/reactive/world/static.glb", cafe: "/reactive/world/cafe.glb", forest: "/reactive/world/forest.glb" };
+// world: "unity" = 10/3 Unity 전달본 변환(scripts/convert_unity_world.py), "v13" = 11/8 아트 V13 Blender 장면 변환
+// (scripts/blender/export_world_v13.py — 같은 좌표계·같은 재질 이름이라 아래 처리가 그대로 맞는다).
+const URLS = {
+  unity: { static: "/reactive/world/static.glb", cafe: "/reactive/world/cafe.glb", forest: "/reactive/world/forest.glb" },
+  v13: { static: "/reactive/world_v13/static.glb", cafe: "/reactive/world_v13/cafe.glb", forest: "/reactive/world_v13/forest.glb" },
+};
 
 function useScene(url, { cast = false, receive = true, onMaterial } = {}) {
   const { scene } = useGLTF(url, false, true);
@@ -38,7 +43,8 @@ function useScene(url, { cast = false, receive = true, onMaterial } = {}) {
 }
 
 // glowRef 에는 "Glow"(가로등 확산판·카페 불빛) 재질이 들어온다 — 연출 상태의 점등 세기(lampI)를 매 프레임 거기에 쓴다.
-export default function ArtWorld({ glowRef }) {
+export default function ArtWorld({ glowRef, world = "unity" }) {
+  const URL = URLS[world] || URLS.unity;
   const onMat = useMemo(() => (m) => { if (m && m.name === "Glow" && glowRef) glowRef.current = m; }, [glowRef]);
   const stat = useScene(URL.static, { cast: true, receive: true, onMaterial: onMat });
   const cafe = useScene(URL.cafe, { cast: false, receive: true });
@@ -52,4 +58,4 @@ export default function ArtWorld({ glowRef }) {
   );
 }
 
-export const WORLD_URLS = Object.values(URL);
+export const WORLD_URLS = Object.values(URLS.unity);
