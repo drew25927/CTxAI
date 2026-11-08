@@ -98,7 +98,10 @@ export default function CutoutPerson({ genre = "R", walking = false, seated = fa
       const amt = (cueRef?.current?.lineGaze ?? lookRef.current?.npcGaze ?? 0.4) * (k > 0 ? 1 : 0.6);
       d *= 1 - MathUtils.clamp(amt, 0, 1) * 0.75;
     }
-    const view = pickView(Math.cos(d));
+    // 앉아 있을 땐 관객이 바로 옆(약간 뒤)이라 각도가 "옆/뒤" 경계에 걸려, 관객을 보지 않는 대사에서 뒷모습이 나왔다
+    // (2026-11-08 사용자 지적). 옆자리에 앉은 사람이 등을 보일 일은 없으니 앉은 동안엔 옆모습까지만.
+    let view = pickView(Math.cos(d));
+    if (k > 0.5 && view === "back") view = "side";
     curView.current = view;
     // 3/4·옆 그림이 향한 쪽(faces)과 화면에서 실제로 향해야 할 쪽이 다르면 좌우 반전
     const screenSide = Math.sign(Math.sin(-d)) || 1; // 인물이 화면 오른쪽(+)/왼쪽(-)을 보는 쪽
