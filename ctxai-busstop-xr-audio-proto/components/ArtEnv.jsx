@@ -16,7 +16,8 @@ import { Vector3 } from "three";
 // 기준점(C)은 원본에서 잰 값: 트럭 차체 중심, 고양이 발 밑 중심 (GLB 좌표 x, z).
 const URLS = {
   unity: { truck: "/reactive/art/truck.glb", cat: "/reactive/art/cat.glb", truckC: [3.66, 8.15], catC: [-0.45, 2.41] },
-  v13: { truck: "/reactive/art_v13/truck.glb", cat: "/reactive/art_v13/cat.glb", truckC: [3.55, 8.15], catC: [-0.45, 1.635] },
+  // V13 고양이는 머리가 −y_B(= GLB +z) 쪽이다 — 꼬리를 높이 세워 가장 높은 점이 꼬리라 헷갈렸다(머리 쪽이 폭 0.18m·정점 4배, 2026-11-08 실측).
+  v13: { truck: "/reactive/art_v13/truck.glb", cat: "/reactive/art_v13/cat.glb", truckC: [3.55, 8.15], catC: [-0.45, 1.635], catHead: 1 },
 };
 
 function useModel(url) {
@@ -62,29 +63,30 @@ export function ArtTruck({ world = "v13" }) {
   );
 }
 
-// 고양이 — 원본에서 머리가 +y_B(= GLB −z) 쪽이다. 기존 Cat 은 로컬 +z 가 앞이라 π 돌린다. 기준점 = 발 밑 중심(−0.45, 2.41).
+// 고양이 — unity(V03) 판은 머리가 +y_B(= GLB −z) 쪽이라 π 돌리고, V13 판은 머리가 GLB +z 쪽이라 그대로 둔다(catHead). 기존 Cat 은 로컬 +z 가 앞. 기준점 = 발 밑 중심(−0.45, 2.41).
 // 원본은 선 자세 하나뿐이라 달릴 땐 몸을 위아래로 들썩이고 앞뒤로 살짝 기울여 달리는 느낌만 낸다.
 // 고양이 걸음 — 원본은 선 자세 하나뿐이라, 셰이더로 다리(발 밑에서 약 22cm까지)만 앞뒤로 흔들고 디딜 때 살짝 든다.
 // 발끝일수록 크게, 대각선 짝(앞왼쪽+뒤오른쪽)끼리 같은 박자 — 실제 고양이 걸음. 달릴 때만, 멈춰 응시할 땐 가만히.
 // 좌표는 GLB 메시 자체 공간(양자화 −1…1): y −1 = 발바닥, z < 0 = 머리 쪽, x 부호 = 좌우.
 const CAT_LEG_TOP = -0.37; // 0.22m / 0.70m 높이를 −1…1 로
-function CatModel({ url, running, bob }) {
+// head: 머리가 메시 +z 쪽이면 1, −z 쪽이면 −1. 발을 들 때(cos>0) 머리 쪽으로 내딛어야 앞으로 걷는다.
+function CatModel({ url, running, bob, head = -1 }) {
   const obj = useModel(url);
-  const u = useMemo(() => ({ uPhase: { value: 0 }, uAmp: { value: 0 } }), []);
+  const u = useMemo(() => ({ uPhase: { value: 0 }, uAmp: { value: 0 }, uHead: { value: head } }), [head]);
   const mats = useMemo(() => {
     const out = [];
     obj.traverse((o) => {
       if (!o.isMesh) return;
       const m = o.material.clone();
       m.onBeforeCompile = (sh) => {
-        sh.uniforms.uPhase = u.uPhase; sh.uniforms.uAmp = u.uAmp;
-        sh.vertexShader = "uniform float uPhase;\nuniform float uAmp;\n" + sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
+        sh.uniforms.uPhase = u.uPhase; sh.uniforms.uAmp = u.uAmp; sh.uniforms.uHead = u.uHead;
+        sh.vertexShader = "uniform float uPhase;\nuniform float uAmp;\nuniform float uHead;\n" + sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
           if ( transformed.y < ${CAT_LEG_TOP.toFixed(2)} ) {
             float w = clamp( ( ${CAT_LEG_TOP.toFixed(2)} - transformed.y ) / ( ${CAT_LEG_TOP.toFixed(2)} + 1.0 ), 0.0, 1.0 );
             float side = transformed.x >= 0.0 ? 1.0 : -1.0;
-            float fb = transformed.z < 0.0 ? 1.0 : -1.0;
+            float fb = transformed.z * uHead > 0.0 ? 1.0 : -1.0;
             float ph = uPhase + ( side * fb > 0.0 ? 0.0 : 3.14159 );
-            transformed.z += sin( ph ) * uAmp * w * 0.16;
+            transformed.z += uHead * sin( ph ) * uAmp * w * 0.16;
             transformed.y += max( 0.0, cos( ph ) ) * uAmp * w * 0.06;
           }`);
       };
@@ -110,8 +112,8 @@ export function ArtCat({ x, z, running, facingBench, bob, yaw, world = "v13" }) 
   return (
     <group position={[x, y, z]} rotation={[0, rot, 0]}>
       <group rotation={[pitch, 0, 0]}>
-        <group rotation={[0, Math.PI, 0]}>
-          <group position={[-U.catC[0], 0, U.catC[1]]}><CatModel url={U.cat} running={running} bob={bob} /></group>
+        <group rotation={[0, U.catHead === 1 ? 0 : Math.PI, 0]}>
+          <group position={[-U.catC[0], 0, U.catC[1]]}><CatModel url={U.cat} running={running} bob={bob} head={U.catHead ?? -1} /></group>
         </group>
       </group>
     </group>
