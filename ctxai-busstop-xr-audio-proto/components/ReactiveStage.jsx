@@ -430,7 +430,6 @@ function SkyDome({ skyMat, envOut }) {
   );
 }
 
-// 찢어진 포스터 — v2.md §1-1. 아래 절반이 찢겨 나가고 "…찾습니다" "…사례합니다"만 남은 종이.
 // 버스 행선지판 — 앞: 검정 바탕 주황 LED "272 호수공원", 옆: 흰 바탕 "272 · 호수공원 ↔ 시청"
 function useBusSignTextures() {
   return useMemo(() => {
@@ -468,26 +467,25 @@ function usePosterTexture() {
   return tex || fallback;
 }
 
+// PNG 를 받기 전 잠깐 쓰는 대체 포스터 — 아트 프롬프트(03_포스터_원본/이미지생성_프롬프트.txt) 조건대로:
+// 읽히는 글자는 "찾습니다" 하나뿐, 가운데 사진·설명은 찢겨 나가 비어 있고, 사람·동물·물건 중 무엇을 찾는지 알 수 없게(그림 없음).
 function useCanvasPosterTexture() {
   return useMemo(() => {
     if (typeof document === "undefined") return null;
-    const W = 512, H = 704;
+    const W = 512, H = 768;
     const c = document.createElement("canvas"); c.width = W; c.height = H;
     const g = c.getContext("2d");
-    g.fillStyle = "#d9d2bf"; g.fillRect(0, 0, W, H);
-    // 빗물 얼룩
-    for (let i = 0; i < 26; i++) { g.fillStyle = `rgba(120,100,70,${0.05 + (i % 5) * 0.03})`; g.beginPath(); g.ellipse((i * 137) % W, (i * 211) % H, 40 + (i % 4) * 18, 22 + (i % 3) * 12, i, 0, Math.PI * 2); g.fill(); }
-    // 사진 자리(고양이인지 사람인지 알 수 없게 흐리게)
-    g.fillStyle = "#8d8577"; g.fillRect(96, 70, 320, 250);
-    g.fillStyle = "#a9a08f"; g.beginPath(); g.ellipse(256, 195, 90, 100, 0, 0, Math.PI * 2); g.fill();
-    g.fillStyle = "#2b2622"; g.font = "bold 74px Pretendard, 'Apple SD Gothic Neo', sans-serif"; g.textAlign = "center";
-    g.fillText("…찾습니다", 256, 420);
-    g.font = "bold 52px Pretendard, 'Apple SD Gothic Neo', sans-serif"; g.fillText("…사례합니다", 256, 490);
-    // 아래쪽 찢김 — 알파 0 으로 지운다
+    g.fillStyle = "#ddd3bb"; g.fillRect(0, 0, W, H);
+    for (let i = 0; i < 22; i++) { g.fillStyle = `rgba(120,100,70,${0.04 + (i % 5) * 0.025})`; g.beginPath(); g.ellipse((i * 137) % W, (i * 211) % H, 40 + (i % 4) * 18, 22 + (i % 3) * 12, i, 0, Math.PI * 2); g.fill(); }
+    g.fillStyle = "#1f1c19"; g.font = "bold 104px Pretendard, 'Apple SD Gothic Neo', sans-serif"; g.textAlign = "center";
+    g.fillText("찾습니다", W / 2, 150);
+    // 제목 아래 가운데·아래쪽이 크게 찢겨 나간 자리 — 알파 0 으로 지운다(한쪽 아래로 이어지게, 반듯한 창이 아니게)
     g.globalCompositeOperation = "destination-out";
-    g.beginPath(); g.moveTo(0, 520);
-    for (let x = 0; x <= W; x += 32) g.lineTo(x, 520 + Math.sin(x * 0.13) * 26 + ((x / 32) % 3) * 14);
-    g.lineTo(W, H); g.lineTo(0, H); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(40, 215);
+    const top = [[110, 232], [170, 206], [250, 240], [320, 212], [400, 236], [470, 214]];
+    for (const [x, y] of top) g.lineTo(x, y);
+    g.lineTo(486, 420); g.lineTo(452, 560); g.lineTo(492, 700); g.lineTo(W, H); g.lineTo(150, H);
+    g.lineTo(96, 640); g.lineTo(58, 470); g.lineTo(26, 330); g.closePath(); g.fill();
     const tx = new CanvasTexture(c); tx.colorSpace = SRGBColorSpace; tx.anisotropy = 4;
     return tx;
   }, []);
