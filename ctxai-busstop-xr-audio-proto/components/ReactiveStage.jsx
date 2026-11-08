@@ -10,7 +10,7 @@
 // 사람은 캡슐+구, 우비는 원뿔, 고양이는 상자 두 개. 자리를 잡아 두는 것이 목적이라
 // 나중에 GLB가 오면 같은 그룹 안에서 메시만 바꾸면 된다.
 
-import { Suspense, useEffect, useMemo, useRef } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame, useThree, useLoader } from "@react-three/fiber";
 import { useGLTF, useAnimations, MeshReflectorMaterial } from "@react-three/drei";
 import { Color, Vector3, Quaternion, Euler, FogExp2, BackSide, MathUtils, CanvasTexture, SRGBColorSpace, PMREMGenerator, TextureLoader, RepeatWrapping } from "three";
@@ -20,6 +20,7 @@ import { Cypress, RoundPine, Reeds, ForestRing, Shelter, Bench, Cafe } from "./B
 import { deriveParams } from "@/lib/directionMap";
 import Puddles from "./Puddles";
 import Bus from "./Bus";
+import BusArt from "./BusArt";
 import Truck from "./Truck";
 import CutoutPerson from "./CutoutPerson";
 import { ArtTruck, ArtCat } from "./ArtEnv";
@@ -453,7 +454,21 @@ function useBusSignTextures() {
   }, []);
 }
 
+// 아트팀 V13 포스터(반쯤 찢긴 "찾습니다", 투명 배경 1024×1536 → 512×768). 받을 때까지는 아래 캔버스 포스터를 보여 준다.
+const POSTER_URL = "/reactive/textures/poster_wanted_v13.png";
+const POSTER_SIZE = [0.3, 0.45]; // 원본 2:3
 function usePosterTexture() {
+  const fallback = useCanvasPosterTexture();
+  const [tex, setTex] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    new TextureLoader().load(POSTER_URL, (t) => { if (!alive) return; t.colorSpace = SRGBColorSpace; t.anisotropy = 4; setTex(t); });
+    return () => { alive = false; };
+  }, []);
+  return tex || fallback;
+}
+
+function useCanvasPosterTexture() {
   return useMemo(() => {
     if (typeof document === "undefined") return null;
     const W = 512, H = 704;
@@ -603,7 +618,7 @@ function Cat({ x, z, running, facingBench, bob }) {
  * @param {string|null} props.dominant                 앉는 인물 R/H/C
  * @param {React.MutableRefObject} [props.paramsOut]   파생 파라미터를 밖(HUD)에 노출
  */
-export default function ReactiveStage({ directionRef, actorsRef, dominant, paramsOut, cueRef = null, useRig = true, useCutout = true, useArt = true, rigTest = false, signText, reflect = true, benchYaw = 0, gradeOn = true }) {
+export default function ReactiveStage({ directionRef, actorsRef, dominant, paramsOut, cueRef = null, useRig = true, useCutout = true, useArt = true, rigTest = false, signText, reflect = true, busModel = "v13", benchYaw = 0, gradeOn = true }) {
   const { scene, camera } = useThree();
   const skyMat = useRef();
   const sun = useRef();
@@ -966,7 +981,7 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
           {/* 포스터 — 아트 원본 포스터 자리(오른쪽 유리 안쪽, 관객 기준 약 +80°). 원본 높이(중심 1.43m)는 앉은 눈높이(1.15m)보다
               0.3m 위라 고개를 돌려도 화면 위쪽 끝에 걸렸다 — 중심을 앉은 눈높이(1.15m)에 정확히 맞췄다 */}
           <mesh ref={posterRef} position={[0.62, 1.15, 0.27]} rotation={[0, -Math.PI / 2, 0.06]}>
-            <planeGeometry args={[0.32, 0.44]} />
+            <planeGeometry args={POSTER_SIZE} />
             <meshStandardMaterial map={posterTex} transparent alphaTest={0.4} roughness={0.9} side={2} />
           </mesh>
         </>
@@ -1061,7 +1076,12 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
       )}
       {actors.bus?.visible && (
         <group position={[actors.bus.x, 0, actors.bus.z]} rotation={[0, actors.bus.yaw ?? Math.PI / 2, 0]}>
-          <Bus {...actors.bus} x={0} z={0} signs={busSigns} />
+          {/* 기본은 아트팀 V13 버스(GLB). 받는 동안·?busmodel=old 이면 예전 코드 버스 */}
+          {busModel === "old" ? <Bus {...actors.bus} x={0} z={0} signs={busSigns} /> : (
+            <Suspense fallback={<Bus {...actors.bus} x={0} z={0} signs={busSigns} />}>
+              <BusArt doorOpen={actors.bus.doorOpen} />
+            </Suspense>
+          )}
         </group>
       )}
 
