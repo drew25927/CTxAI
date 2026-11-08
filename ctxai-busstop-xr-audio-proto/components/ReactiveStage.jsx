@@ -964,7 +964,8 @@ export default function ReactiveStage({ directionRef, actorsRef, dominant, param
       {/* ================= 아트 장면 전체(기본) — Unity 전달본 월드. 관객 기준 좌표는 components/ArtWorld.jsx 머리말 ================= */}
       {useArt && (
         <>
-          <Suspense fallback={null}><ArtWorld glowRef={glowMat} world={world} /></Suspense>
+          {/* 바람 세기 — 로맨스 잔잔, 공포 거의 멎음(정적이 불안을 만든다), 블랙코미디 산만, 판정 전 보통 */}
+          <Suspense fallback={null}><ArtWorld glowRef={glowMat} world={world} wind={{ R: 0.8, H: 0.3, C: 1.35 }[dominant] ?? 0.7} /></Suspense>
           {/* 지붕 아래 온광·처마 빗방울 — 아트 쉘터(x −2.92…0.88, 앞 처마 z −0.97)에 맞춘 위치 */}
           <pointLight position={[-1.0, 2.2, 0.3]} color="#ffb877" intensity={0.9} distance={6} decay={2} />
           <RoofDrips x0={-2.75} y0={2.45} z0={-0.99} />

@@ -7,7 +7,7 @@
 //   "원본에서의 기준점 C 를 장면의 목표 위치 T 로" 옮기는 한 줄(바깥 그룹 = T·회전·크기, 안쪽 그룹 = −C)로 끝난다.
 // 기준점·방향은 원본을 직접 재서 정했다(주석 참고) — 값이 어긋나면 이 파일의 상수만 고치면 된다.
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import { Vector3 } from "three";
@@ -64,6 +64,44 @@ export function ArtTruck({ world = "v13" }) {
 
 // 고양이 — 원본에서 머리가 +y_B(= GLB −z) 쪽이다. 기존 Cat 은 로컬 +z 가 앞이라 π 돌린다. 기준점 = 발 밑 중심(−0.45, 2.41).
 // 원본은 선 자세 하나뿐이라 달릴 땐 몸을 위아래로 들썩이고 앞뒤로 살짝 기울여 달리는 느낌만 낸다.
+// 고양이 걸음 — 원본은 선 자세 하나뿐이라, 셰이더로 다리(발 밑에서 약 22cm까지)만 앞뒤로 흔들고 디딜 때 살짝 든다.
+// 발끝일수록 크게, 대각선 짝(앞왼쪽+뒤오른쪽)끼리 같은 박자 — 실제 고양이 걸음. 달릴 때만, 멈춰 응시할 땐 가만히.
+// 좌표는 GLB 메시 자체 공간(양자화 −1…1): y −1 = 발바닥, z < 0 = 머리 쪽, x 부호 = 좌우.
+const CAT_LEG_TOP = -0.37; // 0.22m / 0.70m 높이를 −1…1 로
+function CatModel({ url, running, bob }) {
+  const obj = useModel(url);
+  const u = useMemo(() => ({ uPhase: { value: 0 }, uAmp: { value: 0 } }), []);
+  const mats = useMemo(() => {
+    const out = [];
+    obj.traverse((o) => {
+      if (!o.isMesh) return;
+      const m = o.material.clone();
+      m.onBeforeCompile = (sh) => {
+        sh.uniforms.uPhase = u.uPhase; sh.uniforms.uAmp = u.uAmp;
+        sh.vertexShader = "uniform float uPhase;\nuniform float uAmp;\n" + sh.vertexShader.replace("#include <begin_vertex>", `#include <begin_vertex>
+          if ( transformed.y < ${CAT_LEG_TOP.toFixed(2)} ) {
+            float w = clamp( ( ${CAT_LEG_TOP.toFixed(2)} - transformed.y ) / ( ${CAT_LEG_TOP.toFixed(2)} + 1.0 ), 0.0, 1.0 );
+            float side = transformed.x >= 0.0 ? 1.0 : -1.0;
+            float fb = transformed.z < 0.0 ? 1.0 : -1.0;
+            float ph = uPhase + ( side * fb > 0.0 ? 0.0 : 3.14159 );
+            transformed.z += sin( ph ) * uAmp * w * 0.16;
+            transformed.y += max( 0.0, cos( ph ) ) * uAmp * w * 0.06;
+          }`);
+      };
+      m.customProgramCacheKey = () => "film-cat-gait";
+      o.material = m; out.push(m);
+    });
+    return out;
+  }, [obj, u]);
+  useEffect(() => () => mats.forEach((m) => m.dispose()), [mats]);
+  useFrame((_, dt) => {
+    u.uPhase.value = (bob || 0) * 7; // 몸 들썩임(bob*14)의 절반 — 한 걸음에 두 번 들썩인다
+    const target = running ? 1 : 0;
+    u.uAmp.value += (target - u.uAmp.value) * Math.min(1, dt * 6);
+  });
+  return <primitive object={obj} />;
+}
+
 export function ArtCat({ x, z, running, facingBench, bob, yaw, world = "v13" }) {
   const U = URLS[world] || URLS.unity;
   const rot = yaw ?? (facingBench ? 0.2 : -Math.PI / 2);
@@ -73,7 +111,7 @@ export function ArtCat({ x, z, running, facingBench, bob, yaw, world = "v13" }) 
     <group position={[x, y, z]} rotation={[0, rot, 0]}>
       <group rotation={[pitch, 0, 0]}>
         <group rotation={[0, Math.PI, 0]}>
-          <group position={[-U.catC[0], 0, U.catC[1]]}><Model url={U.cat} /></group>
+          <group position={[-U.catC[0], 0, U.catC[1]]}><CatModel url={U.cat} running={running} bob={bob} /></group>
         </group>
       </group>
     </group>
