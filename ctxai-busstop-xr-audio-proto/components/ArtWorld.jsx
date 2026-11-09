@@ -19,7 +19,18 @@ const URLS = {
   v13: { static: "/reactive/world_v13/static.glb", cafe: "/reactive/world_v13/cafe.glb", forest: "/reactive/world_v13/forest.glb" },
 };
 
-function useScene(url, { cast = false, receive = true, onMaterial } = {}) {
+// V13 정점색은 Blender 에서 8비트(sRGB 로 저장)로 구웠는데 GLB 에 그대로 실려, 앱이 선형으로 읽으면 밝고 물빠진 색이 된다
+// (2026-11-08: 숲이 베이지·흰색에 가깝게 보였다 — 아트 렌더는 진한 가을 주황·청록). 셰이더에서 sRGB→선형으로 돌려 읽는다.
+// ?vc=raw 이면 끈다(비교용).
+function patchColorFragment(sh) {
+  const lin = (c) => `mix( ${c} / 12.92, pow( ( ${c} + 0.055 ) / 1.055, vec3( 2.4 ) ), step( vec3( 0.04045 ), ${c} ) )`;
+  // three r183 의 vColor 는 늘 vec4 (color_pars_fragment)
+  sh.fragmentShader = sh.fragmentShader.replace("#include <color_fragment>", `
+    #if defined( USE_COLOR ) || defined( USE_COLOR_ALPHA )
+      diffuseColor *= vec4( ${lin("vColor.rgb")}, vColor.a );
+    #endif`);
+}
+function useScene(url, { cast = false, receive = true, onMaterial, srgbVC = false } = {}) {
   const { scene } = useGLTF(url, false, true);
   const obj = useMemo(() => {
     const c = scene.clone(true);
@@ -32,10 +43,18 @@ function useScene(url, { cast = false, receive = true, onMaterial } = {}) {
       if (m && m.name === "GlassFrosted") { m.transparent = true; m.depthWrite = false; o.castShadow = false; }
       if (m && m.name === "Water") { m.envMapIntensity = 1.6; o.castShadow = false; }
       if (m && m.name === "Glow") { m.emissiveIntensity = 0.8; o.castShadow = false; }
-      if (m && m.name === "PaintVertex") { m.roughness = 1; m.envMapIntensity = 0.5; }
+      if (m && m.name === "PaintVertex") {
+        m.roughness = 1; m.envMapIntensity = 0.5;
+        if (srgbVC && !m.userData.srgbVC) {
+          m.userData.srgbVC = true;
+          m.onBeforeCompile = patchColorFragment;
+          m.customProgramCacheKey = () => "film-srgb-vc";
+          m.needsUpdate = true;
+        }
+      }
     });
     return c;
-  }, [scene, cast, receive]);
+  }, [scene, cast, receive, srgbVC]);
   useEffect(() => {
     if (!onMaterial) return;
     obj.traverse((o) => { if (o.isMesh) onMaterial(o.material); });
@@ -53,7 +72,9 @@ function useWind(obj, windRef) {
       if (!o.isMesh || o.material.userData.wind) return;
       const m = o.material;
       m.userData.wind = true;
+      const srgb = !!m.userData.srgbVC;
       m.onBeforeCompile = (sh) => {
+        if (srgb) patchColorFragment(sh);
         sh.uniforms.uTime = uniforms.uTime; sh.uniforms.uWind = uniforms.uWind;
         sh.vertexShader = "uniform float uTime;\nuniform float uWind;\n" + sh.vertexShader.replace("#include <project_vertex>", `
           vec4 wPos = modelMatrix * vec4( transformed, 1.0 );
@@ -65,7 +86,7 @@ function useWind(obj, windRef) {
           vec4 mvPosition = viewMatrix * wPos;
           gl_Position = projectionMatrix * mvPosition;`);
       };
-      m.customProgramCacheKey = () => "film-wind";
+      m.customProgramCacheKey = () => (srgb ? "film-wind-srgb" : "film-wind");
       m.needsUpdate = true;
     });
   }, [obj, uniforms]);
@@ -80,10 +101,11 @@ function useWind(obj, windRef) {
 export default function ArtWorld({ glowRef, world = "v13", wind = 0.7 }) {
   const windRef = useRef(wind); windRef.current = wind;
   const URL = URLS[world] || URLS.unity;
+  const srgbVC = world === "v13" && !(typeof window !== "undefined" && new URLSearchParams(window.location.search).get("vc") === "raw");
   const onMat = useMemo(() => (m) => { if (m && m.name === "Glow" && glowRef) glowRef.current = m; }, [glowRef]);
-  const stat = useScene(URL.static, { cast: true, receive: true, onMaterial: onMat });
-  const cafe = useScene(URL.cafe, { cast: false, receive: true });
-  const forest = useScene(URL.forest, { cast: false, receive: false });
+  const stat = useScene(URL.static, { cast: true, receive: true, onMaterial: onMat, srgbVC });
+  const cafe = useScene(URL.cafe, { cast: false, receive: true, srgbVC });
+  const forest = useScene(URL.forest, { cast: false, receive: false, srgbVC });
   useWind(forest, windRef);
   return (
     <group position={WORLD_OFFSET}>

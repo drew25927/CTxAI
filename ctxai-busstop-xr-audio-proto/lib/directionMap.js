@@ -14,16 +14,22 @@
 // 이 표는 코드가 아니라 창작 결정이다 — 값은 기획·아트·사운드가 고치면 된다.
 // 연속값은 벡터 가중 평균으로 섞고(연속 채널), 불연속 사건(가로등 점등 등)은 임계값으로 켠다.
 
+// 2026-11-08: 해·환경광·반구광의 색과 세기, 안개(대기)색, 카페 불빛을 아트 V13 Blender 원본의 4분위기 값으로 바꿨다
+// (드라이버 식을 분위기 번호 g=0~3 으로 직접 계산 — 디폴트=neutral, 공포=H, 블랙코미디=C, 로맨스=R).
+//   세기 = 앱의 중립값 × (원본 분위기 에너지 / 원본 디폴트 에너지) — 해: "Dusk sun", 환경광·반구광: 하늘 채움 3개 합,
+//   카페: 카페 펜던트. 색 = 원본 조명색(선형, three.js setRGB 와 같은 공간). 안개색 = 원본 하늘 램프의 지평선 색.
+// 그대로 둔 것: 해 방향·그림자 세기·가로등 점등(lampOn — 공포의 "오후인데 켜지는" 사건)·NPC 값·도로·하늘 노출.
+
 const GENRES = ["R", "H", "C"];
 
 // 연속 파라미터 앵커 — 장르별 순수값. 색은 [r,g,b] 0~1.
 export const ANCHORS = {
   neutral: {
     skyTop: [0.47, 0.50, 0.56], skyHorizon: [0.66, 0.68, 0.71],
-    sunColor: [0.91, 0.93, 0.95], sunIntensity: 0.65, sunElevation: 38, sunAzimuth: 35,
-    ambientColor: [0.79, 0.80, 0.83], ambientIntensity: 0.7,
-    hemiSky: [0.62, 0.66, 0.72], hemiGround: [0.30, 0.30, 0.28], hemiIntensity: 0.35,
-    fogColor: [0.56, 0.59, 0.64], fogDensity: 0.022, // 30m 카페와 우비 인물이 보여야 한다 (0.030 은 건너편이 지워졌다)
+    sunColor: [0.778, 0.863, 1.0], sunIntensity: 0.65, sunElevation: 38, sunAzimuth: 35,
+    ambientColor: [0.564, 0.733, 1.0], ambientIntensity: 0.7,
+    hemiSky: [0.564, 0.733, 1.0], hemiGround: [0.30, 0.30, 0.28], hemiIntensity: 0.35,
+    fogColor: [0.658, 0.638, 0.591], fogDensity: 0.022, // 30m 카페와 우비 인물이 보여야 한다 (0.030 은 건너편이 지워졌다)
     shadow: 0.45,          // 0 = 그림자 없음, 1 = 진한 그림자 (directional light 세기·앰비언트 대비로 표현)
     roadColor: [0.62, 0.64, 0.68], roadGloss: 0.5,
     neonColor: [1.0, 0.60, 0.24], neonIntensity: 1.2,
@@ -33,40 +39,40 @@ export const ANCHORS = {
   },
   R: {
     skyTop: [0.72, 0.58, 0.55], skyHorizon: [1.0, 0.80, 0.55],
-    sunColor: [1.0, 0.81, 0.56], sunIntensity: 1.55, sunElevation: 14, sunAzimuth: -55,
-    ambientColor: [0.96, 0.79, 0.60], ambientIntensity: 0.75,
-    hemiSky: [0.98, 0.78, 0.60], hemiGround: [0.35, 0.28, 0.22], hemiIntensity: 0.45,
-    fogColor: [0.90, 0.64, 0.45], fogDensity: 0.016,
+    sunColor: [1.0, 0.638, 0.323], sunIntensity: 1.79, sunElevation: 14, sunAzimuth: -55,
+    ambientColor: [0.412, 0.57, 1.0], ambientIntensity: 0.76,
+    hemiSky: [0.412, 0.57, 1.0], hemiGround: [0.35, 0.28, 0.22], hemiIntensity: 0.38,
+    fogColor: [1.0, 0.776, 0.515], fogDensity: 0.016,
     shadow: 1.0,
     roadColor: [0.95, 0.78, 0.60], roadGloss: 0.9,
     neonColor: [1.0, 0.60, 0.24], neonIntensity: 1.0,
-    cafeGlow: 1.0, lampOn: 0.0,
+    cafeGlow: 1.11, lampOn: 0.0,
     npcDistance: 0.78, npcGaze: 0.75, npcSilence: 0.6, npcVolume: 1.0, npcSway: 0.5, npcLean: 0.15,
     envIntensity: 0.9, skyExposureR: 0.5, skyExposureH: 0.42, skyExposureC: 0.55,
   },
   H: {
     skyTop: [0.10, 0.13, 0.13], skyHorizon: [0.22, 0.27, 0.26],
-    sunColor: [0.44, 0.60, 0.52], sunIntensity: 0.22, sunElevation: 40, sunAzimuth: 35,
-    ambientColor: [0.20, 0.25, 0.23], ambientIntensity: 0.45,
-    hemiSky: [0.20, 0.27, 0.25], hemiGround: [0.08, 0.09, 0.08], hemiIntensity: 0.3,
-    fogColor: [0.12, 0.16, 0.15], fogDensity: 0.072,
+    sunColor: [0.461, 0.847, 1.0], sunIntensity: 0.13, sunElevation: 40, sunAzimuth: 35,
+    ambientColor: [0.35, 0.775, 1.0], ambientIntensity: 0.26,
+    hemiSky: [0.35, 0.775, 1.0], hemiGround: [0.08, 0.09, 0.08], hemiIntensity: 0.13,
+    fogColor: [0.283, 0.376, 0.402], fogDensity: 0.072,
     shadow: 0.3,
     roadColor: [0.30, 0.34, 0.33], roadGloss: 0.4,
     neonColor: [0.37, 0.68, 0.54], neonIntensity: 1.3,
-    cafeGlow: 0.35, lampOn: 1.0,
+    cafeGlow: 0.2, lampOn: 1.0,
     npcDistance: 1.2, npcGaze: 0.12, npcSilence: 2.3, npcVolume: 0.78, npcSway: 0.1, npcLean: -0.2,
     envIntensity: 0.18, skyExposureR: 0.4, skyExposureH: 0.13, skyExposureC: 0.55,
   },
   C: {
     skyTop: [0.84, 0.85, 0.80], skyHorizon: [0.98, 0.94, 0.78],
-    sunColor: [1.0, 0.96, 0.80], sunIntensity: 0.45, sunElevation: 62, sunAzimuth: 0,
-    ambientColor: [1.0, 0.96, 0.80], ambientIntensity: 1.15,
-    hemiSky: [0.98, 0.95, 0.82], hemiGround: [0.55, 0.53, 0.45], hemiIntensity: 0.6,
-    fogColor: [0.96, 0.93, 0.78], fogDensity: 0.013,
+    sunColor: [0.911, 1.0, 0.756], sunIntensity: 0.34, sunElevation: 62, sunAzimuth: 0,
+    ambientColor: [0.877, 1.0, 0.858], ambientIntensity: 0.9,
+    hemiSky: [0.877, 1.0, 0.858], hemiGround: [0.55, 0.53, 0.45], hemiIntensity: 0.45,
+    fogColor: [0.658, 0.665, 0.539], fogDensity: 0.013,
     shadow: 0.0,
     roadColor: [0.90, 0.88, 0.80], roadGloss: 0.3,
     neonColor: [1.0, 0.81, 0.36], neonIntensity: 1.1,
-    cafeGlow: 0.8, lampOn: 0.0,
+    cafeGlow: 0.59, lampOn: 0.0,
     npcDistance: 0.85, npcGaze: 0.5, npcSilence: 0.8, npcVolume: 1.1, npcSway: 1.0, npcLean: 0.05,
     envIntensity: 1.0, skyExposureR: 0.4, skyExposureH: 0.42, skyExposureC: 0.62,
   },
