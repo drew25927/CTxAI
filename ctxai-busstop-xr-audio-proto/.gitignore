@@ -12,3 +12,6 @@ storage/
 .vercel-token
 .env*
 data/sessions/
+
+# /film?rec=1 녹화본 (수백 MB~GB)
+/capture/

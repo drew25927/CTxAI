@@ -25,6 +25,8 @@
 //           ?scene=240 (캐릭터 장면 목표 길이 초 — 대사 사이 침묵을 늘려 안내방송의 "5분 후 도착"에 가깝게. 기본 0 = 자연 길이)
 //           ?voice=1 (음성 채널 — 안내방송 뒤 "당신은 무엇을 기다리고 있습니까?"를 묻고 답을 STT·톤 분석해 증거로 넣고,
 //                     답에서 뽑은 명사를 정류장 이름 표지판에 쓴다. 요청서 v5.0 §2.6) · ?voicefake=romance (마이크 대신 샘플 파일)
+//           ?rec=1 (쇼케이스 4K 녹화 — 캔버스 3840×2160 + 소리를 capture/ 에 저장. 창은 1920×1080 으로. lib/filmRecorder.js)
+//           ?recname=busstop_R (녹화 파일 이름, 기본 film_<시각>)
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
@@ -44,6 +46,7 @@ import { observe, judgeFromBehavior } from "@/lib/behaviorSense";
 import { loadDialoguePool, pickPoolLine, poolCoverage } from "@/lib/dialoguePool";
 import { beatOf, gazeFor, playsLine, playedCount, beatsTotalSec, answerWatchStart, answerWatchUpdate, answerWatchResult } from "@/lib/dialogueBeats";
 import { scoresFromMoodApi } from "@/lib/textKeywords";
+import { createFilmRecorder } from "@/lib/filmRecorder";
 import { analyzeProsody } from "@/lib/voiceProsody";
 import s from "../story/story.module.css";
 import f from "./film.module.css";
@@ -303,6 +306,9 @@ export default function FilmPage() {
   // ?bias=H (또는 H:1.5) — 시작 시 그 장르 증거를 미리 넣어 배합을 기울인다. 발표·QA용:
   // 같은 장면을 강제 배합으로 비교해 볼 때 쓴다. 실제 관객 세션에서는 쓰지 않는다.
   const bias = useMemo(() => { const [g, w] = String(q.bias || "").split(":"); return ["R", "H", "C"].includes(g) ? { g, w: Number(w) || 1.2 } : null; }, [q.bias]);
+  const recMode = q.rec === "1";
+  const recRef = useRef(null);
+  const [recInfo, setRecInfo] = useState(null);
   const poolRef = useRef(null);
   useEffect(() => { if (usePool) loadDialoguePool().then((p) => { poolRef.current = p; }); }, [usePool]);
 
@@ -396,6 +402,7 @@ export default function FilmPage() {
     if (!a) {
       a = new Audio(`${AUDIO_BASE}/${name}`);
       a.preload = "auto";
+      recRef.current?.tap(a);
       audioRef.current.set(name, a);
     }
     return a;
@@ -425,6 +432,7 @@ export default function FilmPage() {
       if (!bgmRef.current[g]) {
         const a = new Audio(`${AUDIO_BASE}/bgm_${g}.wav`);
         a.loop = true; a.volume = 0;
+        recRef.current?.tap(a);
         bgmRef.current[g] = a;
       }
       bgmRef.current[g].play().catch(() => {});
@@ -479,6 +487,12 @@ export default function FilmPage() {
     if (bias) d.pushEvidence({ [bias.g]: 1 }, bias.w, "bias", `?bias=${bias.g}`);
     d.setPhase("intro");
     setPhase("intro");
+    if (recMode) {
+      // 소리 요소를 만들기 전에 녹화기를 세워야 모든 소리가 녹화 트랙에 붙는다
+      recRef.current = createFilmRecorder({ name: q.recname || `film_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "")}` });
+      const canvas = document.querySelector(`.${s.bgLayer} canvas`);
+      setRecInfo({ ...recRef.current.start(canvas), state: "recording" });
+    }
     ensureBgm();
 
     setSignText("");
@@ -696,6 +710,11 @@ export default function FilmPage() {
     setPhase("end");
     film.running = false;
     stopBgm();
+    if (recRef.current) {
+      const r = recRef.current;
+      recRef.current = null;
+      r.stop().then((res) => setRecInfo((x) => ({ ...x, ...res, state: "saved" })));
+    }
     audioRef.current.get("sfx_01.mp3")?.pause();
     // 결과 화면(카드·QR)은 페이지 위 HTML 이라 헤드셋 안에서는 안 보인다 — 암전이 끝나면 VR 에서 나와 평면 화면으로 보여준다
     xrStore.getState().session?.end().catch(() => {});
@@ -769,7 +788,7 @@ export default function FilmPage() {
   useEffect(() => { if (phase === "end") {
     setSelfReport(null); setSelfIntensity(null); setSurveyDone(false); setCardQr(null);
     cardTokenRef.current = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, "0")).join("");
-    saveSession();
+    if (!recMode) saveSession(); // 녹화 회차는 파일럿 집계에 넣지 않는다
   } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [phase]);
 
   function downloadSession() {
@@ -791,8 +810,9 @@ export default function FilmPage() {
 
   return (
     <div className={s.stage} style={{ "--accent": accent }}>
+      {recMode && <div id="rec-status" style={{ position: "fixed", right: 8, bottom: 8, zIndex: 50, font: "12px monospace", color: "#f55" }}>{recInfo ? `REC ${recInfo.state} · ${recInfo.file} · ${recInfo.width}×${recInfo.height}${recInfo.bytes ? ` · ${(recInfo.bytes / 1e6).toFixed(0)}MB` : ""}${recInfo.hiddenCount ? ` · ⚠ 창 가려짐 ${recInfo.hiddenCount}회 — 다시 찍기` : ""}` : "REC 대기"}</div>}
       <div className={s.bgLayer}>
-        <Canvas shadows={lite ? false : "soft"} dpr={lite ? 1 : undefined} gl={{ antialias: !lite }}>
+        <Canvas shadows={lite ? false : "soft"} dpr={recMode ? 3840 / 1920 : lite ? 1 : undefined} gl={{ antialias: !lite }}>
           <PerspectiveCamera makeDefault position={CANVAS_CAMERA.position} fov={CANVAS_CAMERA.fov} />
           <XR store={xrStore}>
             <ReactiveStage directionRef={directionRef} actorsRef={actorsRef} dominant={dominant} paramsOut={paramsRef} cueRef={filmRef} useRig={useRig} useCutout={useCutout} useArt={useArt} rigTest={q.rigtest === "1"} signText={signText} reflect={fx && !xrActive} benchYaw={Number(q.benchyaw) || 0} gradeOn={grade > 0} busModel={q.busmodel === "old" ? "old" : "v13"} world={q.world === "unity" ? "unity" : "v13"} />
