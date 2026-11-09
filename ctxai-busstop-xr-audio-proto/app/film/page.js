@@ -522,6 +522,7 @@ export default function FilmPage() {
     if (cue.slot) playFile(`${cue.slot}.mp3`, cue.volume ?? 1);
     if (cue.sense) sensorRef.current?.beginEvent(cue.name, cue.sense.azimuth, cue.sense.dur / speed, { kind: cue.sense.kind, tail: 4 / speed });
     d.markEvent("cue", cue.name);
+    recRef.current?.mark("cue", { name: cue.name });
 
     if (cue.name === "judge") {
       // 이산 결정 하나 — 누가 앉는가. 그 뒤로도 상태는 계속 흐른다.
@@ -638,6 +639,7 @@ export default function FilmPage() {
       d.setPhase("bus");
       setPhase("bus");
       playSfx("07", { volume: 0.7 });
+      recRef.current?.mark("bus");
       setCaption("272");
       await waitFilm(7.2); if (token.aborted) return;
       playSfx("08", { volume: 0.5 }); setCaption("");
@@ -679,7 +681,9 @@ export default function FilmPage() {
       film.lineGaze = gazeFor(b);
       setLine({ ...l, text, tinted, to: b.to, index: played, total });
       played++;
+      recRef.current?.mark("line", { genre: l.genre, seq: l.seq, text });
       await playFile(file, Math.min(1, (p.npcVolume ?? 1) * (b.vol ?? 1)));
+      recRef.current?.mark("lineEnd", { seq: l.seq });
       if (token.aborted) return;
 
       if (b.to === "ask") {

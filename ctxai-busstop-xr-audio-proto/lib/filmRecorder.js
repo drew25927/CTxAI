@@ -4,6 +4,7 @@
 // canvas.captureStream + MediaRecorder 로 찍는다. 소리는 <audio> 요소마다 createMediaElementSource 로
 // 녹화 트랙과 스피커 양쪽에 연결한다. 조각은 2초마다 /api/capture 로 보내 디스크에 이어 붙인다.
 // DOM 위에 그리는 자막·HUD 는 캔버스 밖이라 녹화되지 않는다 — 자막은 편집에서 넣는다.
+// 그래서 대사·큐 시각(녹화 시작 기준 초)을 mark() 로 모아 끝날 때 <이름>.json 으로 같이 남긴다 — 편집 컷·자막용.
 
 const MIME_CANDIDATES = [
   "video/mp4;codecs=avc1.640033,mp4a.40.2", // H.264 High@5.1 — 4K 가능 레벨
@@ -25,6 +26,9 @@ export function createFilmRecorder({ name, fps = 30, videoBitsPerSecond = 40_000
   // 창이 가려지면 캔버스 프레임이 멈춰 영상이 소리보다 짧아진다(2026-11-09 시험: 영상 112초 / 소리 168초) — 몇 번 가려졌는지 남긴다
   let hiddenCount = 0;
   const onVis = () => { if (document.hidden) hiddenCount++; };
+  let t0 = 0;
+  const marks = [];
+  let file = "";
 
   // 소리 요소 하나를 녹화 트랙 + 스피커로. 요소의 volume 은 소스 노드 앞에서 그대로 먹는다.
   function tap(audioEl) {
@@ -41,7 +45,7 @@ export function createFilmRecorder({ name, fps = 30, videoBitsPerSecond = 40_000
     ext = mimeType.startsWith("video/mp4") ? "mp4" : "webm";
     const stream = new MediaStream([...canvas.captureStream(fps).getVideoTracks(), ...dest.stream.getAudioTracks()]);
     rec = new MediaRecorder(stream, { mimeType, videoBitsPerSecond, audioBitsPerSecond: 256_000 });
-    const file = `${name}.${ext}`;
+    file = `${name}.${ext}`;
     rec.ondataavailable = (e) => {
       if (!e.data?.size) return;
       const n = seq++;
@@ -51,6 +55,7 @@ export function createFilmRecorder({ name, fps = 30, videoBitsPerSecond = 40_000
     };
     document.addEventListener("visibilitychange", onVis);
     rec.start(2000);
+    t0 = performance.now();
     return { file, mimeType, width: canvas.width, height: canvas.height };
   }
 
@@ -58,10 +63,18 @@ export function createFilmRecorder({ name, fps = 30, videoBitsPerSecond = 40_000
     return new Promise((resolve) => {
       if (!rec || rec.state === "inactive") { resolve({ bytes }); return; }
       document.removeEventListener("visibilitychange", onVis);
-      rec.onstop = () => { upload.then(() => resolve({ bytes, chunks: seq, hiddenCount })); };
+      rec.onstop = () => {
+        const log = JSON.stringify({ file, hiddenCount, marks }, null, 1);
+        upload.then(() => fetch(`/api/capture?file=${encodeURIComponent(`${name}.json`)}&seq=0`, { method: "POST", body: log })).catch(() => {})
+          .then(() => resolve({ bytes, chunks: seq, hiddenCount }));
+      };
       rec.stop();
     });
   }
 
-  return { tap, start, stop, get state() { return rec?.state || "idle"; } };
+  function mark(type, detail = {}) {
+    if (rec) marks.push({ t: Math.round((performance.now() - t0) / 10) / 100, type, ...detail });
+  }
+
+  return { tap, start, stop, mark, get state() { return rec?.state || "idle"; } };
 }
