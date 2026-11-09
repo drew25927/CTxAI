@@ -118,10 +118,22 @@ func timed(_ layer: CALayer, _ start: Double, _ dur: Double) {
   parent.addSublayer(layer)
 }
 // 글자는 비트맵으로 미리 그려 레이어 contents 로 넣는다 — 내보내기에서 CATextLayer 는 글자가 그려지지 않았다(상자만 나옴)
+// 글꼴은 포스터 타이포를 따른다 — 장르 이름 함렛 Black, 자막 본명조 Light, 크림색. fonts/ 의 가변 글꼴을 이 프로세스에만 등록한다.
+let fontDir = URL(fileURLWithPath: args[0]).deletingLastPathComponent().appendingPathComponent("fonts")
+for f in ["Hahmlet-VF.ttf", "NotoSerifKR-VF.ttf"] {
+  let u = (ProcessInfo.processInfo.environment["SHOWCASE_FONTS"].map { URL(fileURLWithPath: $0) } ?? fontDir).appendingPathComponent(f)
+  CTFontManagerRegisterFontsForURL(u as CFURL, .process, nil)
+}
+let CREAM = NSColor(red: 0xF1 / 255.0, green: 0xE6 / 255.0, blue: 0xD2 / 255.0, alpha: 1)
+func posterFont(_ family: String, weight: Double, size: CGFloat) -> NSFont {
+  let wght = NSNumber(value: 0x77676874) // 'wght'
+  let d = NSFontDescriptor(fontAttributes: [.family: family, .variation: [wght: weight]])
+  return NSFont(descriptor: d, size: size) ?? NSFont.systemFont(ofSize: size)
+}
 func textImage(_ s: String, size: CGFloat, bold: Bool, color: NSColor, maxW: CGFloat, align: NSTextAlignment) -> CGImage {
   let para = NSMutableParagraphStyle(); para.alignment = align; para.lineBreakMode = .byWordWrapping
   let shadow = NSShadow(); shadow.shadowColor = NSColor.black.withAlphaComponent(0.9); shadow.shadowBlurRadius = 10; shadow.shadowOffset = .zero
-  let font = NSFont(name: bold ? "AppleSDGothicNeo-Bold" : "AppleSDGothicNeo-SemiBold", size: size) ?? NSFont.systemFont(ofSize: size, weight: bold ? .bold : .semibold)
+  let font = bold ? posterFont("Hahmlet", weight: 900, size: size) : posterFont("Noto Serif KR", weight: 300, size: size)
   let str = NSAttributedString(string: s, attributes: [.font: font, .foregroundColor: color, .paragraphStyle: para, .shadow: shadow])
   let b = str.boundingRect(with: CGSize(width: maxW, height: 2000), options: [.usesLineFragmentOrigin])
   let w = Int(ceil(min(maxW, b.width))) + 40, h = Int(ceil(b.height)) + 30
@@ -132,7 +144,7 @@ func textImage(_ s: String, size: CGFloat, bold: Bool, color: NSColor, maxW: CGF
   return rep.cgImage!
 }
 for (st, d, s) in subLayers {
-  let img = textImage(s, size: 96, bold: false, color: .white, maxW: 3000, align: .center)
+  let img = textImage(s, size: 96, bold: false, color: CREAM, maxW: 3000, align: .center)
   let box = CALayer(); box.backgroundColor = NSColor.black.withAlphaComponent(0.45).cgColor; box.cornerRadius = 18
   let bw = CGFloat(img.width) + 60, bh = CGFloat(img.height) + 20
   box.frame = CGRect(x: (CGFloat(W) - bw) / 2, y: 140, width: bw, height: bh)
@@ -142,7 +154,7 @@ for (st, d, s) in subLayers {
 }
 for p in placed {
   guard let label = p.label else { continue }
-  let img = textImage(label, size: 120, bold: true, color: NSColor(red: 0.95, green: 0.6, blue: 0.17, alpha: 1), maxW: 1400, align: .left)
+  let img = textImage(label, size: 120, bold: true, color: CREAM, maxW: 1400, align: .left)
   let t = CALayer(); t.contents = img
   t.frame = CGRect(x: 130, y: CGFloat(H) - 120 - CGFloat(img.height), width: CGFloat(img.width), height: CGFloat(img.height))
   timed(t, p.start + 0.4, min(p.dur - 0.6, 6))

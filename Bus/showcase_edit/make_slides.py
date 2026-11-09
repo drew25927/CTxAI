@@ -1,14 +1,17 @@
 # 쇼케이스 영상 레이아웃 장 — 주최측 「영상콘텐츠 레이아웃」(예시: MineD) 구조를 우리 내용으로 다시 만든다.
+# 타이포는 디렉토리북 포스터를 따른다: 크림색, 제목 함렛 Black, 보조 문구 본명조 Light(자간 넓게), 양옆 가는 선.
 # 1920×1080 CSS 로 쓰고 snap(WKWebView)으로 3840×2160 PNG 를 뽑는다.
 # 사용: python3 make_slides.py <배경 jpg 폴더> <출력 폴더>
 import html, os, sys
 
 BG, OUT = sys.argv[1], sys.argv[2]
 ART = "/Users/drew/CTxAI/Bus/ArtWork_Final"
+FONT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fonts")  # Hahmlet·Noto Serif KR 가변 글꼴 (OFL)
 os.makedirs(OUT, exist_ok=True)
 
-HEADER = "2026 KAIST CT×AI 콘텐츠 마이크로디그리 과정 | <b>팀 프로젝트</b>"
-TITLE_KO, TITLE_EN = "버스 정류장 - 기다림", "Bus Stop - The Waiting"
+HEADER = "2026 KAIST CT×AI 콘텐츠 마이크로디그리 과정 | 팀 프로젝트"
+TITLE_KO, TITLE_EN = "버스정류장", "BUS STOP · THE WAITING"
+TAGLINE = "같은 정류장, 당신에게만 다른 이야기."  # 포스터 문구
 TEAM = "팀 운칠기삼"
 MEMBERS = ["김운기", "이혜원", "윤단", "정동욱"]
 AI_TOOLS = "Claude Haiku 4.5, ElevenLabs, Suno, MediaPipe, Claude Code"
@@ -25,88 +28,103 @@ TECH_LONG = ("포스터가 파닥이고, 트럭이 물보라를 튀기고, 고�
              "대사는 실시간 생성의 지연과 품질 편차를 피하려고 확정 46줄과 장르 변주까지 138줄을 미리 AI 음성으로 합성해 두고, "
              "재생 직전에 현재 배합에 가장 가까운 줄을 고른다. 질문 뒤에는 관객의 끄덕임과 고개 젓기를 대답으로 읽는다.")
 
-CSS = """
-*{margin:0;padding:0;box-sizing:border-box}
-html,body{width:1920px;height:1080px;overflow:hidden;font-family:'Apple SD Gothic Neo','AppleSDGothicNeo-Regular',sans-serif;-webkit-font-smoothing:antialiased}
-.dark{position:relative;width:1920px;height:1080px;color:#fff;background:#111;overflow:hidden}
-.bgimg{position:absolute;inset:-30px;background:center/cover no-repeat;filter:blur(var(--blur,0px))}
-.dark::before{content:'';position:absolute;inset:0;background:var(--shade);z-index:1}
-.dark>*:not(.bgimg){z-index:2}
-.hdr{position:absolute;top:34px;left:48px;font-size:17px;color:rgba(255,255,255,.75);letter-spacing:.2px}
-.hdr b{color:#fff}
-.accent{color:#F39A2B}
-.foot{position:absolute;left:0;right:0;bottom:62px;text-align:center;font-size:24px;font-weight:700}
-.foot::before{content:'';display:block;width:84px;height:1px;background:rgba(255,255,255,.55);margin:0 auto 26px}
-.light{position:relative;width:1920px;height:1080px;background:#fff;color:#222}
-.light .hdr{color:#999}.light .hdr b{color:#555}
-.light .foot{color:#999;font-weight:600}.light .foot::before{background:#ccc}
+CREAM = "#F1E6D2"
+CSS = f"""
+@font-face{{font-family:'Hahmlet';src:url('file://{FONT_DIR}/Hahmlet-VF.ttf');font-weight:100 900}}
+@font-face{{font-family:'Noto Serif KR';src:url('file://{FONT_DIR}/NotoSerifKR-VF.ttf');font-weight:200 900}}
+*{{margin:0;padding:0;box-sizing:border-box}}
+html,body{{width:1920px;height:1080px;overflow:hidden;font-family:'Noto Serif KR',serif;font-weight:300;-webkit-font-smoothing:antialiased}}
+.dark{{position:relative;width:1920px;height:1080px;color:{CREAM};background:#14120f;overflow:hidden}}
+.bgimg{{position:absolute;inset:-30px;background:center/cover no-repeat;filter:blur(var(--blur,0px))}}
+.dark::before{{content:'';position:absolute;inset:0;background:var(--shade);z-index:1}}
+.dark>*:not(.bgimg){{z-index:2}}
+.hdr{{position:absolute;top:34px;left:48px;font-size:17px;letter-spacing:1px;opacity:.7}}
+.ttl{{font-family:'Hahmlet',serif;font-weight:900;letter-spacing:-1px}}
+.en{{font-weight:400;letter-spacing:10px}}
+.rule{{display:flex;align-items:center;justify-content:center;gap:28px;letter-spacing:12px}}
+.rule i{{display:block;width:110px;height:1.5px;background:{CREAM};opacity:.75}}
+.body{{font-weight:300;line-height:1.85;letter-spacing:.3px}}
+.foot{{position:absolute;left:0;right:0;bottom:58px;text-align:center;font-size:24px;font-weight:400;letter-spacing:6px}}
+.foot::before{{content:'';display:block;width:84px;height:1px;background:{CREAM};opacity:.55;margin:0 auto 24px}}
 """
 
-def page(body, cls, bg=None, shade="rgba(0,0,0,.55)", blur=6):
-    style = f"--shade:{shade};--blur:{blur}px" if bg else ""
+def page(body, bg=None, shade="rgba(0,0,0,.55)", blur=6):
+    style = f"--shade:{shade};--blur:{blur}px" if bg else "--shade:transparent"
     layer = f"<div class='bgimg' style=\"background-image:url('file://{bg}')\"></div>" if bg else ""
-    return f"<!doctype html><html><head><meta charset='utf-8'><style>{CSS}</style></head><body><div class='{cls}' style=\"{style}\">{layer}{body}</div></body></html>"
+    return f"<!doctype html><html><head><meta charset='utf-8'><style>{CSS}</style></head><body><div class='dark' style=\"{style}\">{layer}{body}</div></body></html>"
 
 def write(name, doc):
     with open(os.path.join(OUT, name + ".html"), "w") as f: f.write(doc)
 
 e = html.escape
 foot = f"<div class='foot'>{TEAM}</div>"
+def rule(text, size):
+    return f"<div class='rule' style='font-size:{size}px'><i></i>{text}<i></i></div>"
+def small_title(size=40):
+    return f"<div class='ttl' style='font-size:{size}px'>{TITLE_KO}</div>"
 
-# 타이틀
+# 타이틀 — 포스터 하단 타이포 그대로
 write("title", page(f"""
-<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding-bottom:40px">
-  <div style="font-size:19px;color:rgba(255,255,255,.8);margin-bottom:46px">{HEADER}</div>
-  <div class="accent" style="font-size:150px;font-weight:800;letter-spacing:-4px;line-height:1.05">버스 정류장</div>
-  <div style="font-size:52px;font-weight:300;margin-top:22px;letter-spacing:1px">기다림 · {TITLE_EN}</div>
-</div>{foot}""", "dark", f"{BG}/R_100.jpg", "linear-gradient(rgba(0,0,0,.35),rgba(0,0,0,.65))", blur=3))
+<div class="hdr">{HEADER}</div>
+<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+  <div class="en" style="font-size:30px">{TITLE_EN}</div>
+  <div class="ttl" style="font-size:190px;line-height:1.1;margin:18px 0 6px;letter-spacing:-2px">{TITLE_KO}</div>
+  {rule("기다림", 56)}
+  <div style="font-size:34px;letter-spacing:6px;margin-top:40px">{TAGLINE}</div>
+</div>{foot}""", f"{BG}/R_100.jpg", "linear-gradient(rgba(0,0,0,.3),rgba(0,0,0,.7))", blur=3))
 
 # 메인 디스플레이 작품 소개 (시나리오 + 구현 기술 요약)
 write("main_intro", page(f"""
 <div class="hdr">{HEADER}</div>
-<div class="accent" style="position:absolute;top:66px;left:48px;font-size:32px;font-weight:700">{TITLE_KO}</div>
-<div style="position:absolute;top:150px;left:200px;right:200px;bottom:170px;display:flex;flex-direction:column;justify-content:center;text-align:center">
-  <div class="accent" style="font-size:30px;font-weight:600;margin-bottom:20px">콘텐츠 시나리오</div>
-  <div style="font-size:31px;line-height:1.75">{e(SCENARIO_SHORT)}</div>
-  <div class="accent" style="font-size:30px;font-weight:600;margin:56px 0 20px">구현 기술</div>
-  <div style="font-size:31px;line-height:1.75">{e(TECH_SHORT)}</div>
-  <div style="font-size:27px;margin-top:34px"><b>AI Tool</b> <span style="opacity:.85">{AI_TOOLS}</span></div>
-</div>{foot}""", "dark", f"{BG}/H_100.jpg", "rgba(0,0,0,.72)"))
+<div style="position:absolute;top:120px;left:210px;right:210px;bottom:160px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center">
+  {small_title(46)}
+  <div style="height:44px"></div>
+  {rule("콘텐츠 시나리오", 28)}
+  <div class="body" style="font-size:30px;margin-top:18px">{e(SCENARIO_SHORT)}</div>
+  <div style="height:46px"></div>
+  {rule("구현 기술", 28)}
+  <div class="body" style="font-size:30px;margin-top:18px">{e(TECH_SHORT)}</div>
+  <div style="font-size:24px;margin-top:30px;letter-spacing:1px;opacity:.85"><span style="font-weight:600">AI Tool</span>&nbsp; {AI_TOOLS}</div>
+</div>{foot}""", f"{BG}/H_100.jpg", "rgba(0,0,0,.74)"))
 
 def text_page(name, label, text, bg, tools=False):
     write(name, page(f"""
 <div class="hdr">{HEADER}</div>
-<div style="position:absolute;top:150px;left:230px;right:230px;bottom:190px;display:flex;flex-direction:column;justify-content:center;text-align:center">
-  <div class="accent" style="font-size:34px;font-weight:600;margin-bottom:34px">{TITLE_KO}</div>
-  <div class="accent" style="font-size:31px;font-weight:600;margin-bottom:28px">{label}</div>
-  <div style="font-size:31px;line-height:1.8">{e(text)}</div>
-  {f'<div style="font-size:27px;margin-top:40px"><b>AI Tool</b> <span style="opacity:.85">{AI_TOOLS}</span></div>' if tools else ''}
-</div>{foot}""", "dark", bg, "rgba(0,0,0,.7)"))
+<div style="position:absolute;top:130px;left:230px;right:230px;bottom:170px;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center">
+  {small_title(52)}
+  <div style="height:40px"></div>
+  {rule(label, 32)}
+  <div class="body" style="font-size:31px;margin-top:26px">{e(text)}</div>
+  {f'<div style="font-size:26px;margin-top:36px;letter-spacing:1px;opacity:.85"><span style="font-weight:600">AI Tool</span>&nbsp; {AI_TOOLS}</div>' if tools else ''}
+</div>{foot}""", bg, "rgba(0,0,0,.72)"))
 
 text_page("scenario", "콘텐츠 시나리오", SCENARIO_LONG, f"{BG}/R_75.jpg")
 text_page("tech", "구현 기술", TECH_LONG, f"{BG}/C_100.jpg", tools=True)
 
-# 콘텐츠 개발 / 기술 개발 — 흰 바탕 3칸
-PANEL_CSS = ("position:absolute;top:250px;bottom:150px;width:560px;border:1.5px solid #ccc;padding:22px 22px 18px;"
-             "display:flex;flex-direction:column")
+# 콘텐츠 개발 / 기술 개발 — 3칸
+PANEL_CSS = (f"position:absolute;top:250px;bottom:150px;width:560px;border:1.5px solid rgba(241,230,210,.45);padding:22px 22px 18px;"
+             "display:flex;flex-direction:column;background:rgba(0,0,0,.25)")
 def panel(x, num, title, inner, text):
-    return (f"<div style='{PANEL_CSS};left:{x}px'><div style='font-size:22px;font-weight:700;margin-bottom:16px'>{num} "
-            f"<span style='color:#E2582B'>{title}</span></div><div style='flex:1;min-height:0'>{inner}</div>"
-            f"<div style='font-size:19px;line-height:1.6;color:#444;margin-top:16px'>{e(text)}</div></div>")
-def light_page(name, heading, panels):
+    return (f"<div style='{PANEL_CSS};left:{x}px'><div style='font-size:23px;margin-bottom:16px;letter-spacing:1px'>"
+            f"<span style='font-weight:400;opacity:.7'>{num}</span>&nbsp; <span class='ttl' style='font-size:26px;letter-spacing:0'>{title}</span></div>"
+            f"<div style='flex:1;min-height:0'>{inner}</div>"
+            f"<div class='body' style='font-size:19px;line-height:1.7;margin-top:16px;opacity:.92'>{e(text)}</div></div>")
+def panel_page(name, heading, panels):
     write(name, page(f"""
 <div class="hdr">{HEADER}</div>
-<div style="position:absolute;top:66px;left:48px;font-size:30px;color:#888">{TITLE_KO}</div>
-<div style="position:absolute;top:150px;left:90px;font-size:42px;font-weight:700">{heading}</div>
+<div style="position:absolute;top:84px;left:90px;right:90px;display:flex;align-items:baseline;gap:30px">
+  <div class="ttl" style="font-size:54px">{heading}</div>
+  <div style="font-size:26px;letter-spacing:4px;opacity:.75">{TITLE_KO} · 기다림</div>
+</div>
 {''.join(panel(90 + i * 590, f'0{i+1}', *p) for i, p in enumerate(panels))}
-<div class="foot">{TEAM}</div>""", "light"))
+{foot}"""))
 
 def img(path, style=""):
-    return f"<div style=\"background:#eee url('file://{path}') center/cover no-repeat;{style}\"></div>"
+    return f"<div style=\"background:#222 url('file://{path}') center/cover no-repeat;{style}\"></div>"
 def grid(cells, cols):
     return f"<div style='display:grid;grid-template-columns:repeat({cols},1fr);gap:8px;height:100%'>{''.join(cells)}</div>"
 
-light_page("content_dev", "콘텐츠 개발", [
+panel_page("content_dev", "콘텐츠 개발", [
     ("캐릭터 원화 · 컷아웃",
      grid([img(f"{ART}/{d}/04_캐릭터마스터숏_{g}.png") for d, g in [("2_로맨스", "로맨스"), ("3_공포", "공포"), ("4_코미디", "코미디")]], 1),
      "세 장르의 옆사람을 직접 그린 원화로 만들고, 2D 컷아웃으로 오려 3D 정류장에 앉혔다. 배합이 정해지면 그 장르의 인물이 걸어와 옆에 앉는다."),
@@ -119,13 +137,13 @@ light_page("content_dev", "콘텐츠 개발", [
 ])
 
 def flow(items):
-    box = "border:1.5px solid #E2582B;border-radius:10px;padding:12px 14px;font-size:20px;text-align:center;background:#FFF6F1"
-    arrow = "<div style='text-align:center;color:#E2582B;font-size:22px;line-height:1.2'>▼</div>"
+    box = "border:1px solid rgba(241,230,210,.6);padding:12px 14px;font-size:20px;font-weight:400;text-align:center;line-height:1.5"
+    arrow = "<div style='text-align:center;font-size:18px;line-height:1.5;opacity:.6'>▼</div>"
     return "<div style='display:flex;flex-direction:column;justify-content:center;height:100%'>" + arrow.join(f"<div style='{box}'>{i}</div>" for i in items) + "</div>"
 
-light_page("tech_dev", "기술 개발", [
+panel_page("tech_dev", "기술 개발", [
     ("배합 엔진",
-     flow(["관객의 반응<br><span style='font-size:16px;color:#777'>고개 방향 · 머문 시간 · 끄덕임</span>",
+     flow(["관객의 반응<br><span style='font-size:16px;opacity:.7'>고개 방향 · 머문 시간 · 끄덕임</span>",
            "증거 → 로맨스 · 공포 · 코미디 배합",
            "매핑표",
            "하늘 · 안개 · 가로등 · 옆사람 거리<br>대사 사이 침묵 · BGM"]),
@@ -148,9 +166,10 @@ light_page("tech_dev", "기술 개발", [
 write("credits", page(f"""
 <div class="hdr">{HEADER}</div>
 <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding-bottom:60px">
-  <div class="accent" style="font-size:34px;font-weight:600;margin-bottom:44px">{TITLE_KO}</div>
-  <div style="font-size:27px;color:#F7C08A;margin-bottom:20px">개발팀</div>
-  <div style="font-size:31px;color:#F7C08A;font-weight:700;margin-bottom:26px">{TEAM}</div>
-  {''.join(f'<div style="font-size:32px;line-height:1.75">{m}</div>' for m in MEMBERS)}
-</div>{foot}""", "dark", f"{BG}/C_130.jpg", "rgba(0,0,0,.66)"))
+  <div class="en" style="font-size:24px;opacity:.85">{TITLE_EN}</div>
+  <div class="ttl" style="font-size:96px;line-height:1.1;margin:10px 0 40px">{TITLE_KO}</div>
+  {rule("개발팀", 28)}
+  <div style="font-size:34px;font-weight:600;letter-spacing:6px;margin:26px 0 22px">{TEAM}</div>
+  {''.join(f'<div style="font-size:32px;line-height:1.8;letter-spacing:6px">{m}</div>' for m in MEMBERS)}
+</div>""", f"{BG}/C_130.jpg", "rgba(0,0,0,.7)"))
 print("ok")

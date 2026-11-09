@@ -6,7 +6,7 @@ let app = NSApplication.shared
 app.setActivationPolicy(.prohibited)
 class D: NSObject, WKNavigationDelegate {
   func webView(_ w: WKWebView, didFinish n: WKNavigation!) {
-    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+    DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
       let c = WKSnapshotConfiguration(); c.rect = CGRect(x: 0, y: 0, width: 1920, height: 1080); c.snapshotWidth = 1920
       w.takeSnapshot(with: c) { img, err in
         guard let img = img else { print("err", err as Any); exit(1) }

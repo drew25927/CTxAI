@@ -1,2 +1,4 @@
 render/
 slides/
+# 글꼴 원본 (27MB) — google/fonts 저장소 ofl/hahmlet/Hahmlet[wght].ttf, ofl/notoserifkr/NotoSerifKR[wght].ttf 를 Hahmlet-VF.ttf / NotoSerifKR-VF.ttf 로 받는다
+fonts/*.ttf
