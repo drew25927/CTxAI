@@ -172,4 +172,14 @@ write("credits", page(f"""
   <div style="font-size:34px;font-weight:600;letter-spacing:6px;margin:26px 0 22px">{TEAM}</div>
   {''.join(f'<div style="font-size:32px;line-height:1.8;letter-spacing:6px">{m}</div>' for m in MEMBERS)}
 </div>""", f"{BG}/C_130.jpg", "rgba(0,0,0,.7)"))
+# 문구 카드 — 재편집(훅 구조)용. 검은 바탕에 포스터 타이포.
+def card(name, lines):
+    rows = "".join(f"<div class='{'ttl' if big else ''}' style='font-size:{size}px;line-height:1.35;letter-spacing:{'-1px' if big else '6px'};margin:{14 if big else 10}px 0'>{e(t)}</div>"
+                   for t, size, big in lines)
+    write(name, page(f"""<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+background:radial-gradient(ellipse at center,#221d17 0%,#0d0b09 70%)">{rows}</div>"""))
+
+card("card_open", [("같은 정류장.", 128, True), ("같은 5분.", 128, True)])
+card("card_choice", [("옆에 앉는 사람은,", 60, False), ("당신이 정한다.", 120, True)])
+card("card_end", [("버스는 누구에게나 온다.", 60, False), ("다만 나의 기다림,", 104, True), ("그건 나만의 경험이다.", 104, True)])
 print("ok")

@@ -1,4 +1,8 @@
 # 녹화 시간 기록(capture/v2_<장르>.json)으로 컷을 고른다 — 대사가 중간에 잘리지 않게 줄 시작·끝 시각에 맞춘다.
+# 11/9 재편집: 체험 순서를 따라가지 않고 훅 구조로 —
+#   「같은 정류장. 같은 5분.」 → 세 인물의 센 한 마디 → 「옆에 앉는 사람은, 당신이 정한다.」 → 사건 몽타주(원인)
+#   → 세 화면 비교(같은 순간, 세 영화) → 장르별 예고편 → 버스 → 「버스는 누구에게나 온다…」 → 타이틀
+# 빈 도로·걸어 들어오는 컷아웃·대사 사이 긴 침묵은 쓰지 않는다.
 # 사용: python3 make_plans.py <capture 폴더> <slides 폴더> <plan 출력 폴더>
 import json, os, sys
 
@@ -7,50 +11,67 @@ GENRES = {"R": "로맨스", "H": "공포", "C": "블랙코미디"}
 
 def load(g):
     d = json.load(open(os.path.join(CAP, f"v2_{g}.json")))
-    src = os.path.join(CAP, f"v2_{g}.mp4")
     cue = {m["name"]: m["t"] for m in d["marks"] if m["type"] == "cue"}
     bus = next((m["t"] for m in d["marks"] if m["type"] == "bus"), None)
-    lines = []
+    lines = {}
+    last = None
     for m in d["marks"]:
-        if m["type"] == "line": lines.append({"t": m["t"], "text": m["text"], "seq": m["seq"]})
-        if m["type"] == "lineEnd" and lines: lines[-1]["end"] = m["t"]
-    return {"src": src, "cue": cue, "bus": bus, "lines": lines}
+        if m["type"] == "line": last = m["seq"]; lines[last] = {"t": m["t"], "text": m["text"]}
+        if m["type"] == "lineEnd" and last: lines[last]["end"] = m["t"]
+    return {"src": os.path.join(CAP, f"v2_{g}.mp4"), "cue": cue, "bus": bus, "lines": lines}
 
 takes = {g: load(g) for g in GENRES}
-subs = {t["src"]: [{"t": l["t"], "end": l["end"], "text": l["text"]} for l in t["lines"] if "end" in l] for t in takes.values()}
+subs = {t["src"]: [{"t": l["t"], "end": l["end"], "text": l["text"]} for l in t["lines"].values() if "end" in l] for t in takes.values()}
 
-def seg(g, a, b, label=None):
-    it = {"src": takes[g]["src"], "from": round(a, 2), "to": round(b, 2)}
+def slide(name, dur, bed=None):
+    it = {"slide": os.path.join(SLIDES, name + ".png"), "dur": dur}
+    if bed is not None: it["audio"] = {"src": takes["R"]["src"], "from": bed, "vol": 0.8}  # 로맨스 녹화 도입부의 빗소리·BGM 을 깐다
+    return it
+
+def line(g, seq, pre=0.4, post=0.6, label=None, fade=0.15):
+    l = takes[g]["lines"][seq]
+    it = {"src": takes[g]["src"], "from": round(l["t"] - pre, 2), "to": round(l["end"] + post, 2), "fade": fade}
     if label: it["label"] = label
     return it
 
-def genre_part(g, n_lines, cue="npcWalk", lead=1.0):
-    # 그 큐(안내방송·걷기·착석) 조금 전부터 n 번째 줄이 끝날 때까지
-    t = takes[g]
-    start = t["cue"][cue] - lead
-    end = t["lines"][n_lines - 1]["end"] + 0.9
-    return seg(g, start, end, GENRES[g])
+def event(cue, a, b, caption):
+    c = takes["R"]["cue"][cue]
+    return {"src": takes["R"]["src"], "from": round(c + a, 2), "to": round(c + b, 2), "caption": caption, "fade": 0.25}
 
-def ending(g, lead=2.0, tail=3.0):
-    t = takes[g]
-    last = t["lines"][-1]
-    return seg(g, t["bus"] - lead, last["end"] + tail)
+def triptych():
+    # 같은 순간의 세 영화 — 차례로 한 마디씩. (장르, 줄, 원본에서 띠를 자를 왼쪽 x — 인물이 칸 가운데 오게)
+    picks = [("R", "05", 400), ("H", "04", 550), ("C", "08", 280)]
+    panels, turns, t = [], [], 0.0
+    for i, (g, seq, cx) in enumerate(picks):
+        l = takes[g]["lines"][seq]
+        lead = 0.7 if i == 0 else 0.4
+        start = t
+        t = start + lead + (l["end"] - l["t"]) + (0.8 if i == len(picks) - 1 else 0.5)
+        turns.append([round(start, 2), round(t, 2)])
+        panels.append({"src": takes[g]["src"], "from": round(l["t"] - start - lead, 2), "cx": cx})
+    return {"tri": panels, "dur": round(t, 2), "turns": turns, "labels": [GENRES[g] for g, _, _ in picks], "head": "같은 순간, 세 개의 영화", "fade": 0.4}
 
-def intro(g, spans):
-    c = takes[g]["cue"]
-    return [seg(g, c[a] + da, c[b] + db) for a, da, b, db in spans]
+def trailer(g, seqs):
+    return [line(g, s, label=GENRES[g] if i == 0 else None) for i, s in enumerate(seqs)]
 
-def slide(name, dur):
-    return {"slide": os.path.join(SLIDES, name + ".png"), "dur": dur}
+def bus(a=3.5):
+    # 버스가 화면에 들어온 뒤부터 로맨스 인물의 마지막 말(「응원해 주세요!」)까지 — 버스 도착 전 빈 도로는 쓰지 않는다
+    t = takes["R"]
+    last = t["lines"][max(t["lines"])]
+    return {"src": t["src"], "from": round(t["bus"] + a, 2), "to": round(last["end"] + 0.7, 2), "fade": 0.3}
 
-# 1분 축약 — 사건 몽타주 → 세 장르의 첫 만남 → 버스
-short_body = intro("R", [("poster", -1.0, "cafeBell", 2.0), ("truckSplash", -1.0, "truckSplash", 4.0), ("cat", -0.5, "cat", 3.5)]) \
-    + [genre_part(g, k, "npcSeated", -1.0) for g, k in [("R", 2), ("H", 1), ("C", 2)]] + [ending("R", lead=-1.0, tail=1.5)]
-# 2분 풀 — 사건 몽타주 + 안내방송 → 장르마다 두세 줄 → 버스와 마지막 말
-full_body = intro("R", [("poster", -1.0, "cafeBell", 3.0), ("truckSplash", -2.0, "truckSplash", 6.0), ("cat", -1.0, "cat", 7.0)]) \
-    + [genre_part("R", 2, "announce", 0.3), genre_part("H", 2), genre_part("C", 5)] + [ending("R", tail=2.0)]
+hook = [line("H", "13"), line("C", "10"), line("R", "12")]
+# 포스터는 정면 카메라에 잡히지 않고(유리 옆), 트럭은 화면을 1.5초쯤만 지나간다 — 보이는 순간만 쓴다
+montage = [event("truckSplash", -0.7, 1.6, "무엇에 놀라는지"), event("cat", -0.4, 4.6, "무엇을 바라보는지")]
 
-def total(items): return sum(i["dur"] if "slide" in i else i["to"] - i["from"] for i in items)
+full_body = ([slide("card_open", 3.2, bed=16.0)] + hook + [slide("card_choice", 3.2, bed=19.5)] + montage + [triptych()]
+             + trailer("R", ["02", "07", "13"]) + trailer("H", ["01", "06", "11"]) + trailer("C", ["01", "09", "15"])
+             + [bus(), slide("card_end", 4.5, bed=16.5), slide("title", 4.0, bed=21.5)])
+short_body = ([slide("card_open", 2.6, bed=16.0)] + hook + [slide("card_choice", 2.6, bed=19.0), triptych()]
+              + [line("R", "07", label="로맨스"), line("H", "01", label="공포"), line("C", "09", label="블랙코미디")]
+              + [bus(a=4.5), slide("card_end", 3.6, bed=16.5), slide("title", 3.0, bed=20.5)])
+
+def total(items): return sum(i["dur"] if "dur" in i else i["to"] - i["from"] for i in items)
 
 plans = {
     "main": [slide("title", 4), slide("main_intro", 10)] + short_body,
@@ -60,5 +81,5 @@ plans = {
 os.makedirs(OUT, exist_ok=True)
 for name, items in plans.items():
     json.dump({"items": items, "subs": subs}, open(os.path.join(OUT, f"{name}.json"), "w"), ensure_ascii=False, indent=1)
-    body = [i for i in items if "src" in i]
-    print(f"{name}: 전체 {total(items):.1f}초 · 본영상 {total(body):.1f}초 · 구간 {len(body)}개")
+    body = short_body if name == "main" else full_body
+    print(f"{name}: 전체 {total(items):.1f}초 · 본영상 {total(body):.1f}초 · 항목 {len(items)}개")

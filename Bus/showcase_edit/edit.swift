@@ -1,9 +1,13 @@
 // 쇼케이스 영상 편집기 — ffmpeg 없이 AVFoundation 으로 녹화본 구간 + 레이아웃 장을 이어 4K H.264 로 내보낸다.
 // 사용: swift edit.swift plan.json out.mp4
 //
-// plan.json: { "items": [ {"slide": "a.png", "dur": 5} | {"src": "x.mp4", "from": 12.3, "to": 20.1, "label": "로맨스"} ... ],
-//              "subs": { "x.mp4": [ {"t": 71.0, "end": 74.8, "text": "..."} ] } }
-// 구간마다 앞뒤 0.3초 암전·소리 페이드(이웃 구간의 페이드와 맞닿으면 겹침으로 거부돼 0.02초 띄운다). 자막은 원본 시각을 편집 시각으로 옮겨 구간 안에 든 것만 새긴다.
+// plan.json: { "items": [ ... ], "subs": { "x.mp4": [ {"t": 71.0, "end": 74.8, "text": "..."} ] } }
+//   {"slide": "a.png", "dur": 5, "audio": {"src": "x.mp4", "from": 16, "vol": 0.6}}   정지 장(문구 카드 포함) — audio 는 깔리는 소리
+//   {"src": "x.mp4", "from": 12.3, "to": 20.1, "label": "로맨스", "caption": "무엇에 놀라는지"}   녹화 구간
+//   {"tri": [{"src","from","cx"} ×3], "dur": 12.8, "turns": [[0,5.3],[5.3,8.8],[8.8,12.6]], "labels": [...], "head": "..."}
+//       세 화면 비교 — 세로 띠 셋(1280px)에 같은 길이를 나란히 틀고, turns 동안 그 칸만 밝히고 그 칸의 소리를 튼다. cx 는 원본에서 띠를 자를 왼쪽 x.
+//   모든 항목에 "fade" (기본 0.3초) — 앞뒤 암전·소리 페이드. 이웃 페이드와 맞닿으면 겹침으로 거부돼 0.02초 띄운다.
+// 자막은 원본 시각을 편집 시각으로 옮겨 구간(세 화면은 그 칸의 차례) 안에 든 것만 새긴다.
 import AVFoundation
 import AppKit
 import QuartzCore
@@ -49,41 +53,88 @@ func stillClip(_ png: String, _ dur: Double) -> URL {
 
 let comp = AVMutableComposition()
 let vTrack = comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)!
+let vTracks = [vTrack] + (0..<2).map { _ in comp.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid)! }
 let aTrack = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)!
-let layerIns = AVMutableVideoCompositionLayerInstruction(assetTrack: vTrack)
+let layerIns = vTracks.map { AVMutableVideoCompositionLayerInstruction(assetTrack: $0) }
 let audioParams = AVMutableAudioMixInputParameters(track: aTrack)
 var cursor = 0.0
 struct Placed { let start: Double; let dur: Double; let label: String? }
 var placed: [Placed] = []
 var subLayers: [(Double, Double, String)] = []
+var overlays: [(Double, Double, String, String)] = [] // 시작, 길이, 종류(caption·head·tri0..2·seams), 글
 var assets: [String: AVURLAsset] = [:]
+func asset(_ src: String) -> AVURLAsset { let a = assets[src] ?? AVURLAsset(url: URL(fileURLWithPath: src)); assets[src] = a; return a }
+let EPS = 0.02
+
+// 소리 한 조각: 원본 [from, from+dur) 을 편집 시각 at 에, 앞뒤 페이드
+func addAudio(_ src: String, _ from: Double, _ dur: Double, at: Double, fade: Double, vol: Float = 1) {
+  let a = asset(src)
+  guard let t = a.tracks(withMediaType: .audio).first else { return }
+  try! aTrack.insertTimeRange(CMTimeRange(start: cm(from), duration: cm(dur)), of: t, at: cm(at))
+  audioParams.setVolumeRamp(fromStartVolume: 0, toEndVolume: vol, timeRange: CMTimeRange(start: cm(at + EPS), duration: cm(fade)))
+  audioParams.setVolumeRamp(fromStartVolume: vol, toEndVolume: 0, timeRange: CMTimeRange(start: cm(at + dur - fade - EPS), duration: cm(fade)))
+}
+func addSubs(_ src: String, _ from: Double, _ to: Double, at: Double) {
+  for s in subs[src] ?? [] {
+    let t = s["t"] as! Double, e = s["end"] as! Double
+    let a0 = max(t, from), a1 = min(e + 0.6, to - 0.15)
+    if a1 - a0 > 0.8 { subLayers.append((at + a0 - from, a1 - a0, s["text"] as! String)) }
+  }
+}
+func fadeVideo(_ li: AVMutableVideoCompositionLayerInstruction, _ start: Double, _ dur: Double, _ fade: Double, peak: Float = 1) {
+  li.setOpacityRamp(fromStartOpacity: 0, toEndOpacity: peak, timeRange: CMTimeRange(start: cm(start), duration: cm(fade)))
+  li.setOpacityRamp(fromStartOpacity: peak, toEndOpacity: 0, timeRange: CMTimeRange(start: cm(start + dur - fade - EPS), duration: cm(fade)))
+}
 
 for it in items {
   var dur: Double
+  let fade = it["fade"] as? Double ?? FADE
   if let png = it["slide"] as? String {
     dur = it["dur"] as! Double
     let a = AVURLAsset(url: stillClip(png, dur))
     try! vTrack.insertTimeRange(CMTimeRange(start: .zero, duration: cm(dur)), of: a.tracks(withMediaType: .video)[0], at: cm(cursor))
+    if let au = it["audio"] as? [String: Any] {
+      addAudio(au["src"] as! String, au["from"] as! Double, dur, at: cursor, fade: max(fade, 0.5), vol: Float(au["vol"] as? Double ?? 1))
+    }
+    fadeVideo(layerIns[0], cursor, dur, fade)
+  } else if let tri = it["tri"] as? [[String: Any]] {
+    dur = it["dur"] as! Double
+    let turns = it["turns"] as! [[Double]]
+    let dim: Float = 0.38
+    func op(_ i: Int, _ t: Double) -> Float { (turns[i][0] <= t && t < turns[i][1]) ? 1 : dim }
+    for (i, p) in tri.enumerated() {
+      let src = p["src"] as! String, from = p["from"] as! Double, cx = p["cx"] as? Double ?? 1280
+      try! vTracks[i].insertTimeRange(CMTimeRange(start: cm(from), duration: cm(dur)), of: asset(src).tracks(withMediaType: .video)[0], at: cm(cursor))
+      let li = layerIns[i]
+      li.setCropRectangle(CGRect(x: cx, y: 0, width: 1280, height: Double(H)), at: cm(cursor))
+      li.setTransform(CGAffineTransform(translationX: CGFloat(Double(i) * 1280 - cx), y: 0), at: cm(cursor))
+      li.setCropRectangle(CGRect(x: 0, y: 0, width: W, height: H), at: cm(cursor + dur))
+      li.setTransform(.identity, at: cm(cursor + dur))
+      // 밝기: 들어올 때 0→첫 값, 차례가 바뀔 때마다 0.24초 램프, 나갈 때 →0
+      li.setOpacityRamp(fromStartOpacity: 0, toEndOpacity: op(i, 0), timeRange: CMTimeRange(start: cm(cursor), duration: cm(fade)))
+      for b in turns.map({ $0[0] }) + turns.map({ $0[1] }) where b > 0.5 && b < dur - 0.5 {
+        let a = op(i, b - 0.01), z = op(i, b + 0.01)
+        if a != z { li.setOpacityRamp(fromStartOpacity: a, toEndOpacity: z, timeRange: CMTimeRange(start: cm(cursor + b - 0.12), duration: cm(0.24))) }
+      }
+      li.setOpacityRamp(fromStartOpacity: op(i, dur - 0.01), toEndOpacity: 0, timeRange: CMTimeRange(start: cm(cursor + dur - fade - EPS), duration: cm(fade)))
+      // 그 칸의 차례에만 그 칸의 소리와 자막
+      let tr = turns[i]
+      addAudio(src, from + tr[0], tr[1] - tr[0], at: cursor + tr[0], fade: 0.12)
+      addSubs(src, from + tr[0], from + tr[1], at: cursor + tr[0])
+      if let labels = it["labels"] as? [String] { overlays.append((cursor + 0.3, dur - 0.6, "tri\(i)", labels[i])) }
+    }
+    overlays.append((cursor + 0.3, dur - 0.6, "seams", ""))
+    if let head = it["head"] as? String { overlays.append((cursor + 0.3, dur - 0.6, "head", head)) }
   } else {
     let src = it["src"] as! String
-    let a = assets[src] ?? AVURLAsset(url: URL(fileURLWithPath: src)); assets[src] = a
     let from = it["from"] as! Double, to = it["to"] as! Double
     dur = to - from
-    let range = CMTimeRange(start: cm(from), duration: cm(dur))
-    try! vTrack.insertTimeRange(range, of: a.tracks(withMediaType: .video)[0], at: cm(cursor))
-    try! aTrack.insertTimeRange(range, of: a.tracks(withMediaType: .audio)[0], at: cm(cursor))
-    // 소리 페이드
-    audioParams.setVolumeRamp(fromStartVolume: 0, toEndVolume: 1, timeRange: CMTimeRange(start: cm(cursor), duration: cm(FADE)))
-    audioParams.setVolumeRamp(fromStartVolume: 1, toEndVolume: 0, timeRange: CMTimeRange(start: cm(cursor + dur - FADE - 0.02), duration: cm(FADE)))
-    for s in subs[src] ?? [] {
-      let t = s["t"] as! Double, e = s["end"] as! Double
-      let a0 = max(t, from), a1 = min(e + 0.6, to - 0.2)
-      if a1 - a0 > 0.8 { subLayers.append((cursor + a0 - from, a1 - a0, s["text"] as! String)) }
-    }
+    try! vTrack.insertTimeRange(CMTimeRange(start: cm(from), duration: cm(dur)), of: asset(src).tracks(withMediaType: .video)[0], at: cm(cursor))
+    addAudio(src, from, dur, at: cursor, fade: fade)
+    addSubs(src, from, to, at: cursor)
+    fadeVideo(layerIns[0], cursor, dur, fade)
+    if let c = it["caption"] as? String { overlays.append((cursor + 0.2, dur - 0.4, "caption", c)) }
   }
-  // 화면 암전 페이드 (앞뒤)
-  layerIns.setOpacityRamp(fromStartOpacity: 0, toEndOpacity: 1, timeRange: CMTimeRange(start: cm(cursor), duration: cm(FADE)))
-  layerIns.setOpacityRamp(fromStartOpacity: 1, toEndOpacity: 0, timeRange: CMTimeRange(start: cm(cursor + dur - FADE - 0.02), duration: cm(FADE)))
   placed.append(Placed(start: cursor, dur: dur, label: it["label"] as? String))
   cursor += dur
 }
@@ -97,10 +148,10 @@ vc.renderSize = CGSize(width: W, height: H)
 vc.frameDuration = CMTime(value: 1, timescale: FPS)
 let ins = AVMutableVideoCompositionInstruction()
 ins.timeRange = CMTimeRange(start: .zero, duration: cm(total))
-ins.layerInstructions = [layerIns]
+ins.layerInstructions = layerIns
 vc.instructions = [ins]
 
-// 자막 · 장르 이름 — Core Animation 레이어 (좌표는 왼쪽 아래가 원점)
+// 자막 · 장르 이름 · 문구 — Core Animation 레이어 (좌표는 왼쪽 아래가 원점)
 let parent = CALayer(); parent.frame = CGRect(x: 0, y: 0, width: W, height: H)
 let videoLayer = CALayer(); videoLayer.frame = parent.frame
 parent.addSublayer(videoLayer)
@@ -158,6 +209,31 @@ for p in placed {
   let t = CALayer(); t.contents = img
   t.frame = CGRect(x: 130, y: CGFloat(H) - 120 - CGFloat(img.height), width: CGFloat(img.width), height: CGFloat(img.height))
   timed(t, p.start + 0.4, min(p.dur - 0.6, 6))
+}
+for (st, d, kind, text) in overlays {
+  if kind == "seams" {
+    // 포스터의 빛나는 경계처럼 칸 사이에 가는 크림색 선
+    for x in [1280.0, 2560.0] {
+      let l = CALayer(); l.backgroundColor = CREAM.withAlphaComponent(0.8).cgColor
+      l.frame = CGRect(x: x - 2, y: 0, width: 4, height: Double(H))
+      l.shadowColor = CREAM.cgColor; l.shadowRadius = 14; l.shadowOpacity = 0.9; l.shadowOffset = .zero
+      timed(l, st, d)
+    }
+    continue
+  }
+  let isTri = kind.hasPrefix("tri")
+  let img = textImage(text, size: kind == "head" ? 84 : isTri ? 100 : 92, bold: kind != "caption", color: CREAM, maxW: 3400, align: .center)
+  let t = CALayer(); t.contents = img
+  let w = CGFloat(img.width), h = CGFloat(img.height)
+  if isTri {
+    let i = CGFloat(Int(String(kind.last!))!)
+    t.frame = CGRect(x: i * 1280 + (1280 - w) / 2, y: CGFloat(H) - 290 - h, width: w, height: h)
+  } else if kind == "head" {
+    t.frame = CGRect(x: (CGFloat(W) - w) / 2, y: CGFloat(H) - 90 - h, width: w, height: h)
+  } else {
+    t.frame = CGRect(x: (CGFloat(W) - w) / 2, y: 260, width: w, height: h)
+  }
+  timed(t, st, d)
 }
 vc.animationTool = AVVideoCompositionCoreAnimationTool(postProcessingAsVideoLayer: videoLayer, in: parent)
 
