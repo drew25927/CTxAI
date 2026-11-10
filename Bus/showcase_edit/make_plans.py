@@ -91,6 +91,30 @@ short_body = (lead + [slide("card_open", 2.6, bed=16.0)] + hook + [slide("card_c
               + [line("R", "07", label="로맨스"), line("H", "01", label="공포"), line("C", "09", label="블랙코미디")]
               + [bus(a=4.5), slide("card_end", 4.0, bed=16.5)])
 
+# 데모 소스판(DEMO=<4클립 폴더> DEMO_COMEDY=<블랙코미디 폴더> DEMO_ONLY=1): 본영상 화면을 데모 시네마틱으로만 짠다 (장·문구 카드는 그대로).
+# 4클립 01: 0~5초 VR 관객 · 5~7.5초 벤치에서 본 정면 · 8초~ 카페에서 나온 인물이 횡단보도를 건넘 / 02: 빈 인도 (무음)
+#        03: 2.4~3.9초 트럭 · 3.4초 물보라 / 04: 0.5~3.5초 고양이
+# 블랙코미디 03: 인물이 인도를 걸어오며 할머니로 변하고(0~15초) 옆에 앉는다(15~25초)
+# 소리가 거의 없는 컷엔 녹화본의 빗소리·BGM 만 깐다(화면은 안 씀).
+def demo(n, a, b, caption=None, bed=False, fade=0.3, label=None, pkg=None):
+    names = {1: "01_OPENING_CAFE_CROSSING", 2: "02_SIDEWALK_APPROACH", 3: "03_TRUCK_SPLASH", 4: "04_CAT_FOREST_EXIT"}
+    src = os.path.join(pkg, n) if pkg else os.path.join(DEMO, names[n] + "_1080p.mp4")
+    it = {"src": src, "from": a, "to": b, "fade": fade}
+    if caption: it.update(caption=caption, box=True)
+    if label: it["label"] = label
+    if bed: it["audio"] = {"src": takes["R"]["src"], "from": BED_QUIET, "vol": 0.55}
+    return it
+if DEMO and os.environ.get("DEMO_ONLY"):
+    COMEDY = os.environ["DEMO_COMEDY"]
+    demo_body = [slide("card_open", 3.2, bed=16.0), vr(), demo(1, 4.95, 7.4),
+                 demo(1, 9.4, 17.6, bed=True),                                   # 옆에 앉을 사람이 온다
+                 slide("card_choice", 3.2, bed=19.5),
+                 demo("03_BUS_STOP_COMEDY_R03_FULL_1080p.mp4", 0.6, 25.0, bed=True, fade=0.4, label="블랙코미디", pkg=COMEDY),
+                 demo(3, 2.0, 4.9, "무엇에 놀라는지", fade=0.25), demo(4, 0.2, 6.0, "무엇을 바라보는지", fade=0.25),
+                 demo(2, 1.0, 6.0, bed=True, fade=0.5),                          # 다시 조용한 기다림
+                 slide("card_end", 4.5, bed=16.5)]
+    full_body = short_body = demo_body
+
 def total(items): return sum(i["dur"] if "dur" in i else i["to"] - i["from"] for i in items)
 
 plans = {
