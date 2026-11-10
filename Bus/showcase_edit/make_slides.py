@@ -48,7 +48,23 @@ html,body{{width:1920px;height:1080px;overflow:hidden;font-family:'Noto Serif KR
 .foot::before{{content:'';display:block;width:84px;height:1px;background:{CREAM};opacity:.55;margin:0 auto 24px}}
 """
 
+# 글만 나오는 장의 배경은 포스터 그림 — 원본(assets/poster.png, 1024×1536)에서 글씨가 없는 가로 띠를 잘라 화면 폭에 맞추고,
+# 키운 만큼 흐리게·어둡게 깐다. crop_y 는 원본 기준 띠의 위쪽 y (띠 높이 576 = 1024×9/16).
+POSTER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "poster.png")
+def poster_bg(crop_y, blur=5, shade=.52):
+    k = 1920 / 1024
+    return (f"<div style=\"position:absolute;inset:-24px;background:url('file://{POSTER}') 0 {-crop_y * k + 24:.0f}px/1968px auto no-repeat;filter:blur({blur}px)\"></div>"
+            f"<div style='position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(0,0,0,{shade - .12}) 0%,rgba(0,0,0,{shade + .25}) 100%)'></div>")
+
+# SLIDE_BG=poster — 레이아웃 장의 배경도 게임 스크린샷 대신 포스터로 (비교용 두 번째 판). 장마다 포스터의 다른 띠를 쓴다.
+POSTER_MODE = os.environ.get("SLIDE_BG") == "poster"
+POSTER_CROP = {"R_100.jpg": 470, "H_100.jpg": 240, "R_75.jpg": 560, "C_100.jpg": 380, "C_130.jpg": 300}
+
 def page(body, bg=None, shade="rgba(0,0,0,.55)", blur=6):
+    if POSTER_MODE and not body.lstrip().startswith("<div style=\"position:absolute;inset:-24px"):
+        # 글 장 — 배경 사진 자리와 무늬 없는 장(콘텐츠·기술 개발) 모두 포스터 띠로
+        crop = POSTER_CROP.get(os.path.basename(bg), 470) if bg else 470
+        return page(poster_bg(crop, blur=7, shade=.62 if bg else .7) + body)
     style = f"--shade:{shade};--blur:{blur}px" if bg else "--shade:transparent"
     layer = f"<div class='bgimg' style=\"background-image:url('file://{bg}')\"></div>" if bg else ""
     return f"<!doctype html><html><head><meta charset='utf-8'><style>{CSS}</style></head><body><div class='dark' style=\"{style}\">{layer}{body}</div></body></html>"
@@ -172,14 +188,6 @@ write("credits", page(f"""
   <div style="font-size:34px;font-weight:600;letter-spacing:6px;margin:26px 0 22px">{TEAM}</div>
   {''.join(f'<div style="font-size:32px;line-height:1.8;letter-spacing:6px">{m}</div>' for m in MEMBERS)}
 </div>""", f"{BG}/C_130.jpg", "rgba(0,0,0,.7)"))
-# 글만 나오는 장의 배경은 포스터 그림 — 원본(assets/poster.png, 1024×1536)에서 글씨가 없는 가로 띠를 잘라 화면 폭에 맞추고,
-# 키운 만큼 흐리게·어둡게 깐다. crop_y 는 원본 기준 띠의 위쪽 y (띠 높이 576 = 1024×9/16).
-POSTER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "poster.png")
-def poster_bg(crop_y, blur=5, shade=.52):
-    k = 1920 / 1024
-    return (f"<div style=\"position:absolute;inset:-24px;background:url('file://{POSTER}') 0 {-crop_y * k + 24:.0f}px/1968px auto no-repeat;filter:blur({blur}px)\"></div>"
-            f"<div style='position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(0,0,0,{shade - .12}) 0%,rgba(0,0,0,{shade + .25}) 100%)'></div>")
-
 # 문구 카드 — 재편집(훅 구조)용. 포스터 배경에 포스터 타이포.
 def card(name, lines, crop_y, shade=.52):
     rows = "".join(f"<div class='{'ttl' if big else ''}' style='font-size:{size}px;line-height:1.35;letter-spacing:{'-1px' if big else '6px'};margin:{14 if big else 10}px 0;text-shadow:0 0 30px rgba(0,0,0,.6)'>{e(t)}</div>"
