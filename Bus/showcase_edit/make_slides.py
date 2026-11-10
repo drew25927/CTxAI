@@ -217,11 +217,11 @@ def video_slot(name, label, file, bg):
   <div style="font-size:24px;letter-spacing:2px;opacity:.7;margin-top:14px">영상은 4K mp4로 따로 제출</div>
 </div>{foot}""", bg, "rgba(0,0,0,.72)"))
 
-divider("div_main", "메인 디스플레이", "타이틀 · 작품 소개 · 1분 축약 영상")
+divider("div_main", "메인 디스플레이", "타이틀 · 작품 소개 · 1분 하이라이트 영상")
 divider("div_sub", "서브 디스플레이", "시나리오 · 구현 기술 · 콘텐츠 개발 · 기술 개발 · 풀 영상 · 개발팀")
 divider("div_sym", "심포지엄", "시나리오 · 구현 기술 · 풀 영상 · 개발팀")
-divider("div_cards", "본영상 문구 카드", "풀 영상 · 축약 영상 안에 쓰인 장")
-video_slot("slot_short", "축약 영상 (1분)", "버스정류장-기다림_메인영상.mp4", f"{BG}/R_75.jpg")
+divider("div_cards", "본영상 문구 카드", "풀 영상 · 하이라이트 영상 안에 쓰인 장")
+video_slot("slot_short", "하이라이트 영상 (1분)", "버스정류장-기다림_메인영상.mp4", f"{BG}/R_75.jpg")
 video_slot("slot_full_sub", "풀 영상", "버스정류장-기다림_서브영상.mp4", f"{BG}/H_100.jpg")
 video_slot("slot_full_sym", "풀 영상", "버스정류장-기다림_심포지엄영상.mp4", f"{BG}/C_100.jpg")
 print("ok")
