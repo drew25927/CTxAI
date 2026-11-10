@@ -10,7 +10,7 @@ ORDER = [
     "div_main", "title", "main_intro", "slot_short",
     "div_sub", "title", "scenario", "tech", "content_dev", "tech_dev", "slot_full_sub", "credits",
     "div_sym", "title", "scenario", "tech", "slot_full_sym", "credits",
-    "div_cards", "card_open", "card_choice", "card_end",
+    "div_cards", "card_open", "card_predict", "card_end",  # 데모 소스판(제출본)의 문구 카드
 ]
 
 prs = Presentation()
