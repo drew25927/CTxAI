@@ -27,7 +27,7 @@ def fix(text):
     return text
 subs = {t["src"]: [{"t": l["t"], "end": l["end"], "text": fix(l["text"])} for l in t["lines"].values() if "end" in l] for t in takes.values()}
 
-BED_QUIET = 15.0  # 로맨스 녹화 도입부에서 음량이 고른 구간(15~33초, 개구리 37초 전) — 장은 최대 16초
+BED_QUIET = 10.0  # 로맨스 녹화 도입부에서 음량이 고른 구간(10~36초, 개구리 37초 전) — 장은 최대 26초 (카페 종 12~14초는 작게 섞인다)
 def slide(name, dur, bed=None):
     it = {"slide": os.path.join(SLIDES, name + ".png"), "dur": dur}
     if bed is not None: it["audio"] = {"src": takes["R"]["src"], "from": bed, "vol": 0.8 if bed != BED_QUIET else 0.55}  # 로맨스 녹화 도입부의 빗소리·BGM 을 깐다
@@ -79,9 +79,9 @@ short_body = ([slide("card_open", 2.6, bed=16.0)] + hook + [slide("card_choice",
 def total(items): return sum(i["dur"] if "dur" in i else i["to"] - i["from"] for i in items)
 
 plans = {
-    "main": [slide("title", 5, bed=BED_QUIET), slide("main_intro", 16, bed=BED_QUIET)] + short_body,
-    "sub": [slide("title", 5, bed=BED_QUIET), slide("scenario", 13, bed=BED_QUIET), slide("tech", 14, bed=BED_QUIET), slide("content_dev", 12, bed=BED_QUIET), slide("tech_dev", 12, bed=BED_QUIET)] + full_body + [slide("credits", 7, bed=BED_QUIET)],
-    "symposium": [slide("title", 5, bed=BED_QUIET), slide("scenario", 13, bed=BED_QUIET), slide("tech", 14, bed=BED_QUIET)] + full_body + [slide("credits", 7, bed=BED_QUIET)],
+    "main": [slide("title", 5, bed=BED_QUIET), slide("main_intro", 26, bed=BED_QUIET)] + short_body,
+    "sub": [slide("title", 5, bed=BED_QUIET), slide("scenario", 18, bed=BED_QUIET), slide("tech", 19, bed=BED_QUIET), slide("content_dev", 16, bed=BED_QUIET), slide("tech_dev", 16, bed=BED_QUIET)] + full_body + [slide("credits", 7, bed=BED_QUIET)],
+    "symposium": [slide("title", 5, bed=BED_QUIET), slide("scenario", 20, bed=BED_QUIET), slide("tech", 20, bed=BED_QUIET)] + full_body + [slide("credits", 7, bed=BED_QUIET)],
 }
 os.makedirs(OUT, exist_ok=True)
 for name, items in plans.items():

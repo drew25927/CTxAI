@@ -33,7 +33,7 @@ CSS = f"""
 @font-face{{font-family:'Hahmlet';src:url('file://{FONT_DIR}/Hahmlet-VF.ttf');font-weight:100 900}}
 @font-face{{font-family:'Noto Serif KR';src:url('file://{FONT_DIR}/NotoSerifKR-VF.ttf');font-weight:200 900}}
 *{{margin:0;padding:0;box-sizing:border-box}}
-html,body{{width:1920px;height:1080px;overflow:hidden;font-family:'Noto Serif KR',serif;font-weight:300;-webkit-font-smoothing:antialiased}}
+html,body{{width:1920px;height:1080px;overflow:hidden;font-family:'Noto Serif KR',serif;font-weight:300;-webkit-font-smoothing:antialiased;word-break:keep-all;overflow-wrap:break-word}}
 .dark{{position:relative;width:1920px;height:1080px;color:{CREAM};background:#14120f;overflow:hidden}}
 .bgimg{{position:absolute;inset:-30px;background:center/cover no-repeat;filter:blur(var(--blur,0px))}}
 .dark::before{{content:'';position:absolute;inset:0;background:var(--shade);z-index:1}}
@@ -146,7 +146,7 @@ panel_page("content_dev", "콘텐츠 개발", [
      "세 장르의 옆사람을 직접 그린 원화로 만들고, 2D 컷아웃으로 오려 3D 정류장에 앉혔다. 배합이 정해지면 그 장르의 인물이 걸어와 옆에 앉는다."),
     ("정류장 장면 · 장르 조명",
      grid([img(f"{ART}/{d}/02_메인뷰_{g}.png") for d, g in [("1_디폴트", "디폴트_보정"), ("2_로맨스", "로맨스"), ("3_공포", "공포"), ("4_코미디", "코미디")]], 2),
-     "아트팀이 만든 정류장 장면을 웹으로 옮기고, 기본·로맨스·공포·코미디 네 조명 룩을 배합 비율대로 섞는다. 하늘·안개·가로등이 체험 내내 움직인다."),
+     "아트팀이 만든 정류장 장면을 웹으로 옮기고, 기본·로맨스·공포·블랙코미디 네 조명 룩을 배합 비율대로 섞는다. 하늘·안개·가로등이 체험 내내 움직인다."),
     ("사건 · 대사 · 사운드",
      grid([img(f"{ART}/1_디폴트/04_트럭_마스터숏_디폴트.png"), img(f"{ART}/1_디폴트/06_고양이마스터샷_디폴트.png")], 1),
      "트럭과 고양이 같은 사건이 관객의 시선을 끈다. 대사 138줄은 ElevenLabs로 미리 합성했고, 장르별 BGM 세 트랙이 늘 함께 흐르며 볼륨만 배합을 따른다."),
@@ -160,7 +160,7 @@ def flow(items):
 panel_page("tech_dev", "기술 개발", [
     ("배합 엔진",
      flow(["관객의 반응<br><span style='font-size:16px;opacity:.7'>고개 방향 · 머문 시간 · 끄덕임</span>",
-           "증거 → 로맨스 · 공포 · 코미디 배합",
+           "증거 → 로맨스 · 공포 · 블랙코미디 배합",
            "매핑표",
            "하늘 · 안개 · 가로등 · 옆사람 거리<br>대사 사이 침묵 · BGM"]),
      "선택지 대신 반응을 증거로 모은다. 오래된 반응은 무게가 줄고, 배합은 이산 판정 한 번(누가 앉는가) 뒤에도 계속 흐른다."),
@@ -173,7 +173,7 @@ panel_page("tech_dev", "기술 개발", [
     ("반응 읽기",
      flow(["사건마다 방향과 시간창",
            "고개가 돌아갔나 · 얼마나 머물렀나",
-           "질문 뒤: 끄덕임 · 가로젓기 · 돌림",
+           "질문 뒤: 끄덕임 · 고개 젓기 · 돌림",
            "증거로 누적"]),
      "포스터·트럭·고양이처럼 소리가 나는 쪽을 미리 알기 때문에, 고개가 그쪽으로 돌았는지와 머문 시간만으로 관객의 태도를 읽는다."),
 ])
@@ -220,6 +220,6 @@ divider("div_sub", "서브 디스플레이", "시나리오 · 구현 기술 · �
 divider("div_sym", "심포지엄", "시나리오 · 구현 기술 · 풀 영상 · 개발팀")
 divider("div_cards", "본영상 문구 카드", "풀 영상 · 축약 영상 안에 쓰인 장")
 video_slot("slot_short", "축약 영상 (1분)", "버스정류장-기다림_메인영상.mp4", f"{BG}/R_75.jpg")
-video_slot("slot_full_sub", "풀 영상 (2분 내외)", "버스정류장-기다림_서브영상.mp4", f"{BG}/H_100.jpg")
-video_slot("slot_full_sym", "풀 영상 (2분 내외)", "버스정류장-기다림_심포지엄영상.mp4", f"{BG}/C_100.jpg")
+video_slot("slot_full_sub", "풀 영상", "버스정류장-기다림_서브영상.mp4", f"{BG}/H_100.jpg")
+video_slot("slot_full_sym", "풀 영상", "버스정류장-기다림_심포지엄영상.mp4", f"{BG}/C_100.jpg")
 print("ok")
