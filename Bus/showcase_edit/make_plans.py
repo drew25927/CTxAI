@@ -106,19 +106,27 @@ def demo(n, a, b, caption=None, bed=False, fade=0.3, label=None, pkg=None):
     return it
 if DEMO and os.environ.get("DEMO_ONLY"):
     COMEDY = os.environ["DEMO_COMEDY"]
-    # 사건(트럭·고양이) → 관객이 무엇을 보는지 측정 → 감정 예측 → 옆사람이 변한다, 순서로 원인이 먼저 보이게
-    truck = demo(3, 2.0, 4.9, "무엇에 놀라는지", fade=0.25)
-    truck["notes"] = [{"at": 1.0, "dur": 1.7, "kind": "meter", "text": "● 시선  트럭 · 1.4초"}]       # 연출용 수치
-    cat = demo(4, 0.2, 6.0, "무엇을 바라보는지", fade=0.25)
-    cat["notes"] = [{"at": 1.2, "dur": 4.3, "kind": "meter", "text": "● 시선  고양이 · 2.1초"}]
+    # 사건(트럭·고양이) → 관객이 무엇을 보는지 측정 → 감정 예측 → 옆 사람이 변한다, 순서로 원인이 먼저 보이게
+    def meter(what, at, upto, dur):
+        # 시선이 머무는 동안 수치가 0.0 에서 올라간다 (연출용 수치) — 0.1초 단위로 갈아 끼우고 마지막 값은 남긴다
+        steps = int(round(upto * 10))
+        ns = [{"at": round(at + k * dur / steps, 2), "dur": round(dur / steps + 0.03, 2), "kind": "meter",
+               "text": f"● 시선  {what} · {k / 10:.1f}초"} for k in range(steps)]
+        return ns + [{"at": round(at + dur, 2), "dur": 1.0, "kind": "meter", "text": f"● 시선  {what} · {upto:.1f}초"}]
+    truck = demo(3, 2.1, 4.6, "무엇에 놀라는지 읽는다", fade=0.25)     # 트럭 2.4~3.9초, 물보라 3.4초
+    truck["notes"] = meter("트럭", 0.25, 1.4, 1.2)
+    cat = demo(4, 0.2, 4.8, "무엇을 오래 보는지 잰다", fade=0.25, bed=True)   # 끝 1초(고양이가 점처럼 작아짐)는 뺀다
+    cat.update(keepAudio=True)                                         # 고양이 소리는 살리고 빗소리를 밑에 깐다
+    cat["notes"] = meter("고양이", 0.5, 2.1, 2.1)
     change = demo("03_BUS_STOP_COMEDY_R03_FULL_1080p.mp4", 0.6, 25.0, bed=True, fade=0.4, pkg=COMEDY)  # 장르가 하나뿐이라 라벨 없이
-    change["notes"] = [{"at": 3.6, "dur": 4.2, "kind": "captionBox", "text": "나의 반응이, 옆사람을 바꾼다"}]  # 인물이 할머니로 변하는 순간
-    demo_body = [slide("card_open", 3.2, bed=16.0), vr(), demo(1, 4.95, 7.4),
+    change["notes"] = [{"at": 1.8, "dur": 4.4, "kind": "captionBox", "text": "나의 반응이, 옆 사람을 바꾼다"}]  # 할머니로 변하기 시작하기 전부터
+    v = vr(); v["zoom"] = 1.12                                         # 원본 테두리(안쪽 1728×971)를 잘라 꽉 채운다
+    pov = demo(1, 4.95, 7.4, bed=True); pov.update(keepAudio=True, srcVol=0.35)  # 원본 소리가 갑자기 커서 줄인다
+    demo_body = [slide("card_open", 3.2, bed=16.0), v, pov,
                  demo(1, 9.4, 17.6, bed=True),                                   # 옆에 앉을 사람이 온다
                  truck, cat,
-                 slide("card_predict", 3.6, bed=19.5),                           # 장르가 하나뿐이라 「당신이 정한다」 대신 감정 예측으로 흐름이 바뀐다는 말
-                 change,
-                 demo(2, 1.0, 6.0, bed=True, fade=0.5),                          # 다시 조용한 기다림
+                 slide("card_predict", 3.6, bed=19.5),                           # 장르가 하나뿐이라 「당신이 정한다」 대신
+                 change,                                                         # 할머니가 앉은 장면에서 바로 끝 문구로
                  slide("card_end", 4.5, bed=16.5)]
     full_body = short_body = demo_body
 

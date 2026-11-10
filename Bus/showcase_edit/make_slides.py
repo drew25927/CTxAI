@@ -196,7 +196,7 @@ def card(name, lines, crop_y, shade=.52):
 
 card("card_open", [("같은 정류장.", 128, True), ("같은 5분.", 128, True)], 470)     # 정류장과 세 갈래 하늘
 card("card_choice", [("옆에 앉는 사람은,", 60, False), ("당신이 정한다.", 120, True)], 240)  # 세 갈래 하늘 (위 문구 아래부터)
-card("card_predict", [("내 감정을 예측해,", 60, False), ("이야기의 흐름이 바뀐다.", 120, True)], 240)  # 데모 소스판 — 장르가 블랙코미디 하나뿐일 때 card_choice 대신
+card("card_predict", [("시선으로 내 감정을 읽고,", 60, False), ("이야기가 바뀐다.", 120, True)], 240)  # 데모 소스판 — 장르가 블랙코미디 하나뿐일 때 card_choice 대신
 card("card_end", [("버스는 누구에게나 온다.", 60, False), ("다만 나의 기다림,", 104, True), ("그건 나만의 경험이다.", 104, True)], 560, shade=.6)  # 젖은 도로와 카페
 # 레이아웃 PPT 용 — 구분 장(주최측 템플릿의 「메인디스플레이 영상」 같은 장)과 영상 자리 장
 def divider(name, title, sub):

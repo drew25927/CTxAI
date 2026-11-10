@@ -3,7 +3,7 @@
 //
 // plan.json: { "items": [ ... ], "subs": { "x.mp4": [ {"t": 71.0, "end": 74.8, "text": "..."} ] } }
 //   {"slide": "a.png", "dur": 5, "audio": {"src": "x.mp4", "from": 16, "vol": 0.6}}   정지 장(문구 카드 포함) — audio 는 깔리는 소리
-//   {"src": "x.mp4", "from": 12.3, "to": 20.1, "label": "로맨스", "caption": "무엇에 놀라는지"}   녹화 구간 (4K 가 아니면 화면에 맞게 늘림, "audio" 를 주면 원본 소리 대신 깔림, "box": true 면 caption 뒤에 어두운 띠, "notes" 는 구간 안 특정 시각의 글)
+//   {"src": "x.mp4", "from": 12.3, "to": 20.1, "label": "로맨스", "caption": "무엇에 놀라는지"}   녹화 구간 (4K 가 아니면 화면에 맞게 늘림, "audio" 를 주면 원본 소리 대신 깔림, "box": true 면 caption 뒤에 어두운 띠, "notes" 는 구간 안 특정 시각의 글, "zoom" 확대, "srcVol" 원본 소리 크기, "keepAudio" 원본 위에 audio 겹침)
 //   {"tri": [{"src","from","cx"} ×3], "dur": 12.8, "turns": [[0,5.3],[5.3,8.8],[8.8,12.6]], "labels": [...], "head": "..."}
 //       세 화면 비교 — 세로 띠 셋(1280px)에 같은 길이를 나란히 틀고, turns 동안 그 칸만 밝히고 그 칸의 소리를 튼다. cx 는 원본에서 띠를 자를 왼쪽 x.
 //   모든 항목에 "fade" (기본 0.3초) — 앞뒤 암전·소리 페이드. 이웃 페이드와 맞닿으면 겹침으로 거부돼 0.02초 띄운다.
@@ -57,6 +57,9 @@ let vTracks = [vTrack] + (0..<2).map { _ in comp.addMutableTrack(withMediaType: 
 let aTrack = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)!
 let layerIns = vTracks.map { AVMutableVideoCompositionLayerInstruction(assetTrack: $0) }
 let audioParams = AVMutableAudioMixInputParameters(track: aTrack)
+// 겹치는 소리(깔리는 소리 위의 원본 소리)용 보조 트랙 — 쓰이지 않으면 끝에서 뺀다
+let aTrack2 = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)!
+let audioParams2 = AVMutableAudioMixInputParameters(track: aTrack2)
 var cursor = 0.0
 struct Placed { let start: Double; let dur: Double; let label: String? }
 var placed: [Placed] = []
@@ -67,12 +70,15 @@ func asset(_ src: String) -> AVURLAsset { let a = assets[src] ?? AVURLAsset(url:
 let EPS = 0.02
 
 // 소리 한 조각: 원본 [from, from+dur) 을 편집 시각 at 에, 앞뒤 페이드
-func addAudio(_ src: String, _ from: Double, _ dur: Double, at: Double, fade: Double, vol: Float = 1) {
+func addAudio(_ src: String, _ from: Double, _ dur: Double, at: Double, fade: Double, vol: Float = 1, overlay: Bool = false) {
   let a = asset(src)
   guard let t = a.tracks(withMediaType: .audio).first else { return }
-  try! aTrack.insertTimeRange(CMTimeRange(start: cm(from), duration: cm(dur)), of: t, at: cm(at))
-  audioParams.setVolumeRamp(fromStartVolume: 0, toEndVolume: vol, timeRange: CMTimeRange(start: cm(at + EPS), duration: cm(fade)))
-  audioParams.setVolumeRamp(fromStartVolume: vol, toEndVolume: 0, timeRange: CMTimeRange(start: cm(at + dur - fade - EPS), duration: cm(fade)))
+  let (tr, pa) = overlay ? (aTrack2, audioParams2) : (aTrack, audioParams)
+  let end = tr.timeRange.end.seconds.isFinite ? tr.timeRange.end.seconds : 0
+  if at - end > 0.001 { tr.insertEmptyTimeRange(CMTimeRange(start: cm(end), duration: cm(at - end))) }
+  try! tr.insertTimeRange(CMTimeRange(start: cm(from), duration: cm(dur)), of: t, at: cm(at))
+  pa.setVolumeRamp(fromStartVolume: 0, toEndVolume: vol, timeRange: CMTimeRange(start: cm(at + EPS), duration: cm(fade)))
+  pa.setVolumeRamp(fromStartVolume: vol, toEndVolume: 0, timeRange: CMTimeRange(start: cm(at + dur - fade - EPS), duration: cm(fade)))
 }
 func addSubs(_ src: String, _ from: Double, _ to: Double, at: Double) {
   for s in subs[src] ?? [] {
@@ -132,13 +138,17 @@ for it in items {
     let st = asset(src).tracks(withMediaType: .video)[0]
     try! vTrack.insertTimeRange(CMTimeRange(start: cm(from), duration: cm(dur)), of: st, at: cm(cursor))
     let k = CGFloat(W) / st.naturalSize.width  // 1080p 클립은 4K 로 늘린다
-    if abs(k - 1) > 0.01 {
-      layerIns[0].setTransform(CGAffineTransform(scaleX: k, y: k), at: cm(cursor))
+    let z = CGFloat(it["zoom"] as? Double ?? 1)  // 가운데 기준 확대 (원본에 테두리가 있는 컷)
+    if abs(k * z - 1) > 0.01 {
+      layerIns[0].setTransform(CGAffineTransform(scaleX: k * z, y: k * z)
+        .concatenating(CGAffineTransform(translationX: -(z - 1) * CGFloat(W) / 2, y: -(z - 1) * CGFloat(H) / 2)), at: cm(cursor))
       layerIns[0].setTransform(.identity, at: cm(cursor + dur))
     }
-    if let au = it["audio"] as? [String: Any] {  // 원본 소리 대신 깔리는 소리
+    let srcVol = Float(it["srcVol"] as? Double ?? 1)
+    if let au = it["audio"] as? [String: Any] {  // 깔리는 소리 — "keepAudio": true 면 원본 소리 위에 겹친다
       addAudio(au["src"] as! String, au["from"] as! Double, dur, at: cursor, fade: max(fade, 0.5), vol: Float(au["vol"] as? Double ?? 1))
-    } else { addAudio(src, from, dur, at: cursor, fade: fade) }
+      if it["keepAudio"] as? Bool == true { addAudio(src, from, dur, at: cursor, fade: fade, vol: srcVol, overlay: true) }
+    } else { addAudio(src, from, dur, at: cursor, fade: fade, vol: srcVol) }
     addSubs(src, from, to, at: cursor)
     fadeVideo(layerIns[0], cursor, dur, fade)
     if let c = it["caption"] as? String { overlays.append((cursor + 0.2, dur - 0.4, it["box"] as? Bool == true ? "captionBox" : "caption", c)) }
@@ -244,7 +254,7 @@ for (st, d, kind, text) in overlays {
   }
   if kind == "meter" {
     // 측정 표시 — 오른쪽 위, 장르 이름 라벨(왼쪽 위)과 마주 보게
-    let img = textImage(text, size: 64, bold: false, color: CREAM, maxW: 1600, align: .right)
+    let img = textImage(text, size: 96, bold: false, color: CREAM, maxW: 2000, align: .right)
     timed(boxed(img, x: CGFloat(W) - 130 - CGFloat(img.width), y: CGFloat(H) - 130 - CGFloat(img.height)), st, d)
     continue
   }
@@ -266,7 +276,9 @@ for (st, d, kind, text) in overlays {
 }
 vc.animationTool = AVVideoCompositionCoreAnimationTool(postProcessingAsVideoLayer: videoLayer, in: parent)
 
-let mix = AVMutableAudioMix(); mix.inputParameters = [audioParams]
+let used2 = !aTrack2.segments.isEmpty
+if !used2 { comp.removeTrack(aTrack2) }
+let mix = AVMutableAudioMix(); mix.inputParameters = used2 ? [audioParams, audioParams2] : [audioParams]
 try? FileManager.default.removeItem(at: outURL)
 let ex = AVAssetExportSession(asset: comp, presetName: AVAssetExportPreset3840x2160)!
 ex.outputURL = outURL; ex.outputFileType = .mp4
