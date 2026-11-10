@@ -172,21 +172,27 @@ write("credits", page(f"""
   <div style="font-size:34px;font-weight:600;letter-spacing:6px;margin:26px 0 22px">{TEAM}</div>
   {''.join(f'<div style="font-size:32px;line-height:1.8;letter-spacing:6px">{m}</div>' for m in MEMBERS)}
 </div>""", f"{BG}/C_130.jpg", "rgba(0,0,0,.7)"))
-# 문구 카드 — 재편집(훅 구조)용. 검은 바탕에 포스터 타이포.
-def card(name, lines):
-    rows = "".join(f"<div class='{'ttl' if big else ''}' style='font-size:{size}px;line-height:1.35;letter-spacing:{'-1px' if big else '6px'};margin:{14 if big else 10}px 0'>{e(t)}</div>"
-                   for t, size, big in lines)
-    write(name, page(f"""<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
-background:radial-gradient(ellipse at center,#221d17 0%,#0d0b09 70%)">{rows}</div>"""))
+# 글만 나오는 장의 배경은 포스터 그림 — 원본(assets/poster.png, 1024×1536)에서 글씨가 없는 가로 띠를 잘라 화면 폭에 맞추고,
+# 키운 만큼 흐리게·어둡게 깐다. crop_y 는 원본 기준 띠의 위쪽 y (띠 높이 576 = 1024×9/16).
+POSTER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "poster.png")
+def poster_bg(crop_y, blur=5, shade=.52):
+    k = 1920 / 1024
+    return (f"<div style=\"position:absolute;inset:-24px;background:url('file://{POSTER}') 0 {-crop_y * k + 24:.0f}px/1968px auto no-repeat;filter:blur({blur}px)\"></div>"
+            f"<div style='position:absolute;inset:0;background:radial-gradient(ellipse at center,rgba(0,0,0,{shade - .12}) 0%,rgba(0,0,0,{shade + .25}) 100%)'></div>")
 
-card("card_open", [("같은 정류장.", 128, True), ("같은 5분.", 128, True)])
-card("card_choice", [("옆에 앉는 사람은,", 60, False), ("당신이 정한다.", 120, True)])
-card("card_end", [("버스는 누구에게나 온다.", 60, False), ("다만 나의 기다림,", 104, True), ("그건 나만의 경험이다.", 104, True)])
+# 문구 카드 — 재편집(훅 구조)용. 포스터 배경에 포스터 타이포.
+def card(name, lines, crop_y, shade=.52):
+    rows = "".join(f"<div class='{'ttl' if big else ''}' style='font-size:{size}px;line-height:1.35;letter-spacing:{'-1px' if big else '6px'};margin:{14 if big else 10}px 0;text-shadow:0 0 30px rgba(0,0,0,.6)'>{e(t)}</div>"
+                   for t, size, big in lines)
+    write(name, page(f"""{poster_bg(crop_y, shade=shade)}<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">{rows}</div>"""))
+
+card("card_open", [("같은 정류장.", 128, True), ("같은 5분.", 128, True)], 470)     # 정류장과 세 갈래 하늘
+card("card_choice", [("옆에 앉는 사람은,", 60, False), ("당신이 정한다.", 120, True)], 240)  # 세 갈래 하늘 (위 문구 아래부터)
+card("card_end", [("버스는 누구에게나 온다.", 60, False), ("다만 나의 기다림,", 104, True), ("그건 나만의 경험이다.", 104, True)], 560, shade=.6)  # 젖은 도로와 카페
 # 레이아웃 PPT 용 — 구분 장(주최측 템플릿의 「메인디스플레이 영상」 같은 장)과 영상 자리 장
 def divider(name, title, sub):
-    write(name, page(f"""<div class="hdr">{HEADER}</div>
-<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
-background:radial-gradient(ellipse at center,#221d17 0%,#0d0b09 70%)">
+    write(name, page(f"""{poster_bg(470, blur=8, shade=.6)}<div class="hdr">{HEADER}</div>
+<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
   <div class="en" style="font-size:26px;opacity:.8">{TITLE_EN}</div>
   <div class="ttl" style="font-size:110px;margin:16px 0 26px">{title}</div>
   {rule(sub, 30)}
