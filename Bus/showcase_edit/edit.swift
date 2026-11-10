@@ -125,7 +125,7 @@ for it in items {
       li.setOpacityRamp(fromStartOpacity: op(i, dur - 0.01), toEndOpacity: 0, timeRange: CMTimeRange(start: cm(cursor + dur - fade - EPS), duration: cm(fade)))
       // 그 칸의 차례에만 그 칸의 소리와 자막
       let tr = turns[i]
-      addAudio(src, from + tr[0], tr[1] - tr[0], at: cursor + tr[0], fade: 0.12)
+      addAudio(src, from + tr[0], tr[1] - tr[0], at: cursor + tr[0], fade: 0.12, vol: Float(it["vol"] as? Double ?? 1))
       addSubs(src, from + tr[0], from + tr[1], at: cursor + tr[0])
       if let labels = it["labels"] as? [String] { overlays.append((cursor + 0.3, dur - 0.6, "tri\(i)", labels[i])) }
     }

@@ -128,7 +128,16 @@ if DEMO and os.environ.get("DEMO_ONLY"):
                  slide("card_predict", 3.6, bed=19.5),                           # 장르가 하나뿐이라 「당신이 정한다」 대신
                  change,                                                         # 할머니가 앉은 장면에서 바로 끝 문구로
                  slide("card_end", 4.5, bed=16.5)]
-    full_body = short_body = demo_body
+    # 풀 영상: 하이라이트와 같은 흐름에 횡단보도를 조금 더 길게 두고, 할머니가 앉은 뒤 실제 VR 체험 화면(녹화본)으로
+    # 세 장르를 보여 준 뒤 버스로 끝낸다 — 데모 시네마틱은 블랙코미디 한 회차뿐이라 나머지 두 장르는 체험 화면으로만 보인다
+    GAME_VOL = 0.4  # 녹화본 소리는 시네마틱 구간보다 18dB 쯤 커서(원본 클리핑 포함) 낮춰 맞춘다
+    t = triptych(); t.pop("head"); t["vol"] = GAME_VOL
+    game = [line("R", "07", label="로맨스"), line("H", "01", label="공포"), line("C", "09", label="블랙코미디"), bus(a=4.5)]
+    for g in game: g["srcVol"] = GAME_VOL
+    full = list(demo_body)
+    full[3] = demo(1, 9.4, 19.0, bed=True)                                       # 인물이 횡단보도를 다 건너올 때까지
+    full = full[:-1] + [slide("card_vr", 3.4, bed=19.5), t] + game + [slide("card_end", 4.5, bed=16.5)]
+    full_body, short_body = full, demo_body
 
 def total(items): return sum(i["dur"] if "dur" in i else i["to"] - i["from"] for i in items)
 
