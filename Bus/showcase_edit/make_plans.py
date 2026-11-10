@@ -109,7 +109,7 @@ if DEMO and os.environ.get("DEMO_ONLY"):
     demo_body = [slide("card_open", 3.2, bed=16.0), vr(), demo(1, 4.95, 7.4),
                  demo(1, 9.4, 17.6, bed=True),                                   # 옆에 앉을 사람이 온다
                  slide("card_predict", 3.6, bed=19.5),                           # 장르가 하나뿐이라 「당신이 정한다」 대신 감정 예측으로 흐름이 바뀐다는 말
-                 demo("03_BUS_STOP_COMEDY_R03_FULL_1080p.mp4", 0.6, 25.0, bed=True, fade=0.4, label="블랙코미디", pkg=COMEDY),
+                 demo("03_BUS_STOP_COMEDY_R03_FULL_1080p.mp4", 0.6, 25.0, bed=True, fade=0.4, pkg=COMEDY),  # 장르가 하나뿐이라 라벨 없이
                  demo(3, 2.0, 4.9, "무엇에 놀라는지", fade=0.25), demo(4, 0.2, 6.0, "무엇을 바라보는지", fade=0.25),
                  demo(2, 1.0, 6.0, bed=True, fade=0.5),                          # 다시 조용한 기다림
                  slide("card_end", 4.5, bed=16.5)]
