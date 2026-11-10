@@ -65,14 +65,29 @@ def bus(a=3.5):
     last = t["lines"][max(t["lines"])]
     return {"src": t["src"], "from": round(t["bus"] + a, 2), "to": round(last["end"] + 0.7, 2), "fade": 0.3}
 
+# 시험판(DEMO=<데모 클립 폴더>): 1080p 시네마틱 두 컷을 섞는다 — 본영상 앞 VR 관객 컷, 몽타주의 고양이
+DEMO = os.environ.get("DEMO")
+def vr():
+    # 01 오프닝 0~5초는 VR 을 쓴 관객이 벤치에 앉아 고개를 돌리는 장면(거의 무음) — 빗소리·BGM 을 깐다
+    return {"src": os.path.join(DEMO, "01_OPENING_CAFE_CROSSING_1080p.mp4"), "from": 0.9, "to": 4.85, "fade": 0.4,
+            "audio": {"src": takes["R"]["src"], "from": BED_QUIET, "vol": 0.55}}
+def demo_cat():
+    # 04 고양이가 털을 세우고 뛰어오른 뒤 걸어가는 데까지
+    return {"src": os.path.join(DEMO, "04_CAT_FOREST_EXIT_1080p.mp4"), "from": 0.2, "to": 4.6, "caption": "무엇을 바라보는지", "fade": 0.25}
+
 hook = [line("H", "13"), line("C", "10"), line("R", "12")]
 # 포스터는 정면 카메라에 잡히지 않고(유리 옆), 트럭은 화면을 1.5초쯤만 지나간다 — 보이는 순간만 쓴다
 montage = [event("truckSplash", -0.7, 1.6, "무엇에 놀라는지"), event("cat", -0.4, 4.6, "무엇을 바라보는지")]
 
-full_body = ([slide("card_open", 3.2, bed=16.0)] + hook + [slide("card_choice", 3.2, bed=19.5)] + montage + [triptych()]
+if DEMO:
+    montage[1] = demo_cat()
+    for m in montage: m["box"] = True  # 고양이 컷은 바닥이 밝아 문구가 묻힌다 — 두 문구 모두 띠를 깐다
+lead = [vr()] if DEMO else []
+
+full_body = (lead + [slide("card_open", 3.2, bed=16.0)] + hook + [slide("card_choice", 3.2, bed=19.5)] + montage + [triptych()]
              + trailer("R", ["02", "07", "13"]) + trailer("H", ["01", "06", "11"]) + trailer("C", ["01", "09", "15"])
              + [bus(), slide("card_end", 4.5, bed=16.5)])
-short_body = ([slide("card_open", 2.6, bed=16.0)] + hook + [slide("card_choice", 2.6, bed=19.0), triptych()]
+short_body = (lead + [slide("card_open", 2.6, bed=16.0)] + hook + [slide("card_choice", 2.6, bed=19.0), triptych()]
               + [line("R", "07", label="로맨스"), line("H", "01", label="공포"), line("C", "09", label="블랙코미디")]
               + [bus(a=4.5), slide("card_end", 4.0, bed=16.5)])
 

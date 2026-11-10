@@ -3,7 +3,7 @@
 //
 // plan.json: { "items": [ ... ], "subs": { "x.mp4": [ {"t": 71.0, "end": 74.8, "text": "..."} ] } }
 //   {"slide": "a.png", "dur": 5, "audio": {"src": "x.mp4", "from": 16, "vol": 0.6}}   정지 장(문구 카드 포함) — audio 는 깔리는 소리
-//   {"src": "x.mp4", "from": 12.3, "to": 20.1, "label": "로맨스", "caption": "무엇에 놀라는지"}   녹화 구간
+//   {"src": "x.mp4", "from": 12.3, "to": 20.1, "label": "로맨스", "caption": "무엇에 놀라는지"}   녹화 구간 (4K 가 아니면 화면에 맞게 늘림, "audio" 를 주면 원본 소리 대신 깔림, "box": true 면 caption 뒤에 어두운 띠)
 //   {"tri": [{"src","from","cx"} ×3], "dur": 12.8, "turns": [[0,5.3],[5.3,8.8],[8.8,12.6]], "labels": [...], "head": "..."}
 //       세 화면 비교 — 세로 띠 셋(1280px)에 같은 길이를 나란히 틀고, turns 동안 그 칸만 밝히고 그 칸의 소리를 튼다. cx 는 원본에서 띠를 자를 왼쪽 x.
 //   모든 항목에 "fade" (기본 0.3초) — 앞뒤 암전·소리 페이드. 이웃 페이드와 맞닿으면 겹침으로 거부돼 0.02초 띄운다.
@@ -129,11 +129,19 @@ for it in items {
     let src = it["src"] as! String
     let from = it["from"] as! Double, to = it["to"] as! Double
     dur = to - from
-    try! vTrack.insertTimeRange(CMTimeRange(start: cm(from), duration: cm(dur)), of: asset(src).tracks(withMediaType: .video)[0], at: cm(cursor))
-    addAudio(src, from, dur, at: cursor, fade: fade)
+    let st = asset(src).tracks(withMediaType: .video)[0]
+    try! vTrack.insertTimeRange(CMTimeRange(start: cm(from), duration: cm(dur)), of: st, at: cm(cursor))
+    let k = CGFloat(W) / st.naturalSize.width  // 1080p 클립은 4K 로 늘린다
+    if abs(k - 1) > 0.01 {
+      layerIns[0].setTransform(CGAffineTransform(scaleX: k, y: k), at: cm(cursor))
+      layerIns[0].setTransform(.identity, at: cm(cursor + dur))
+    }
+    if let au = it["audio"] as? [String: Any] {  // 원본 소리 대신 깔리는 소리
+      addAudio(au["src"] as! String, au["from"] as! Double, dur, at: cursor, fade: max(fade, 0.5), vol: Float(au["vol"] as? Double ?? 1))
+    } else { addAudio(src, from, dur, at: cursor, fade: fade) }
     addSubs(src, from, to, at: cursor)
     fadeVideo(layerIns[0], cursor, dur, fade)
-    if let c = it["caption"] as? String { overlays.append((cursor + 0.2, dur - 0.4, "caption", c)) }
+    if let c = it["caption"] as? String { overlays.append((cursor + 0.2, dur - 0.4, it["box"] as? Bool == true ? "captionBox" : "caption", c)) }
   }
   placed.append(Placed(start: cursor, dur: dur, label: it["label"] as? String))
   cursor += dur
@@ -229,13 +237,15 @@ for (st, d, kind, text) in overlays {
     continue
   }
   let isTri = kind.hasPrefix("tri")
-  let img = textImage(text, size: kind == "head" ? 84 : isTri ? 100 : 92, bold: kind != "caption", color: CREAM, maxW: 3400, align: .center)
+  let img = textImage(text, size: kind == "head" ? 84 : isTri ? 100 : 92, bold: !kind.hasPrefix("caption"), color: CREAM, maxW: 3400, align: .center)
   let w = CGFloat(img.width), h = CGFloat(img.height)
   if isTri {
     let i = CGFloat(Int(String(kind.last!))!)
     timed(boxed(img, x: i * 1280 + (1280 - w) / 2, y: CGFloat(H) - 300 - h), st, d)
   } else if kind == "head" {
     timed(boxed(img, x: (CGFloat(W) - w) / 2, y: CGFloat(H) - 100 - h), st, d)
+  } else if kind == "captionBox" {
+    timed(boxed(img, x: (CGFloat(W) - w) / 2, y: 260), st, d)
   } else {
     let t = CALayer(); t.contents = img
     t.frame = CGRect(x: (CGFloat(W) - w) / 2, y: 260, width: w, height: h)
