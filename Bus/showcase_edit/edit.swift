@@ -203,12 +203,19 @@ for (st, d, s) in subLayers {
   box.addSublayer(t)
   timed(box, st, d)
 }
+// 장르 이름·세 화면 문구는 반투명 어두운 띠 위에 — 안개 낀 밝은 화면에서 크림색 글씨가 사라졌다(11/10 검토)
+func boxed(_ img: CGImage, x: CGFloat, y: CGFloat) -> CALayer {
+  let pad: CGFloat = 26
+  let box = CALayer(); box.backgroundColor = NSColor.black.withAlphaComponent(0.5).cgColor; box.cornerRadius = 16
+  box.frame = CGRect(x: x - pad, y: y - pad / 2, width: CGFloat(img.width) + pad * 2, height: CGFloat(img.height) + pad)
+  let t = CALayer(); t.contents = img; t.frame = CGRect(x: pad, y: pad / 2, width: CGFloat(img.width), height: CGFloat(img.height))
+  box.addSublayer(t)
+  return box
+}
 for p in placed {
   guard let label = p.label else { continue }
   let img = textImage(label, size: 120, bold: true, color: CREAM, maxW: 1400, align: .left)
-  let t = CALayer(); t.contents = img
-  t.frame = CGRect(x: 130, y: CGFloat(H) - 120 - CGFloat(img.height), width: CGFloat(img.width), height: CGFloat(img.height))
-  timed(t, p.start + 0.4, min(p.dur - 0.6, 6))
+  timed(boxed(img, x: 130, y: CGFloat(H) - 130 - CGFloat(img.height)), p.start + 0.4, min(p.dur - 0.6, 6))
 }
 for (st, d, kind, text) in overlays {
   if kind == "seams" {
@@ -223,17 +230,17 @@ for (st, d, kind, text) in overlays {
   }
   let isTri = kind.hasPrefix("tri")
   let img = textImage(text, size: kind == "head" ? 84 : isTri ? 100 : 92, bold: kind != "caption", color: CREAM, maxW: 3400, align: .center)
-  let t = CALayer(); t.contents = img
   let w = CGFloat(img.width), h = CGFloat(img.height)
   if isTri {
     let i = CGFloat(Int(String(kind.last!))!)
-    t.frame = CGRect(x: i * 1280 + (1280 - w) / 2, y: CGFloat(H) - 290 - h, width: w, height: h)
+    timed(boxed(img, x: i * 1280 + (1280 - w) / 2, y: CGFloat(H) - 300 - h), st, d)
   } else if kind == "head" {
-    t.frame = CGRect(x: (CGFloat(W) - w) / 2, y: CGFloat(H) - 90 - h, width: w, height: h)
+    timed(boxed(img, x: (CGFloat(W) - w) / 2, y: CGFloat(H) - 100 - h), st, d)
   } else {
+    let t = CALayer(); t.contents = img
     t.frame = CGRect(x: (CGFloat(W) - w) / 2, y: 260, width: w, height: h)
+    timed(t, st, d)
   }
-  timed(t, st, d)
 }
 vc.animationTool = AVVideoCompositionCoreAnimationTool(postProcessingAsVideoLayer: videoLayer, in: parent)
 

@@ -26,7 +26,7 @@
 //           ?voice=1 (음성 채널 — 안내방송 뒤 "당신은 무엇을 기다리고 있습니까?"를 묻고 답을 STT·톤 분석해 증거로 넣고,
 //                     답에서 뽑은 명사를 정류장 이름 표지판에 쓴다. 요청서 v5.0 §2.6) · ?voicefake=romance (마이크 대신 샘플 파일)
 //           ?rec=1 (쇼케이스 4K 녹화 — 캔버스 3840×2160 + 소리를 capture/ 에 저장. 창은 1920×1080 으로. lib/filmRecorder.js)
-//           ?recname=busstop_R (녹화 파일 이름, 기본 film_<시각>)
+//           ?recname=busstop_R (녹화 파일 이름, 기본 film_<시각>) · ?recgain=0.5 (녹화 트랙 음량 — 클리핑 방지)
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
@@ -489,7 +489,7 @@ export default function FilmPage() {
     setPhase("intro");
     if (recMode) {
       // 소리 요소를 만들기 전에 녹화기를 세워야 모든 소리가 녹화 트랙에 붙는다
-      recRef.current = createFilmRecorder({ name: q.recname || `film_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "")}` });
+      recRef.current = createFilmRecorder({ name: q.recname || `film_${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "")}`, gain: Number(q.recgain) || 1 });
       const canvas = document.querySelector(`.${s.bgLayer} canvas`);
       setRecInfo({ ...recRef.current.start(canvas), state: "recording" });
     }

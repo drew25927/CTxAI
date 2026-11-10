@@ -13,10 +13,14 @@ const MIME_CANDIDATES = [
   "video/webm",
 ];
 
-export function createFilmRecorder({ name, fps = 30, videoBitsPerSecond = 40_000_000 }) {
+export function createFilmRecorder({ name, fps = 30, videoBitsPerSecond = 40_000_000, gain = 1 }) {
   const Ctx = window.AudioContext || window.webkitAudioContext;
   const ctx = new Ctx();
   const dest = ctx.createMediaStreamDestination();
+  // 녹화 트랙 앞 마스터 게인 — 대사·BGM·효과음 합이 0dBFS 를 넘어 원본이 잘렸다(11/10 v2: 샘플 0.28% 클리핑). 스피커 쪽은 그대로.
+  const master = ctx.createGain();
+  master.gain.value = gain;
+  master.connect(dest);
   const tapped = new WeakSet();
   let rec = null;
   let seq = 0;
@@ -35,7 +39,7 @@ export function createFilmRecorder({ name, fps = 30, videoBitsPerSecond = 40_000
     if (!audioEl || tapped.has(audioEl)) return;
     tapped.add(audioEl);
     const src = ctx.createMediaElementSource(audioEl);
-    src.connect(dest);
+    src.connect(master);
     src.connect(ctx.destination);
   }
 

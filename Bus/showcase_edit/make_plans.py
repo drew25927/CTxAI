@@ -21,11 +21,16 @@ def load(g):
     return {"src": os.path.join(CAP, f"v2_{g}.mp4"), "cue": cue, "bus": bus, "lines": lines}
 
 takes = {g: load(g) for g in GENRES}
-subs = {t["src"]: [{"t": l["t"], "end": l["end"], "text": l["text"]} for l in t["lines"].values() if "end" in l] for t in takes.values()}
+SUB_FIX = {"...차도남 인가. 멋있다": "...차도남인가. 멋있다.", "카페 종소리 들으셨죠.": "카페 종소리 들으셨죠?"}  # 자막 표기만 (원본 대사 파일은 그대로)
+def fix(text):
+    for a, b in SUB_FIX.items(): text = text.replace(a, b)
+    return text
+subs = {t["src"]: [{"t": l["t"], "end": l["end"], "text": fix(l["text"])} for l in t["lines"].values() if "end" in l] for t in takes.values()}
 
+BED_QUIET = 15.0  # 로맨스 녹화 도입부에서 음량이 고른 구간(15~33초, 개구리 37초 전) — 장은 최대 16초
 def slide(name, dur, bed=None):
     it = {"slide": os.path.join(SLIDES, name + ".png"), "dur": dur}
-    if bed is not None: it["audio"] = {"src": takes["R"]["src"], "from": bed, "vol": 0.8}  # 로맨스 녹화 도입부의 빗소리·BGM 을 깐다
+    if bed is not None: it["audio"] = {"src": takes["R"]["src"], "from": bed, "vol": 0.8 if bed != BED_QUIET else 0.55}  # 로맨스 녹화 도입부의 빗소리·BGM 을 깐다
     return it
 
 def line(g, seq, pre=0.4, post=0.6, label=None, fade=0.15):
@@ -66,17 +71,17 @@ montage = [event("truckSplash", -0.7, 1.6, "무엇에 놀라는지"), event("cat
 
 full_body = ([slide("card_open", 3.2, bed=16.0)] + hook + [slide("card_choice", 3.2, bed=19.5)] + montage + [triptych()]
              + trailer("R", ["02", "07", "13"]) + trailer("H", ["01", "06", "11"]) + trailer("C", ["01", "09", "15"])
-             + [bus(), slide("card_end", 4.5, bed=16.5), slide("title", 4.0, bed=21.5)])
+             + [bus(), slide("card_end", 4.5, bed=16.5)])
 short_body = ([slide("card_open", 2.6, bed=16.0)] + hook + [slide("card_choice", 2.6, bed=19.0), triptych()]
               + [line("R", "07", label="로맨스"), line("H", "01", label="공포"), line("C", "09", label="블랙코미디")]
-              + [bus(a=4.5), slide("card_end", 3.6, bed=16.5), slide("title", 3.0, bed=20.5)])
+              + [bus(a=4.5), slide("card_end", 4.0, bed=16.5)])
 
 def total(items): return sum(i["dur"] if "dur" in i else i["to"] - i["from"] for i in items)
 
 plans = {
-    "main": [slide("title", 4), slide("main_intro", 10)] + short_body,
-    "sub": [slide("title", 4), slide("scenario", 9), slide("tech", 10), slide("content_dev", 8), slide("tech_dev", 8)] + full_body + [slide("credits", 5)],
-    "symposium": [slide("title", 4), slide("scenario", 9), slide("tech", 10)] + full_body + [slide("credits", 5)],
+    "main": [slide("title", 5, bed=BED_QUIET), slide("main_intro", 16, bed=BED_QUIET)] + short_body,
+    "sub": [slide("title", 5, bed=BED_QUIET), slide("scenario", 13, bed=BED_QUIET), slide("tech", 14, bed=BED_QUIET), slide("content_dev", 12, bed=BED_QUIET), slide("tech_dev", 12, bed=BED_QUIET)] + full_body + [slide("credits", 7, bed=BED_QUIET)],
+    "symposium": [slide("title", 5, bed=BED_QUIET), slide("scenario", 13, bed=BED_QUIET), slide("tech", 14, bed=BED_QUIET)] + full_body + [slide("credits", 7, bed=BED_QUIET)],
 }
 os.makedirs(OUT, exist_ok=True)
 for name, items in plans.items():
