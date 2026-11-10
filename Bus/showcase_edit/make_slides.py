@@ -182,4 +182,30 @@ background:radial-gradient(ellipse at center,#221d17 0%,#0d0b09 70%)">{rows}</di
 card("card_open", [("같은 정류장.", 128, True), ("같은 5분.", 128, True)])
 card("card_choice", [("옆에 앉는 사람은,", 60, False), ("당신이 정한다.", 120, True)])
 card("card_end", [("버스는 누구에게나 온다.", 60, False), ("다만 나의 기다림,", 104, True), ("그건 나만의 경험이다.", 104, True)])
+# 레이아웃 PPT 용 — 구분 장(주최측 템플릿의 「메인디스플레이 영상」 같은 장)과 영상 자리 장
+def divider(name, title, sub):
+    write(name, page(f"""<div class="hdr">{HEADER}</div>
+<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;
+background:radial-gradient(ellipse at center,#221d17 0%,#0d0b09 70%)">
+  <div class="en" style="font-size:26px;opacity:.8">{TITLE_EN}</div>
+  <div class="ttl" style="font-size:110px;margin:16px 0 26px">{title}</div>
+  {rule(sub, 30)}
+</div>{foot}"""))
+
+def video_slot(name, label, file, bg):
+    write(name, page(f"""<div class="hdr">{HEADER}</div>
+<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center">
+  {rule("영상", 30)}
+  <div class="ttl" style="font-size:96px;margin:20px 0 26px">{label}</div>
+  <div style="font-size:30px;letter-spacing:2px;opacity:.9">{file}</div>
+  <div style="font-size:24px;letter-spacing:2px;opacity:.7;margin-top:14px">영상은 4K mp4 로 따로 제출</div>
+</div>{foot}""", bg, "rgba(0,0,0,.72)"))
+
+divider("div_main", "메인 디스플레이", "타이틀 · 작품 소개 · 1분 축약 영상")
+divider("div_sub", "서브 디스플레이", "시나리오 · 구현 기술 · 콘텐츠 개발 · 기술 개발 · 풀 영상 · 개발팀")
+divider("div_sym", "심포지엄", "시나리오 · 구현 기술 · 풀 영상 · 개발팀")
+divider("div_cards", "본영상 문구 카드", "풀 영상 · 축약 영상 안에 쓰인 장")
+video_slot("slot_short", "축약 영상 (1분)", "버스정류장-기다림_메인영상.mp4", f"{BG}/R_75.jpg")
+video_slot("slot_full_sub", "풀 영상 (2분 내외)", "버스정류장-기다림_서브영상.mp4", f"{BG}/H_100.jpg")
+video_slot("slot_full_sym", "풀 영상 (2분 내외)", "버스정류장-기다림_심포지엄영상.mp4", f"{BG}/C_100.jpg")
 print("ok")
