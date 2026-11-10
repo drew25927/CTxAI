@@ -3,7 +3,7 @@
 //
 // plan.json: { "items": [ ... ], "subs": { "x.mp4": [ {"t": 71.0, "end": 74.8, "text": "..."} ] } }
 //   {"slide": "a.png", "dur": 5, "audio": {"src": "x.mp4", "from": 16, "vol": 0.6}}   정지 장(문구 카드 포함) — audio 는 깔리는 소리
-//   {"src": "x.mp4", "from": 12.3, "to": 20.1, "label": "로맨스", "caption": "무엇에 놀라는지"}   녹화 구간 (4K 가 아니면 화면에 맞게 늘림, "audio" 를 주면 원본 소리 대신 깔림, "box": true 면 caption 뒤에 어두운 띠)
+//   {"src": "x.mp4", "from": 12.3, "to": 20.1, "label": "로맨스", "caption": "무엇에 놀라는지"}   녹화 구간 (4K 가 아니면 화면에 맞게 늘림, "audio" 를 주면 원본 소리 대신 깔림, "box": true 면 caption 뒤에 어두운 띠, "notes" 는 구간 안 특정 시각의 글)
 //   {"tri": [{"src","from","cx"} ×3], "dur": 12.8, "turns": [[0,5.3],[5.3,8.8],[8.8,12.6]], "labels": [...], "head": "..."}
 //       세 화면 비교 — 세로 띠 셋(1280px)에 같은 길이를 나란히 틀고, turns 동안 그 칸만 밝히고 그 칸의 소리를 튼다. cx 는 원본에서 띠를 자를 왼쪽 x.
 //   모든 항목에 "fade" (기본 0.3초) — 앞뒤 암전·소리 페이드. 이웃 페이드와 맞닿으면 겹침으로 거부돼 0.02초 띄운다.
@@ -142,6 +142,10 @@ for it in items {
     addSubs(src, from, to, at: cursor)
     fadeVideo(layerIns[0], cursor, dur, fade)
     if let c = it["caption"] as? String { overlays.append((cursor + 0.2, dur - 0.4, it["box"] as? Bool == true ? "captionBox" : "caption", c)) }
+    // 구간 안 특정 시각에만 뜨는 글 — "notes": [{"at": 클립 안 초, "dur": 초, "text": "...", "kind": "captionBox" | "meter"}]
+    for n in it["notes"] as? [[String: Any]] ?? [] {
+      overlays.append((cursor + (n["at"] as! Double), n["dur"] as! Double, n["kind"] as? String ?? "captionBox", n["text"] as! String))
+    }
   }
   placed.append(Placed(start: cursor, dur: dur, label: it["label"] as? String))
   cursor += dur
@@ -236,6 +240,12 @@ for (st, d, kind, text) in overlays {
       l.shadowColor = CREAM.cgColor; l.shadowRadius = 14; l.shadowOpacity = 0.9; l.shadowOffset = .zero
       timed(l, st, d)
     }
+    continue
+  }
+  if kind == "meter" {
+    // 측정 표시 — 오른쪽 위, 장르 이름 라벨(왼쪽 위)과 마주 보게
+    let img = textImage(text, size: 64, bold: false, color: CREAM, maxW: 1600, align: .right)
+    timed(boxed(img, x: CGFloat(W) - 130 - CGFloat(img.width), y: CGFloat(H) - 130 - CGFloat(img.height)), st, d)
     continue
   }
   let isTri = kind.hasPrefix("tri")
