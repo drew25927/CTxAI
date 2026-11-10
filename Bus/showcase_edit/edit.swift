@@ -156,7 +156,9 @@ vc.renderSize = CGSize(width: W, height: H)
 vc.frameDuration = CMTime(value: 1, timescale: FPS)
 let ins = AVMutableVideoCompositionInstruction()
 ins.timeRange = CMTimeRange(start: .zero, duration: cm(total))
-ins.layerInstructions = layerIns
+// 세 화면 비교가 없는 판은 보조 트랙 둘이 비어 있다 — 빈 트랙을 합성에 넣으면 "Source frame missing" 으로 멈추니 뺀다
+for (t, _) in zip(vTracks, layerIns).dropFirst() where t.segments.isEmpty { comp.removeTrack(t) }
+ins.layerInstructions = zip(vTracks, layerIns).enumerated().filter { $0.offset == 0 || !$0.element.0.segments.isEmpty }.map { $0.element.1 }
 vc.instructions = [ins]
 
 // 자막 · 장르 이름 · 문구 — Core Animation 레이어 (좌표는 왼쪽 아래가 원점)
