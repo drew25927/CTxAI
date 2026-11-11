@@ -156,6 +156,20 @@ panel_page("content_dev", "콘텐츠 개발", [
      "트럭과 고양이 같은 사건이 관객의 시선을 끈다. 대사 138줄은 ElevenLabs로 미리 합성했고, 장르별 BGM 세 트랙이 늘 함께 흐르며 볼륨만 배합을 따른다."),
 ])
 
+# 시네마틱판(수정본): 그림을 모두 홍보 영상(R02)의 시네마틱 장면으로 — 자막·「연출 시안」 표시가 없는 부분을 잘라 assets/cinematic/ 에 둠
+CINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "cinematic")
+panel_page("content_dev_cine", "콘텐츠 개발", [
+    ("캐릭터 · 장르별 옆 사람",
+     grid([img(f"{CINE}/char_{g}.jpg") for g in ["stranger", "romance", "comedy", "horror"]], 2),
+     "직접 그린 원화를 바탕으로 세 장르의 옆 사람을 MiniMax 시네마틱으로 만들었다. 카페에서 나온 같은 낯선 사람이 배합에 따라 로맨스·블랙코미디·공포의 인물로 변해 옆에 앉는다."),
+    ("정류장 장면 · 장르 룩",
+     grid([img(f"{CINE}/look_{g}.jpg") for g in ["default", "romance", "comedy", "horror"]], 2),
+     "아트팀이 만든 정류장 장면 하나가 기본·로맨스·블랙코미디·공포 네 룩으로 바뀐다. 하늘·빛·안개·가로등이 배합을 따라 함께 움직인다."),
+    ("사건 · 대사 · 사운드",
+     grid([img(f"{CINE}/event_truck.jpg"), img(f"{CINE}/event_cat.jpg")], 1),
+     "트럭과 고양이 같은 사건이 관객의 시선을 끈다. 대사 138줄은 ElevenLabs로 미리 합성했고, 장르별 BGM 세 트랙이 늘 함께 흐르며 볼륨만 배합을 따른다."),
+])
+
 def flow(items):
     box = "border:1px solid rgba(241,230,210,.6);padding:12px 14px;font-size:20px;font-weight:400;text-align:center;line-height:1.5"
     arrow = "<div style='text-align:center;font-size:18px;line-height:1.5;opacity:.6'>▼</div>"

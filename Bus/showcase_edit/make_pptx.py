@@ -10,7 +10,7 @@ SLIDES, OUT = sys.argv[1], sys.argv[2]
 PROMO = len(sys.argv) > 3 and sys.argv[3] == "promo"
 ORDER = [
     "div_main", "title", "main_intro", "slot_short",
-    "div_sub", "title", "scenario", "tech", "content_dev", "tech_dev", "slot_full_sub", "credits",
+    "div_sub", "title", "scenario", "tech", "content_dev_cine" if PROMO else "content_dev", "tech_dev", "slot_full_sub", "credits",
     "div_sym", "title", "scenario_promo" if PROMO else "scenario", "tech", "slot_full_sym_promo" if PROMO else "slot_full_sym", "credits",
     "div_cards", "card_open", "card_predict", "card_vr", "card_end",  # 데모 소스판(제출본)의 문구 카드 — card_vr 은 풀 영상에만
 ]
