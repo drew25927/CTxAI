@@ -23,8 +23,8 @@ SCENARIO_SHORT = ("소나기가 막 그친 오후, 관객은 VR 속 정류장 �
 TECH_SHORT = ("헤드셋의 고개 방향과 머문 시간을 읽어 세 장르의 배합 비율을 체험 내내 갱신하고, 그 비율이 하늘·안개·가로등·"
               "옆 사람이 앉는 거리와 대사 사이의 침묵을 매 프레임 바꾼다. Next.js·three.js·WebXR로 만들어 Meta Quest 3에서 실행된다.")
 SCENARIO_LONG = (SCENARIO_SHORT + " 기다림은 아무 일도 일어나지 않는 시간이 아니라, 내가 어떤 사람인지가 조용히 드러나는 시간이다. "
-                 "그래서 선택지를 내미는 대신 관객이 기다리는 모습 자체가 영화를 만들게 했다. 버스는 누구에게나 온다. 결말은 같고, 기다린 방식만 다르다. "
-                 "소개 영상의 시네마틱 장면은 그중 블랙코미디로 흐른 한 회차다.")
+                 "그래서 선택지를 내미는 대신 관객이 기다리는 모습 자체가 영화를 만들게 했다. 버스는 누구에게나 온다. 결말은 같고, 기다린 방식만 다르다.")
+SCENARIO_ONE_RUN = " 소개 영상의 시네마틱 장면은 그중 블랙코미디로 흐른 한 회차다."  # 블랙코미디 시네마틱만 쓰는 제출본용
 TECH_LONG = ("포스터가 파닥이고, 트럭이 물보라를 튀기고, 고양이가 눈앞에 멈춰 서는 사건들이 관객에게 아무것도 요구하지 않는 측정 장치다. "
              "고개 방향과 머문 시간을 읽어 로맨스·공포·블랙코미디의 배합을 갱신하고, 그 배합이 장면 전체를 매 프레임 움직인다. "
              "대사는 실시간 생성의 지연과 품질 편차를 피하려고 확정 46줄과 장르 변주까지 138줄을 미리 AI 음성으로 합성해 두고, "
@@ -116,7 +116,8 @@ def text_page(name, label, text, bg, tools=False):
   {f'<div style="font-size:26px;margin-top:36px;letter-spacing:1px;opacity:.85"><span style="font-weight:600">AI Tool</span>&nbsp; {AI_TOOLS}</div>' if tools else ''}
 </div>{foot}""", bg, "rgba(0,0,0,.72)"))
 
-text_page("scenario", "콘텐츠 시나리오", SCENARIO_LONG, f"{BG}/R_75.jpg")
+text_page("scenario", "콘텐츠 시나리오", SCENARIO_LONG + SCENARIO_ONE_RUN, f"{BG}/R_75.jpg")
+text_page("scenario_promo", "콘텐츠 시나리오", SCENARIO_LONG, f"{BG}/R_75.jpg")  # 세 장르가 다 나오는 홍보 영상(R02)용
 text_page("tech", "구현 기술", TECH_LONG, f"{BG}/C_100.jpg", tools=True)
 
 # 콘텐츠 개발 / 기술 개발 — 3칸

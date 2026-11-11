@@ -146,8 +146,15 @@ plans = {
     "sub": [slide("title", 5, bed=BED_QUIET), slide("scenario", 18, bed=BED_QUIET), slide("tech", 19, bed=BED_QUIET), slide("content_dev", 16, bed=BED_QUIET), slide("tech_dev", 16, bed=BED_QUIET)] + full_body + [slide("credits", 7, bed=BED_QUIET)],
     "symposium": [slide("title", 5, bed=BED_QUIET), slide("scenario", 20, bed=BED_QUIET), slide("tech", 20, bed=BED_QUIET)] + full_body + [slide("credits", 7, bed=BED_QUIET)],
 }
+# 심포지엄 홍보판(PROMO_SYM=<동료 작업자의 심포지엄 4K 영상>): 그 영상(자체 타이틀·세 장르·버스·끝 장 포함 120초)을
+# 주최측 심포지엄 형식(타이틀 · 시나리오 · 구현 기술 · 본영상 · 개발팀)으로 감싼다
+PROMO_SYM = os.environ.get("PROMO_SYM")
+if PROMO_SYM:
+    plans["symposium_promo"] = [slide("title", 5, bed=BED_QUIET), slide("scenario_promo", 20, bed=BED_QUIET), slide("tech", 20, bed=BED_QUIET),
+                                {"src": PROMO_SYM, "from": 0.0, "to": 120.0, "fade": 0.5},
+                                slide("credits", 7, bed=BED_QUIET)]
 os.makedirs(OUT, exist_ok=True)
 for name, items in plans.items():
     json.dump({"items": items, "subs": subs}, open(os.path.join(OUT, f"{name}.json"), "w"), ensure_ascii=False, indent=1)
     body = short_body if name == "main" else full_body
-    print(f"{name}: 전체 {total(items):.1f}초 · 본영상 {total(body):.1f}초 · 항목 {len(items)}개")
+    print(f"{name}: 전체 {total(items):.1f}초 · 항목 {len(items)}개")
