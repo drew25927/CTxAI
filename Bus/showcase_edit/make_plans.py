@@ -149,9 +149,22 @@ plans = {
 # 심포지엄 홍보판(PROMO_SYM=<동료 작업자의 심포지엄 4K 영상>): 그 영상(자체 타이틀·세 장르·버스·끝 장 포함 120초)을
 # 주최측 심포지엄 형식(타이틀 · 시나리오 · 구현 기술 · 본영상 · 개발팀)으로 감싼다
 PROMO_SYM = os.environ.get("PROMO_SYM")
+def promo_film():
+    it = {"src": PROMO_SYM, "from": 0.0, "to": 120.0, "fade": 0.5}
+    # 끝 장(115~120초) 크레딧의 「김윤기」를 「김운기」로 — 「윤」의 ㅠ 세로획 둘을 배경으로 지우고 가운데 하나를 그린 조각을 원본 픽셀 위치에 얹는다.
+    # 끝 장 배경은 멈춘 화면이고, 밝기는 원본에서 잰 페이드(검정에서 밝아지고 검정으로 어두워짐)를 그대로 따른다. 마지막 0.5초는 이 편집의 페이드도 곱한다.
+    fade_in = [(0.0, 0.0), (0.042, 0.153), (0.084, 0.324), (0.125, 0.484), (0.167, 0.673), (0.209, 0.84), (0.25, 1.0)]
+    fade_out = [(4.25, 1.0), (4.3, 0.939), (4.342, 0.894), (4.383, 0.837), (4.425, 0.784), (4.467, 0.727), (4.508, 0.673), (4.55, 0.623),
+                (4.592, 0.565), (4.633, 0.498), (4.675, 0.439), (4.717, 0.383), (4.758, 0.325), (4.8, 0.272), (4.842, 0.217),
+                (4.883, 0.158), (4.925, 0.102), (4.967, 0.059), (5.0, 0.0)]
+    ours = lambda t: 1.0 if t < 4.48 else max(0.0, (4.98 - t) / 0.5)
+    keys = [[t, round(v * ours(t), 3)] for t, v in fade_in + fade_out]
+    it["notes"] = [{"kind": "patch", "at": 115.0, "dur": 5.0, "x": 1456, "y": 1376, "keys": keys,
+                    "src": os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets", "promo_name_fix.png")}]
+    return it
 if PROMO_SYM:
     plans["symposium_promo"] = [slide("title", 5, bed=BED_QUIET), slide("scenario_promo", 20, bed=BED_QUIET), slide("tech", 20, bed=BED_QUIET),
-                                {"src": PROMO_SYM, "from": 0.0, "to": 120.0, "fade": 0.5},
+                                promo_film(),
                                 slide("credits", 7, bed=BED_QUIET)]
 os.makedirs(OUT, exist_ok=True)
 for name, items in plans.items():

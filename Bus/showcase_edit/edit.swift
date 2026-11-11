@@ -64,6 +64,8 @@ var cursor = 0.0
 struct Placed { let start: Double; let dur: Double; let label: String? }
 var placed: [Placed] = []
 var subLayers: [(Double, Double, String)] = []
+// 원본 화면의 일부를 고친 그림 조각: 시작, 길이, 그림, 원본 픽셀 좌표(왼쪽 위), 불투명도 키프레임 [(구간 안 초, 값)]
+var patches: [(Double, Double, String, Double, Double, [[Double]])] = []
 var overlays: [(Double, Double, String, String)] = [] // 시작, 길이, 종류(caption·head·tri0..2·seams), 글
 var assets: [String: AVURLAsset] = [:]
 func asset(_ src: String) -> AVURLAsset { let a = assets[src] ?? AVURLAsset(url: URL(fileURLWithPath: src)); assets[src] = a; return a }
@@ -154,6 +156,10 @@ for it in items {
     if let c = it["caption"] as? String { overlays.append((cursor + 0.2, dur - 0.4, it["box"] as? Bool == true ? "captionBox" : "caption", c)) }
     // 구간 안 특정 시각에만 뜨는 글 — "notes": [{"at": 클립 안 초, "dur": 초, "text": "...", "kind": "captionBox" | "meter"}]
     for n in it["notes"] as? [[String: Any]] ?? [] {
+      if n["kind"] as? String == "patch" {
+        patches.append((cursor + (n["at"] as! Double), n["dur"] as! Double, n["src"] as! String, n["x"] as! Double, n["y"] as! Double, n["keys"] as! [[Double]]))
+        continue
+      }
       overlays.append((cursor + (n["at"] as! Double), n["dur"] as! Double, n["kind"] as? String ?? "captionBox", n["text"] as! String))
     }
   }
@@ -191,6 +197,32 @@ func timed(_ layer: CALayer, _ start: Double, _ dur: Double) {
   anim.fillMode = .both
   layer.add(anim, forKey: "o")
   parent.addSublayer(layer)
+}
+// 고친 조각은 원본 픽셀에 정확히 겹치게 놓고(4K 원본, 확대 없음), 원본의 밝기 변화(페이드)를 키프레임으로 따라간다
+func placePatches() {
+  for (st, d, src, x, y, keys) in patches {
+    let img = NSImage(contentsOfFile: src)!
+    var r = CGRect(origin: .zero, size: img.size)
+    let cg = img.cgImage(forProposedRect: &r, context: nil, hints: nil)!
+    // 조각은 구간 내내 불투명하게 두고, 그 위 검은 막의 불투명도(1 - 밝기)로 원본처럼 어둡게 한다 —
+    // 조각 자체를 반투명하게 하면 페이드 중에 밑의 옛 글자가 비친다
+    let l = CALayer(); l.contents = cg
+    l.frame = CGRect(x: x, y: Double(H) - y - Double(cg.height), width: Double(cg.width), height: Double(cg.height))
+    l.opacity = 0
+    let on = CABasicAnimation(keyPath: "opacity"); on.fromValue = 1; on.toValue = 1
+    on.beginTime = st; on.duration = d; on.fillMode = .removed; on.isRemovedOnCompletion = true
+    l.add(on, forKey: "on")
+    let shade = CALayer(); shade.backgroundColor = NSColor.black.cgColor
+    shade.frame = CGRect(x: 0, y: 0, width: Double(cg.width), height: Double(cg.height)); shade.opacity = 1
+    let anim = CAKeyframeAnimation(keyPath: "opacity")
+    anim.values = keys.map { NSNumber(value: 1 - $0[1]) }
+    anim.keyTimes = keys.map { NSNumber(value: $0[0] / d) }
+    anim.beginTime = st; anim.duration = d
+    anim.isRemovedOnCompletion = false; anim.fillMode = .both
+    shade.add(anim, forKey: "o")
+    l.addSublayer(shade)
+    parent.addSublayer(l)
+  }
 }
 // 글자는 비트맵으로 미리 그려 레이어 contents 로 넣는다 — 내보내기에서 CATextLayer 는 글자가 그려지지 않았다(상자만 나옴)
 // 글꼴은 포스터 타이포를 따른다 — 장르 이름 함렛 Black, 자막 본명조 Light, 크림색. fonts/ 의 가변 글꼴을 이 프로세스에만 등록한다.
@@ -274,6 +306,7 @@ for (st, d, kind, text) in overlays {
     timed(t, st, d)
   }
 }
+placePatches()
 vc.animationTool = AVVideoCompositionCoreAnimationTool(postProcessingAsVideoLayer: videoLayer, in: parent)
 
 let used2 = !aTrack2.segments.isEmpty
