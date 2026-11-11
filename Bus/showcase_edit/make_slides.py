@@ -228,4 +228,5 @@ divider("div_cards", "본영상 문구 카드", "풀 영상 · 하이라이트 �
 video_slot("slot_short", "하이라이트 영상 (1분)", "버스정류장-기다림_메인영상.mp4", f"{BG}/R_75.jpg")
 video_slot("slot_full_sub", "풀 영상", "버스정류장-기다림_서브영상.mp4", f"{BG}/H_100.jpg")
 video_slot("slot_full_sym", "풀 영상", "버스정류장-기다림_심포지엄영상.mp4", f"{BG}/C_100.jpg")
+video_slot("slot_full_sym_promo", "풀 영상", "버스정류장-기다림_심포지엄영상_수정.mp4", f"{BG}/C_100.jpg")  # 심포지엄 홍보영상판
 print("ok")
