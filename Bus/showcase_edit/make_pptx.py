@@ -9,11 +9,13 @@ from pptx.util import Emu
 SLIDES, OUT = sys.argv[1], sys.argv[2]
 PROMO = len(sys.argv) > 3 and sys.argv[3] == "promo"
 ORDER = [
-    "div_main", "title", "main_intro", "slot_short",
-    "div_sub", "title", "scenario", "tech", "content_dev_cine" if PROMO else "content_dev", "tech_dev", "slot_full_sub", "credits",
+    "div_main", "title", "main_intro", "slot_short_promo" if PROMO else "slot_short",
+    "div_sub", "title", "scenario", "tech", "content_dev_cine" if PROMO else "content_dev", "tech_dev", "slot_full_sub_promo" if PROMO else "slot_full_sub", "credits",
     "div_sym", "title", "scenario_promo" if PROMO else "scenario", "tech", "slot_full_sym_promo" if PROMO else "slot_full_sym", "credits",
     "div_cards", "card_open", "card_predict", "card_vr", "card_end",  # 데모 소스판(제출본)의 문구 카드 — card_vr 은 풀 영상에만
 ]
+if PROMO:  # 수정본 영상(동료의 R05)에는 우리 문구 카드가 쓰이지 않는다
+    ORDER = ORDER[:ORDER.index("div_cards")]
 
 prs = Presentation()
 prs.slide_width, prs.slide_height = Emu(12192000), Emu(6858000)  # 16:9 (13.333 × 7.5 in)
