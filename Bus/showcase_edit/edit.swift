@@ -3,7 +3,8 @@
 //
 // plan.json: { "items": [ ... ], "subs": { "x.mp4": [ {"t": 71.0, "end": 74.8, "text": "..."} ] } }
 //   {"slide": "a.png", "dur": 5, "audio": {"src": "x.mp4", "from": 16, "vol": 0.6}}   정지 장(문구 카드 포함) — audio 는 깔리는 소리
-//   {"src": "x.mp4", "from": 12.3, "to": 20.1, "label": "로맨스", "caption": "무엇에 놀라는지"}   녹화 구간 (4K 가 아니면 화면에 맞게 늘림, "audio" 를 주면 원본 소리 대신 깔림, "box": true 면 caption 뒤에 어두운 띠, "notes" 는 구간 안 특정 시각의 글, "zoom" 확대, "srcVol" 원본 소리 크기, "keepAudio" 원본 위에 audio 겹침)
+//   {"src": "x.mp4", "from": 12.3, "to": 20.1, "label": "로맨스", "caption": "무엇에 놀라는지"}   녹화 구간 (4K 가 아니면 화면에 맞게 늘림, "audio" 를 주면 원본 소리 대신 깔림, "box": true 면 caption 뒤에 어두운 띠, "notes" 는 구간 안 특정 시각의 글, "zoom" 확대, "srcVol" 원본 소리 크기, "keepAudio" 원본 위에 audio 겹침, "zoomCenter" 확대 중심)
+//   계획 맨 위에 "narration": [{"src","at","vol"}], "captions": [{"t","dur","text"}], "bed": {"src","vol"} — 장·클립과 따로 흐르는 내레이션, 그 자막, 전체 배경음
 //   {"tri": [{"src","from","cx"} ×3], "dur": 12.8, "turns": [[0,5.3],[5.3,8.8],[8.8,12.6]], "labels": [...], "head": "..."}
 //       세 화면 비교 — 세로 띠 셋(1280px)에 같은 길이를 나란히 틀고, turns 동안 그 칸만 밝히고 그 칸의 소리를 튼다. cx 는 원본에서 띠를 자를 왼쪽 x.
 //   모든 항목에 "fade" (기본 0.3초) — 앞뒤 암전·소리 페이드. 이웃 페이드와 맞닿으면 겹침으로 거부돼 0.02초 띄운다.
@@ -41,7 +42,7 @@ func stillClip(_ png: String, _ dur: Double) -> URL {
   let ctx = CGContext(data: CVPixelBufferGetBaseAddress(pb!), width: W, height: H, bitsPerComponent: 8, bytesPerRow: CVPixelBufferGetBytesPerRow(pb!), space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue)!
   ctx.draw(cg, in: CGRect(x: 0, y: 0, width: W, height: H))
   CVPixelBufferUnlockBaseAddress(pb!, [])
-  let n = Int((dur * Double(FPS)).rounded())
+  let n = Int((dur * Double(FPS)).rounded(.up)) + 1  // 요청 길이보다 짧으면 합성이 멈춘다(-11841) — 한 프레임 넉넉히
   for i in 0...n {
     while !input.isReadyForMoreMediaData { usleep(1000) }
     ad.append(pb!, withPresentationTime: CMTime(value: CMTimeValue(i), timescale: FPS))
@@ -140,10 +141,11 @@ for it in items {
     let st = asset(src).tracks(withMediaType: .video)[0]
     try! vTrack.insertTimeRange(CMTimeRange(start: cm(from), duration: cm(dur)), of: st, at: cm(cursor))
     let k = CGFloat(W) / st.naturalSize.width  // 1080p 클립은 4K 로 늘린다
-    let z = CGFloat(it["zoom"] as? Double ?? 1)  // 가운데 기준 확대 (원본에 테두리가 있는 컷)
+    let z = CGFloat(it["zoom"] as? Double ?? 1)  // 확대 (원본에 테두리·자막이 있는 컷) — "zoomCenter": [x, y] 는 0~1, 기본 가운데
+    let zc = it["zoomCenter"] as? [Double] ?? [0.5, 0.5]
     if abs(k * z - 1) > 0.01 {
       layerIns[0].setTransform(CGAffineTransform(scaleX: k * z, y: k * z)
-        .concatenating(CGAffineTransform(translationX: -(z - 1) * CGFloat(W) / 2, y: -(z - 1) * CGFloat(H) / 2)), at: cm(cursor))
+        .concatenating(CGAffineTransform(translationX: CGFloat(W) / 2 - CGFloat(zc[0]) * CGFloat(W) * z, y: CGFloat(H) / 2 - CGFloat(zc[1]) * CGFloat(H) * z)), at: cm(cursor))
       layerIns[0].setTransform(.identity, at: cm(cursor + dur))
     }
     let srcVol = Float(it["srcVol"] as? Double ?? 1)
@@ -167,6 +169,27 @@ for it in items {
   cursor += dur
 }
 let total = cursor
+// 계획 전체에 걸친 내레이션(보조 오디오 트랙)과 문장 자막 — 발표 영상처럼 장·클립과 따로 흐르는 말
+for n in plan["narration"] as? [[String: Any]] ?? [] {
+  let a = asset(n["src"] as! String)
+  addAudio(n["src"] as! String, 0, a.duration.seconds, at: n["at"] as! Double, fade: 0.05, vol: Float(n["vol"] as? Double ?? 1), overlay: true)
+}
+// 영상 전체에 깔리는 배경음 — 짧은 반복용 음원을 이어 붙여 끝까지 채운다(세 번째 오디오 트랙)
+var bedParams: AVMutableAudioMixInputParameters? = nil
+if let bed = plan["bed"] as? [String: Any] {
+  let a = asset(bed["src"] as! String); let src = a.tracks(withMediaType: .audio)[0]; let len = a.duration.seconds
+  let t3 = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)!
+  var at = 0.0
+  // 영상보다 조금이라도 길면 합성이 거부된다(-11841) — 끝을 0.1초 짧게
+  while at < total - 0.11 { let d = min(len, total - 0.1 - at); try! t3.insertTimeRange(CMTimeRange(start: .zero, duration: cm(d)), of: src, at: cm(at)); at += d }
+  let p3 = AVMutableAudioMixInputParameters(track: t3); let v = Float(bed["vol"] as? Double ?? 0.2)
+  p3.setVolumeRamp(fromStartVolume: 0, toEndVolume: v, timeRange: CMTimeRange(start: .zero, duration: cm(2)))
+  p3.setVolumeRamp(fromStartVolume: v, toEndVolume: 0, timeRange: CMTimeRange(start: cm(total - 4), duration: cm(3.9)))
+  bedParams = p3
+}
+for c in plan["captions"] as? [[String: Any]] ?? [] {
+  subLayers.append((c["t"] as! Double, c["dur"] as! Double, c["text"] as! String))
+}
 if aTrack.timeRange.duration.seconds < total - 0.01 {
   try? aTrack.insertEmptyTimeRange(CMTimeRange(start: aTrack.timeRange.end, duration: cm(total - aTrack.timeRange.end.seconds)))
 }
@@ -284,6 +307,12 @@ for (st, d, kind, text) in overlays {
     }
     continue
   }
+  if kind == "tag" {
+    // 화면 출처 표기 — 오른쪽 위 작은 글씨 (예: 연출 시안 · 실제 헤드셋 화면 아님)
+    let img = textImage(text, size: 52, bold: false, color: CREAM, maxW: 2400, align: .right)
+    timed(boxed(img, x: CGFloat(W) - 110 - CGFloat(img.width), y: CGFloat(H) - 110 - CGFloat(img.height)), st, d)
+    continue
+  }
   if kind == "meter" {
     // 측정 표시 — 오른쪽 위, 장르 이름 라벨(왼쪽 위)과 마주 보게
     let img = textImage(text, size: 96, bold: false, color: CREAM, maxW: 2000, align: .right)
@@ -309,9 +338,10 @@ for (st, d, kind, text) in overlays {
 placePatches()
 vc.animationTool = AVVideoCompositionCoreAnimationTool(postProcessingAsVideoLayer: videoLayer, in: parent)
 
+if !aTrack.segments.contains(where: { !$0.isEmpty }) { comp.removeTrack(aTrack) }  // 소리가 하나도 없으면 빈 트랙 때문에 내보내기가 거부된다(-11838)
 let used2 = !aTrack2.segments.isEmpty
 if !used2 { comp.removeTrack(aTrack2) }
-let mix = AVMutableAudioMix(); mix.inputParameters = used2 ? [audioParams, audioParams2] : [audioParams]
+let mix = AVMutableAudioMix(); mix.inputParameters = (used2 ? [audioParams, audioParams2] : [audioParams]) + (bedParams.map { [$0] } ?? [])
 try? FileManager.default.removeItem(at: outURL)
 let ex = AVAssetExportSession(asset: comp, presetName: AVAssetExportPreset3840x2160)!
 ex.outputURL = outURL; ex.outputFileType = .mp4
